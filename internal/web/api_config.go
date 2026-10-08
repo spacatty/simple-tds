@@ -17,6 +17,9 @@ import (
 )
 
 // resource wires list/create/update/delete for one table.
+//
+// By default rows belong to their creator (model.Owned): lists show only the
+// caller's rows, and changes need ownership. Admins bypass both.
 type resource[T any] struct {
 	table string
 	order string
@@ -26,7 +29,20 @@ type resource[T any] struct {
 	canDelete func(ctx context.Context, old *T) error
 	// changed runs after any successful change.
 	changed func(ctx context.Context, id int64, deleted bool)
+	// adminOnly: admins only, even for reading. adminWrite: anyone reads
+	// (see public), admins change.
+	adminOnly, adminWrite bool
+	// public lists every row to every user.
+	public bool
+	// visible replaces the ownership filter on lists.
+	visible func(ctx context.Context, items []T) []T
+	// writable / deletable replace the ownership check on update / delete.
+	// deletable falls back to writable.
+	writable  func(ctx context.Context, old *T) error
+	deletable func(ctx context.Context, old *T) error
 }
+
+var errAdminOnly = &apiError{http.StatusForbidden, "administrators only"}
 
 func mount[T any](s *Server, r chi.Router, path string, res resource[T]) {
 	after := func(ctx context.Context, id int64, deleted bool) error {
@@ -35,30 +51,75 @@ func mount[T any](s *Server, r chi.Router, path string, res resource[T]) {
 		}
 		return s.reload(ctx)
 	}
+	// load fetches the row for a change and enforces who may make it.
+	load := func(r *http.Request, del bool) (*T, error) {
+		ctx := r.Context()
+		if (res.adminOnly || res.adminWrite) && !userFrom(ctx).IsAdmin() {
+			return nil, errAdminOnly
+		}
+		old, err := store.Get[T](ctx, s.st, res.table, pathID(r))
+		if err != nil {
+			return nil, err
+		}
+		check := res.writable
+		if del && res.deletable != nil {
+			check = res.deletable
+		}
+		switch {
+		case check != nil:
+			err = check(ctx, old)
+		case !res.adminOnly && !res.adminWrite && !owns(userFrom(ctx), old):
+			err = store.ErrNotFound
+		}
+		return old, err
+	}
 	r.Get(path, handler(func(r *http.Request) (any, error) {
-		return store.List[T](r.Context(), s.st, res.table, res.order)
+		ctx := r.Context()
+		if res.adminOnly && !userFrom(ctx).IsAdmin() {
+			return nil, errAdminOnly
+		}
+		items, err := store.List[T](ctx, s.st, res.table, res.order)
+		switch {
+		case err != nil:
+			return nil, err
+		case res.visible != nil:
+			return res.visible(ctx, items), nil
+		case res.public || res.adminOnly:
+			return items, nil
+		}
+		return visibleOwned(ctx, items), nil
 	}))
 	r.Post(path, handler(func(r *http.Request) (any, error) {
+		ctx := r.Context()
+		if (res.adminOnly || res.adminWrite) && !userFrom(ctx).IsAdmin() {
+			return nil, errAdminOnly
+		}
 		var v T
 		if err := readJSON(r, &v); err != nil {
 			return nil, err
 		}
-		if err := res.validate(r.Context(), &v, nil); err != nil {
+		if o, ok := any(&v).(model.Owned); ok {
+			o.SetOwner(userFrom(ctx).ID)
+		}
+		if err := res.validate(ctx, &v, nil); err != nil {
 			return nil, err
 		}
-		if err := store.Insert(r.Context(), s.st, res.table, &v); err != nil {
+		if err := store.Insert(ctx, s.st, res.table, &v); err != nil {
 			return nil, err
 		}
-		return &v, after(r.Context(), idOf(&v), false)
+		return &v, after(ctx, idOf(&v), false)
 	}))
 	r.Put(path+"/{id}", handler(func(r *http.Request) (any, error) {
-		old, err := store.Get[T](r.Context(), s.st, res.table, pathID(r))
+		old, err := load(r, false)
 		if err != nil {
 			return nil, err
 		}
 		v := *old // omitted fields keep their stored value
 		if err := readJSON(r, &v); err != nil {
 			return nil, err
+		}
+		if o, ok := any(&v).(model.Owned); ok {
+			o.SetOwner(any(old).(model.Owned).Owner()) // ownership is not editable
 		}
 		if err := res.validate(r.Context(), &v, old); err != nil {
 			return nil, err
@@ -69,7 +130,7 @@ func mount[T any](s *Server, r chi.Router, path string, res resource[T]) {
 		return &v, after(r.Context(), pathID(r), false)
 	}))
 	r.Delete(path+"/{id}", handler(func(r *http.Request) (any, error) {
-		old, err := store.Get[T](r.Context(), s.st, res.table, pathID(r))
+		old, err := load(r, true)
 		if err != nil {
 			return nil, err
 		}
@@ -177,6 +238,22 @@ func (s *Server) validateDomain(ctx context.Context, d *model.Domain, old *model
 	if !oneOf(d.IPSource, model.IPDirect, model.IPCF, model.IPXFF, model.IPXReal) {
 		return bad("unknown ip_source")
 	}
+	u := userFrom(ctx)
+	// The default campaign and group must be the caller's to use.
+	if d.CampaignID != nil && (old == nil || old.CampaignID == nil || *old.CampaignID != *d.CampaignID) {
+		if _, err := s.campaign(ctx, *d.CampaignID, model.AccessEdit); err != nil {
+			return bad("campaign not found or not editable by you")
+		}
+	}
+	if d.GroupID != nil && (old == nil || old.GroupID == nil || *old.GroupID != *d.GroupID) {
+		if _, err := ownedGet[model.DomainGroup](ctx, s, "domain_groups", *d.GroupID); err != nil {
+			return bad("group not found")
+		}
+	}
+	// A panel domain is an entrance to the whole system.
+	if !u.IsAdmin() && d.AdminEnabled != (old != nil && old.AdminEnabled) {
+		return &apiError{http.StatusForbidden, "only administrators can change panel access on a domain"}
+	}
 	if old == nil {
 		d.Status, d.StatusMsg, d.CheckedAt = "pending", "", nil
 		return nil
@@ -245,8 +322,8 @@ func (s *Server) validateStream(ctx context.Context, st *model.Stream, old *mode
 	if old != nil {
 		st.CampaignID = old.CampaignID
 	} else {
-		if _, err := store.Get[model.Campaign](ctx, s.st, "campaigns", st.CampaignID); err != nil {
-			return bad("campaign does not exist")
+		if _, err := s.campaign(ctx, st.CampaignID, model.AccessEdit); err != nil {
+			return err
 		}
 		if st.Weight == 0 {
 			st.Weight = 100
@@ -285,7 +362,7 @@ func (s *Server) validateStream(ctx context.Context, st *model.Stream, old *mode
 	if err := s.eng.ValidateStream(st); err != nil {
 		return bad(err.Error())
 	}
-	return nil
+	return s.checkActionRefs(ctx, st, old)
 }
 
 func (s *Server) validateKey(_ context.Context, k *model.ConvKey, old *model.ConvKey) error {
@@ -444,18 +521,53 @@ func (s *Server) routes(r chi.Router) {
 	r.Post("/domains/bulk-delete", handler(s.domainsBulkDelete))
 	r.Post("/domains/check", handler(s.domainsCheck))
 
-	mount(s, r, "/campaigns", resource[model.Campaign]{table: "campaigns", order: "id DESC", validate: s.validateCampaign})
+	editable := func(ctx context.Context, c *model.Campaign) error {
+		_, err := s.campaign(ctx, c.ID, model.AccessEdit)
+		return err
+	}
+	mount(s, r, "/campaigns", resource[model.Campaign]{table: "campaigns", order: "id DESC", validate: s.validateCampaign,
+		visible: s.visibleCampaigns, writable: editable,
+		deletable: func(ctx context.Context, c *model.Campaign) error {
+			_, err := s.campaign(ctx, c.ID, model.AccessOwner)
+			return err
+		}})
 	r.Post("/campaigns/{id}/clone", handler(s.campaignClone))
 	r.Get("/campaigns/{id}/streams", handler(s.campaignStreams))
 	r.Put("/campaigns/{id}/streams/order", handler(s.streamsReorder))
 	r.Get("/campaigns/{id}/integration", handler(s.campaignIntegration))
-	mount(s, r, "/streams", resource[model.Stream]{table: "streams", order: "campaign_id, position, id", validate: s.validateStream})
+	mount(s, r, "/streams", resource[model.Stream]{table: "streams", order: "campaign_id, position, id", validate: s.validateStream,
+		visible: func(ctx context.Context, items []model.Stream) []model.Stream {
+			u := userFrom(ctx)
+			if u.IsAdmin() {
+				return items
+			}
+			shares, _ := s.shareMap(ctx, u)
+			owned := map[int64]bool{}
+			if cs, err := store.List[model.Campaign](ctx, s.st, "campaigns", "id"); err == nil {
+				for _, c := range cs {
+					owned[c.ID] = c.OwnerID == u.ID
+				}
+			}
+			out := []model.Stream{}
+			for _, st := range items {
+				if owned[st.CampaignID] || shares[st.CampaignID] >= model.AccessRead {
+					out = append(out, st)
+				}
+			}
+			return out
+		},
+		writable: func(ctx context.Context, st *model.Stream) error {
+			_, err := s.campaign(ctx, st.CampaignID, model.AccessEdit)
+			return err
+		}})
 
 	mount(s, r, "/conversion-keys", resource[model.ConvKey]{table: "conv_keys", order: "id", validate: s.validateKey})
 	r.Post("/conversion-keys/{id}/regenerate", handler(s.keyRegenerate))
 
-	mount(s, r, "/geo-presets", resource[model.GeoPreset]{table: "geo_presets", order: "id", validate: validatePreset})
-	mount(s, r, "/ip-lists", resource[model.IPList]{table: "ip_lists", order: "id", validate: validateList,
+	mount(s, r, "/geo-presets", resource[model.GeoPreset]{table: "geo_presets", order: "id", validate: validatePreset,
+		public: true, adminWrite: true})
+	admin := r.With(s.requireAdmin)
+	mount(s, r, "/ip-lists", resource[model.IPList]{table: "ip_lists", order: "id", validate: validateList, adminOnly: true,
 		canDelete: func(_ context.Context, l *model.IPList) error {
 			if l.Builtin {
 				return bad("built-in lists cannot be deleted; disable it instead")
@@ -470,14 +582,16 @@ func (s *Server) routes(r chi.Router) {
 			}
 			go s.lists.Refresh(context.Background(), id, false)
 		}})
-	r.Post("/ip-lists/{id}/refresh", handler(func(r *http.Request) (any, error) {
+	admin.Post("/ip-lists/{id}/refresh", handler(func(r *http.Request) (any, error) {
 		if err := s.lists.Refresh(r.Context(), pathID(r), true); err != nil {
 			return nil, bad(err.Error())
 		}
 		return store.Get[model.IPList](r.Context(), s.st, "ip_lists", pathID(r))
 	}))
-	mount(s, r, "/integrations", resource[model.Integration]{table: "integrations", order: "id", validate: validateIntegration})
-	r.Post("/integrations/test", handler(s.integrationTest))
+	mount(s, r, "/integrations", resource[model.Integration]{table: "integrations", order: "id", validate: validateIntegration, adminOnly: true})
+	admin.Post("/integrations/test", handler(s.integrationTest))
+
+	s.userRoutes(r)
 
 	s.whitepageRoutes(r)
 	s.dataRoutes(r)
@@ -510,7 +624,7 @@ func (s *Server) domainsBulkAdd(r *http.Request) (any, error) {
 	seen := map[string]bool{}
 	for _, raw := range strings.FieldsFunc(in.Names, func(c rune) bool { return c == '\n' || c == '\r' || c == ',' || c == ';' || c == ' ' || c == '\t' }) {
 		d := model.Domain{Name: raw, GroupID: in.GroupID, CampaignID: in.CampaignID, TLSMode: in.TLSMode,
-			IPSource: in.IPSource, AdminEnabled: in.AdminEnabled, Enabled: true}
+			IPSource: in.IPSource, AdminEnabled: in.AdminEnabled, Enabled: true, OwnerID: currentUser(r).ID}
 		if err := s.validateDomain(r.Context(), &d, nil); err != nil {
 			results = append(results, result{Name: raw, Error: err.Error()})
 			continue
@@ -560,7 +674,7 @@ func (s *Server) domainsBulkUpdate(r *http.Request) (any, error) {
 	patch := mustMarshal(in.Set)
 	updated := 0
 	for _, id := range in.IDs {
-		old, err := store.Get[model.Domain](r.Context(), s.st, "domains", id)
+		old, err := ownedGet[model.Domain](r.Context(), s, "domains", id)
 		if err != nil {
 			continue
 		}
@@ -591,7 +705,7 @@ func (s *Server) domainsBulkDelete(r *http.Request) (any, error) {
 	}
 	deleted := 0
 	for _, id := range in.IDs {
-		d, err := store.Get[model.Domain](r.Context(), s.st, "domains", id)
+		d, err := ownedGet[model.Domain](r.Context(), s, "domains", id)
 		if err != nil {
 			continue
 		}
@@ -611,14 +725,32 @@ func (s *Server) domainsCheck(r *http.Request) (any, error) {
 		IDs []int64 `json:"ids"`
 	}
 	readJSON(r, &in)
+	// Limit the check to the caller's own domains ("all" means all of theirs).
+	domains, err := store.List[model.Domain](r.Context(), s.st, "domains", "id")
+	if err != nil {
+		return nil, err
+	}
+	want := map[int64]bool{}
+	for _, id := range in.IDs {
+		want[id] = true
+	}
+	ids := []int64{}
+	for _, d := range visibleOwned(r.Context(), domains) {
+		if len(in.IDs) == 0 || want[d.ID] {
+			ids = append(ids, d.ID)
+		}
+	}
 	// Runs in the background: certificate issuance can take a while.
-	go s.checkDomains(context.Background(), in.IDs)
+	go s.checkDomains(context.Background(), ids)
 	return nil, nil
 }
 
 // ---- campaigns & streams ----------------------------------------------------
 
 func (s *Server) campaignStreams(r *http.Request) (any, error) {
+	if _, err := s.campaign(r.Context(), pathID(r), model.AccessRead); err != nil {
+		return nil, err
+	}
 	rows, err := s.st.Pool.Query(r.Context(), "SELECT * FROM streams WHERE campaign_id=$1 ORDER BY position, id", pathID(r))
 	if err != nil {
 		return nil, err
@@ -637,6 +769,9 @@ func (s *Server) streamsReorder(r *http.Request) (any, error) {
 	if err := readJSON(r, &in); err != nil {
 		return nil, err
 	}
+	if _, err := s.campaign(r.Context(), pathID(r), model.AccessEdit); err != nil {
+		return nil, err
+	}
 	for i, id := range in.IDs {
 		if _, err := s.st.Pool.Exec(r.Context(), "UPDATE streams SET position=$1 WHERE id=$2 AND campaign_id=$3", i, id, pathID(r)); err != nil {
 			return nil, err
@@ -647,12 +782,13 @@ func (s *Server) streamsReorder(r *http.Request) (any, error) {
 
 func (s *Server) campaignClone(r *http.Request) (any, error) {
 	ctx := r.Context()
-	src, err := store.Get[model.Campaign](ctx, s.st, "campaigns", pathID(r))
+	src, err := s.campaign(ctx, pathID(r), model.AccessRead)
 	if err != nil {
 		return nil, err
 	}
 	c := *src
 	c.Name, c.Alias, c.Token = src.Name+" (copy)", strings.ToLower(randToken(6)), randToken(24)
+	c.OwnerID = currentUser(r).ID // the copy belongs to whoever made it
 	if err := store.Insert(ctx, s.st, "campaigns", &c); err != nil {
 		return nil, err
 	}
@@ -675,7 +811,7 @@ func (s *Server) campaignClone(r *http.Request) (any, error) {
 
 // campaignIntegration returns ready-to-paste snippets for each integration.
 func (s *Server) campaignIntegration(r *http.Request) (any, error) {
-	c, err := store.Get[model.Campaign](r.Context(), s.st, "campaigns", pathID(r))
+	c, err := s.campaign(r.Context(), pathID(r), model.AccessEdit)
 	if err != nil {
 		return nil, err
 	}
@@ -756,7 +892,7 @@ const phpClient = `<?php
 `
 
 func (s *Server) keyRegenerate(r *http.Request) (any, error) {
-	k, err := store.Get[model.ConvKey](r.Context(), s.st, "conv_keys", pathID(r))
+	k, err := ownedGet[model.ConvKey](r.Context(), s, "conv_keys", pathID(r))
 	if err != nil {
 		return nil, err
 	}

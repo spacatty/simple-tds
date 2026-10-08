@@ -7,10 +7,13 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -33,9 +36,28 @@ type remoteCache struct {
 	client  *http.Client
 }
 
+// publicOnly refuses connections to private, loopback and link-local
+// addresses. Action URLs are user-supplied, and the tracker sits next to its
+// databases: without this a user could read internal services through it.
+// The check runs on the resolved address, so DNS tricks do not get around it.
+func publicOnly(_, address string, _ syscall.RawConn) error {
+	ap, err := netip.ParseAddrPort(address)
+	if err != nil {
+		return err
+	}
+	ip := ap.Addr().Unmap()
+	cgnat := netip.MustParsePrefix("100.64.0.0/10")
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsMulticast() || ip.IsUnspecified() || cgnat.Contains(ip) {
+		return fmt.Errorf("address %s is not public", ip)
+	}
+	return nil
+}
+
 func newRemoteCache() *remoteCache {
+	dialer := &net.Dialer{Timeout: 5 * time.Second, Control: publicOnly}
 	return &remoteCache{entries: map[string]*remoteEntry{}, client: &http.Client{
-		Transport: &http.Transport{MaxIdleConnsPerHost: 32, IdleConnTimeout: 90 * time.Second},
+		Transport: &http.Transport{DialContext: dialer.DialContext, MaxIdleConnsPerHost: 32, IdleConnTimeout: 90 * time.Second},
 	}}
 }
 

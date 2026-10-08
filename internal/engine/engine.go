@@ -35,7 +35,14 @@ type StreamRT struct {
 type CampaignRT struct {
 	model.Campaign
 	Forced, Regular, Default []*StreamRT
+	// users are the owner and everyone holding an edit share: the people
+	// allowed to run this campaign on their domains and postback keys.
+	users map[int64]bool
 }
+
+// UsableBy reports whether a user may attach the campaign to their own
+// domains and conversion keys.
+func (c *CampaignRT) UsableBy(userID int64) bool { return c.users[userID] }
 
 type DomainRT struct {
 	model.Domain
@@ -128,6 +135,10 @@ func (e *Engine) Reload(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	shares, err := e.Store.Shares(ctx)
+	if err != nil {
+		return err
+	}
 
 	s := &Snapshot{Settings: st, Domains: map[string]*DomainRT{}, ByAlias: map[string]*CampaignRT{},
 		ByID: map[int64]*CampaignRT{}, Whitepages: map[int64]*model.Whitepage{},
@@ -144,10 +155,15 @@ func (e *Engine) Reload(ctx context.Context) error {
 		s.WhitepageKeys[pages[i].Key] = &pages[i]
 	}
 	for i := range campaigns {
-		c := &CampaignRT{Campaign: campaigns[i]}
+		c := &CampaignRT{Campaign: campaigns[i], users: map[int64]bool{campaigns[i].OwnerID: true}}
 		s.ByID[c.ID] = c
 		if c.Enabled {
 			s.ByAlias[strings.ToLower(c.Alias)] = c
+		}
+	}
+	for _, sh := range shares {
+		if c := s.ByID[sh.CampaignID]; c != nil && sh.Access == "edit" {
+			c.users[sh.UserID] = true
 		}
 	}
 	for i := range streams {
@@ -178,7 +194,7 @@ func (e *Engine) Reload(ctx context.Context) error {
 	for i := range domains {
 		d := &DomainRT{Domain: domains[i]}
 		if d.CampaignID != nil {
-			if c := s.ByID[*d.CampaignID]; c != nil && c.Enabled {
+			if c := s.ByID[*d.CampaignID]; c != nil && c.Enabled && c.UsableBy(d.OwnerID) {
 				d.Campaign = c
 			}
 		}

@@ -12,11 +12,79 @@ type User struct {
 	PasswordHash string `db:"password_hash" json:"-"`
 	TOTPSecret   string `db:"totp_secret" json:"-"`
 	TOTPEnabled  bool   `db:"totp_enabled" json:"totp_enabled"`
+	Role         string `db:"role" json:"role"` // admin | user
+	Enabled      bool   `db:"enabled" json:"enabled"`
 }
 
+const (
+	RoleAdmin = "admin"
+	RoleUser  = "user"
+)
+
+func (u *User) IsAdmin() bool { return u.Role == RoleAdmin }
+
+// Campaign access levels, lowest to highest. A share grants one of the first
+// three; the owner and admins always have AccessOwner.
+const (
+	AccessNone  = 0
+	AccessStats = 1 // reports, clicks and conversions only
+	AccessRead  = 2 // plus the campaign's configuration, read-only
+	AccessEdit  = 3 // plus changing streams and settings
+	AccessOwner = 4 // plus sharing and deleting
+)
+
+var accessNames = map[string]int{"stats": AccessStats, "read": AccessRead, "edit": AccessEdit}
+
+// ParseAccess maps a share level name to its rank; ok is false for unknown names.
+func ParseAccess(name string) (int, bool) {
+	a, ok := accessNames[name]
+	return a, ok
+}
+
+// AccessName is the inverse of ParseAccess, with "owner" for AccessOwner.
+func AccessName(a int) string {
+	switch a {
+	case AccessStats:
+		return "stats"
+	case AccessRead:
+		return "read"
+	case AccessEdit:
+		return "edit"
+	case AccessOwner:
+		return "owner"
+	}
+	return ""
+}
+
+// Share grants a user access to someone else's campaign.
+type Share struct {
+	CampaignID int64  `db:"campaign_id" json:"campaign_id"`
+	UserID     int64  `db:"user_id" json:"user_id"`
+	Access     string `db:"access" json:"access"`
+	Username   string `db:"username" json:"username"`
+}
+
+// Owned is implemented by every per-user entity.
+type Owned interface {
+	Owner() int64
+	SetOwner(int64)
+}
+
+func (d *Domain) Owner() int64           { return d.OwnerID }
+func (d *Domain) SetOwner(id int64)      { d.OwnerID = id }
+func (g *DomainGroup) Owner() int64      { return g.OwnerID }
+func (g *DomainGroup) SetOwner(id int64) { g.OwnerID = id }
+func (c *Campaign) Owner() int64         { return c.OwnerID }
+func (c *Campaign) SetOwner(id int64)    { c.OwnerID = id }
+func (w *Whitepage) Owner() int64        { return w.OwnerID }
+func (w *Whitepage) SetOwner(id int64)   { w.OwnerID = id }
+func (k *ConvKey) Owner() int64          { return k.OwnerID }
+func (k *ConvKey) SetOwner(id int64)     { k.OwnerID = id }
+
 type DomainGroup struct {
-	ID   int64  `db:"id" json:"id"`
-	Name string `db:"name" json:"name"`
+	ID      int64  `db:"id" json:"id"`
+	OwnerID int64  `db:"owner_id" json:"owner_id"`
+	Name    string `db:"name" json:"name"`
 }
 
 // Domain TLS modes.
@@ -35,6 +103,7 @@ const (
 
 type Domain struct {
 	ID           int64      `db:"id" json:"id"`
+	OwnerID      int64      `db:"owner_id" json:"owner_id"`
 	Name         string     `db:"name" json:"name"`
 	GroupID      *int64     `db:"group_id" json:"group_id"`
 	CampaignID   *int64     `db:"campaign_id" json:"campaign_id"` // campaign served on "/"
@@ -50,7 +119,12 @@ type Domain struct {
 }
 
 type Campaign struct {
-	ID          int64     `db:"id" json:"id"`
+	ID      int64 `db:"id" json:"id"`
+	OwnerID int64 `db:"owner_id" json:"owner_id"`
+	// Access and OwnerName describe the campaign from the viewer's side; they
+	// are filled in by the API, not stored.
+	Access      string    `db:"-" json:"access,omitempty"`
+	OwnerName   string    `db:"-" json:"owner_name,omitempty"`
 	Name        string    `db:"name" json:"name"`
 	Alias       string    `db:"alias" json:"alias"`
 	Token       string    `db:"token" json:"token"` // secret for the PHP integration
@@ -96,6 +170,7 @@ type Stream struct {
 
 type Whitepage struct {
 	ID         int64     `db:"id" json:"id"`
+	OwnerID    int64     `db:"owner_id" json:"owner_id"`
 	Name       string    `db:"name" json:"name"`
 	Key        string    `db:"key" json:"key"`   // public asset path segment
 	Kind       string    `db:"kind" json:"kind"` // html | php
@@ -116,6 +191,7 @@ const (
 
 type ConvKey struct {
 	ID             int64     `db:"id" json:"id"`
+	OwnerID        int64     `db:"owner_id" json:"owner_id"`
 	Name           string    `db:"name" json:"name"`
 	Key            string    `db:"key" json:"key"`
 	Enabled        bool      `db:"enabled" json:"enabled"`

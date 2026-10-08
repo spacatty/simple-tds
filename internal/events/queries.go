@@ -28,8 +28,13 @@ type Query struct {
 	ClickID    string
 	Bots       string            // "" | only | exclude
 	Params     map[string]string // conversion postback params, exact match
-	Limit      int
-	Offset     int
+	// Scoped limits results to Campaigns (and, for conversions, to events
+	// received through Keys). Unset means unrestricted.
+	Scoped    bool
+	Campaigns []uint32
+	Keys      []uint32
+	Limit     int
+	Offset    int
 }
 
 type dim struct {
@@ -131,8 +136,23 @@ func (q *Query) base() *where {
 	return w
 }
 
+// idList renders ids for an IN (...) clause; an empty list matches nothing.
+func idList(ids []uint32) string {
+	if len(ids) == 0 {
+		return "NULL"
+	}
+	parts := make([]string, len(ids))
+	for i, id := range ids {
+		parts[i] = strconv.FormatUint(uint64(id), 10)
+	}
+	return strings.Join(parts, ",")
+}
+
 func (q *Query) clickWhere() *where {
 	w := q.base()
+	if q.Scoped {
+		w.add("campaign_id IN (" + idList(q.Campaigns) + ")")
+	}
 	switch q.Bots {
 	case "only":
 		w.add("is_bot = 1")
@@ -147,6 +167,9 @@ func (q *Query) clickWhere() *where {
 
 func (q *Query) convWhere() *where {
 	w := q.base()
+	if q.Scoped {
+		w.add("(campaign_id IN (" + idList(q.Campaigns) + ") OR key_id IN (" + idList(q.Keys) + "))")
+	}
 	if q.KeyID != 0 {
 		w.add("key_id = ?", q.KeyID)
 	}
@@ -442,9 +465,10 @@ func (db *DB) ClickByID(ctx context.Context, id string, campaignID uint32, at ti
 	return scanClick(rows)
 }
 
-// LastClickByIP finds the most recent human click from ip since the given time.
-func (db *DB) LastClickByIP(ctx context.Context, ip string, since time.Time) (*Click, error) {
-	rows, err := db.conn.Query(ctx, "SELECT "+lookupCols+" FROM clicks WHERE ip = ? AND ts >= ? AND is_bot = 0 ORDER BY ts DESC LIMIT 1", ip, since)
+// LastClickByIP finds the most recent human click from ip since the given
+// time, among the given campaigns.
+func (db *DB) LastClickByIP(ctx context.Context, ip string, since time.Time, campaigns []uint32) (*Click, error) {
+	rows, err := db.conn.Query(ctx, "SELECT "+lookupCols+" FROM clicks WHERE campaign_id IN ("+idList(campaigns)+") AND ip = ? AND ts >= ? AND is_bot = 0 ORDER BY ts DESC LIMIT 1", ip, since)
 	if err != nil {
 		return nil, err
 	}

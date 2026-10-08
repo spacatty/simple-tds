@@ -46,6 +46,9 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 	if _, err := pool.Exec(ctx, schema); err != nil {
 		return nil, fmt.Errorf("postgres schema: %w", err)
 	}
+	if _, err := pool.Exec(ctx, migrations); err != nil {
+		return nil, fmt.Errorf("postgres migrations: %w", err)
+	}
 	return s, s.seed(ctx)
 }
 
@@ -107,6 +110,43 @@ CREATE TABLE IF NOT EXISTS integrations (
   cache_minutes int NOT NULL DEFAULT 60, mapping jsonb NOT NULL DEFAULT '{}');
 `
 
+// migrations bring databases created by earlier versions up to date. Every
+// statement is safe to run repeatedly.
+const migrations = `
+ALTER TABLE users ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'user';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS enabled boolean NOT NULL DEFAULT true;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS owner_id bigint REFERENCES users(id);
+ALTER TABLE domains ADD COLUMN IF NOT EXISTS owner_id bigint REFERENCES users(id);
+ALTER TABLE domain_groups ADD COLUMN IF NOT EXISTS owner_id bigint REFERENCES users(id);
+ALTER TABLE whitepages ADD COLUMN IF NOT EXISTS owner_id bigint REFERENCES users(id);
+ALTER TABLE conv_keys ADD COLUMN IF NOT EXISTS owner_id bigint REFERENCES users(id);
+ALTER TABLE domain_groups DROP CONSTRAINT IF EXISTS domain_groups_name_key;
+CREATE UNIQUE INDEX IF NOT EXISTS domain_groups_owner_name ON domain_groups(owner_id, name);
+CREATE TABLE IF NOT EXISTS campaign_shares (
+  campaign_id bigint NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+  user_id bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  access text NOT NULL,
+  PRIMARY KEY (campaign_id, user_id));
+`
+
+// OwnedTables are the tables whose rows belong to a user.
+var OwnedTables = []string{"campaigns", "domains", "domain_groups", "whitepages", "conv_keys"}
+
+// AdoptOrphans makes sure there is an admin and that every row has an owner.
+// Installations that predate multi-user support had neither.
+func (s *Store) AdoptOrphans(ctx context.Context) error {
+	if _, err := s.Pool.Exec(ctx, `UPDATE users SET role='admin' WHERE id=(SELECT min(id) FROM users)
+		AND NOT EXISTS (SELECT 1 FROM users WHERE role='admin')`); err != nil {
+		return err
+	}
+	for _, t := range OwnedTables {
+		if _, err := s.Pool.Exec(ctx, "UPDATE "+t+" SET owner_id=(SELECT min(id) FROM users WHERE role='admin') WHERE owner_id IS NULL"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ---- generic CRUD over `db`-tagged structs ---------------------------------
 
 // Columns the database fills in itself.
@@ -119,7 +159,7 @@ func columns(v any) (cols []string, vals []any) {
 	rt := rv.Type()
 	for i := 0; i < rt.NumField(); i++ {
 		tag := rt.Field(i).Tag.Get("db")
-		if tag == "" || generated[tag] {
+		if tag == "" || tag == "-" || generated[tag] {
 			continue
 		}
 		f := rv.Field(i)
@@ -272,6 +312,9 @@ func (s *Store) SessionUser(ctx context.Context, hash string) (*model.User, time
 		return nil, exp, mapErr(err)
 	}
 	u, err := Get[model.User](ctx, s, "users", uid)
+	if err == nil && !u.Enabled {
+		return nil, exp, ErrNotFound
+	}
 	return u, exp, err
 }
 
@@ -281,6 +324,45 @@ func (s *Store) DeleteSession(ctx context.Context, hash string) {
 
 func (s *Store) DeleteUserSessions(ctx context.Context, userID int64) {
 	s.Pool.Exec(ctx, "DELETE FROM sessions WHERE user_id=$1", userID)
+}
+
+// ---- campaign shares --------------------------------------------------------
+
+const shareSelect = `SELECT s.campaign_id, s.user_id, s.access, u.username
+	FROM campaign_shares s JOIN users u ON u.id = s.user_id`
+
+func (s *Store) shares(ctx context.Context, where string, args ...any) ([]model.Share, error) {
+	rows, err := s.Pool.Query(ctx, shareSelect+where, args...)
+	if err != nil {
+		return nil, err
+	}
+	out, err := pgx.CollectRows(rows, pgx.RowToStructByName[model.Share])
+	if out == nil {
+		out = []model.Share{}
+	}
+	return out, err
+}
+
+// Shares returns every share (for the runtime snapshot).
+func (s *Store) Shares(ctx context.Context) ([]model.Share, error) { return s.shares(ctx, "") }
+
+func (s *Store) CampaignShares(ctx context.Context, campaignID int64) ([]model.Share, error) {
+	return s.shares(ctx, " WHERE s.campaign_id=$1 ORDER BY u.username", campaignID)
+}
+
+func (s *Store) UserShares(ctx context.Context, userID int64) ([]model.Share, error) {
+	return s.shares(ctx, " WHERE s.user_id=$1", userID)
+}
+
+// SetShare grants, changes or (with an empty access) revokes a share.
+func (s *Store) SetShare(ctx context.Context, campaignID, userID int64, access string) error {
+	if access == "" {
+		_, err := s.Pool.Exec(ctx, "DELETE FROM campaign_shares WHERE campaign_id=$1 AND user_id=$2", campaignID, userID)
+		return err
+	}
+	_, err := s.Pool.Exec(ctx, `INSERT INTO campaign_shares(campaign_id,user_id,access) VALUES($1,$2,$3)
+		ON CONFLICT (campaign_id,user_id) DO UPDATE SET access=EXCLUDED.access`, campaignID, userID, access)
+	return mapErr(err)
 }
 
 // ---- domain helpers ---------------------------------------------------------

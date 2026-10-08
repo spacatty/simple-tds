@@ -70,7 +70,7 @@ func ensureAdmin(ctx context.Context, st *store.Store) error {
 	if err != nil {
 		return err
 	}
-	if _, err := st.Pool.Exec(ctx, "INSERT INTO users(username, password_hash) VALUES($1,$2)", user, string(hash)); err != nil {
+	if _, err := st.Pool.Exec(ctx, "INSERT INTO users(username, password_hash, role) VALUES($1,$2,'admin')", user, string(hash)); err != nil {
 		return err
 	}
 	if generated {
@@ -111,6 +111,9 @@ func run() error {
 		return err
 	}
 	if err := ensureAdmin(ctx, st); err != nil {
+		return err
+	}
+	if err := st.AdoptOrphans(ctx); err != nil {
 		return err
 	}
 	ev, err := events.Open(ctx, events.Config{

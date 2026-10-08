@@ -153,6 +153,11 @@ func (e *Engine) Postback(in *PostbackInput) (int, string) {
 	case model.AttrClickID:
 		id := first(q, clickIDParams...)
 		ref, err := e.parseClickID(id)
+		// A key only converts clicks of campaigns its owner runs: a click id
+		// lifted from someone else's traffic is as good as forged.
+		if c := snap.ByID[int64(ref.CampaignID)]; err == nil && (c == nil || !c.UsableBy(key.OwnerID)) {
+			err = errBadClickID
+		}
 		switch {
 		case err == nil && now.Sub(ref.At) <= window:
 			conv.ClickID, conv.CampaignID, conv.StreamID = id, ref.CampaignID, ref.StreamID
@@ -171,7 +176,13 @@ func (e *Engine) Postback(in *PostbackInput) (int, string) {
 		if reported, err := netip.ParseAddr(q.Get("ip")); err == nil {
 			target = reported.Unmap()
 		}
-		c, err := e.Events.LastClickByIP(in.Ctx, target.String(), now.Add(-window))
+		var mine []uint32
+		for id, c := range snap.ByID {
+			if c.UsableBy(key.OwnerID) {
+				mine = append(mine, uint32(id))
+			}
+		}
+		c, err := e.Events.LastClickByIP(in.Ctx, target.String(), now.Add(-window), mine)
 		if err != nil {
 			slog.Warn("postback click lookup failed", "err", err)
 		}

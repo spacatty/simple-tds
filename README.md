@@ -75,6 +75,35 @@ Forgot the password:
 docker compose exec tds tds reset-password admin
 ```
 
+## Users and sharing
+
+- **Admins** manage users (and can make other users admins), global settings,
+  anti-bot lists and integrations, and can see and change everything.
+- **Users** own what they create — campaigns, domains, groups, whitepages,
+  conversion keys — and see nothing of anyone else's. Reports, clicks and
+  conversions are limited the same way.
+- A **campaign** can be shared with other users (Campaign → Sharing):
+
+  | Level | Can do |
+  |---|---|
+  | Stats only | reports, clicks and conversions of that campaign; no configuration |
+  | Read-only | also see streams and settings, change nothing |
+  | Can edit | change streams and settings, and run the campaign on their own domains and postback keys |
+
+  Only the owner (or an admin) can share or delete a campaign. Domains,
+  whitepages and keys are not shareable.
+
+The separation also holds for traffic: a campaign link works only on domains
+of its owner (or of someone with edit access), and a postback key only
+converts clicks of campaigns its owner runs. Only admins can serve the panel
+on a domain.
+
+Deleting a user hands everything they owned to the admin who deleted them, so
+live traffic is not interrupted. Disabling a user only blocks their login.
+
+The first account is an admin. Installations upgraded from a single-user
+version keep working: the existing account becomes admin and owns everything.
+
 ## Campaigns and streams
 
 A campaign is reachable as `https://domain/<alias>` on every linked domain, and

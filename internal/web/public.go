@@ -136,7 +136,7 @@ func (s *Server) servePublic(w http.ResponseWriter, r *http.Request) {
 		s.serveAsset(w, r, d, snap)
 	case strings.HasPrefix(path, jsPrefix):
 		alias := strings.TrimSuffix(strings.TrimPrefix(path, jsPrefix), ".js")
-		if c := snap.ByAlias[strings.ToLower(alias)]; c != nil {
+		if c := snap.ByAlias[strings.ToLower(alias)]; c != nil && c.UsableBy(d.OwnerID) {
 			s.serveJS(w, r, d, c, snap)
 		} else {
 			stock404(w)
@@ -150,8 +150,10 @@ func (s *Server) servePublic(w http.ResponseWriter, r *http.Request) {
 		}
 		s.serveClick(w, r, d, d.Campaign, snap)
 	default:
+		// A campaign answers only on domains of people who run it, so one
+		// user's links never work on another user's domain.
 		alias, _, _ := strings.Cut(path[1:], "/")
-		if c := snap.ByAlias[strings.ToLower(alias)]; c != nil {
+		if c := snap.ByAlias[strings.ToLower(alias)]; c != nil && c.UsableBy(d.OwnerID) {
 			s.serveClick(w, r, d, c, snap)
 		} else {
 			stock404(w)

@@ -184,7 +184,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		hash = u.PasswordHash
 	}
-	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(in.Password)) != nil || err != nil {
+	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(in.Password)) != nil || err != nil || !u.Enabled {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "wrong username or password"})
 		return
 	}

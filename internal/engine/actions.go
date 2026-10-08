@@ -346,7 +346,7 @@ func init() {
 			}
 			return func(v *Visit) (*Result, error) {
 				target := e.Snap().ByID[c.ID]
-				if target == nil || !target.Enabled {
+				if target == nil || !target.Enabled || !target.UsableBy(v.Campaign.OwnerID) {
 					return nil, fmt.Errorf("campaign %d is not available", c.ID)
 				}
 				if v.depth >= 3 {

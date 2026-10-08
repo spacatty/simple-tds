@@ -63,16 +63,20 @@ const maxUpload = 256 << 20
 
 func (s *Server) whitepageRoutes(r chi.Router) {
 	r.Get("/whitepages", handler(func(r *http.Request) (any, error) {
-		return store.List[model.Whitepage](r.Context(), s.st, "whitepages", "id DESC")
+		all, err := store.List[model.Whitepage](r.Context(), s.st, "whitepages", "id DESC")
+		return visibleOwned(r.Context(), all), err
 	}))
 	r.Post("/whitepages", handler(s.whitepageCreate))
 	r.Put("/whitepages/{id}", handler(s.whitepageUpdate))
 	r.Post("/whitepages/{id}/upload", handler(s.whitepageUpload))
 	r.Get("/whitepages/{id}/files", handler(func(r *http.Request) (any, error) {
+		if _, err := ownedGet[model.Whitepage](r.Context(), s, "whitepages", pathID(r)); err != nil {
+			return nil, err
+		}
 		return s.pages.Files(pathID(r)), nil
 	}))
 	r.Get("/whitepages/{id}/preview-url", handler(func(r *http.Request) (any, error) {
-		if _, err := store.Get[model.Whitepage](r.Context(), s.st, "whitepages", pathID(r)); err != nil {
+		if _, err := ownedGet[model.Whitepage](r.Context(), s, "whitepages", pathID(r)); err != nil {
 			return nil, err
 		}
 		exp := time.Now().Add(2 * time.Hour).Unix()
@@ -102,7 +106,7 @@ func (s *Server) whitepageCreate(r *http.Request) (any, error) {
 		return nil, err
 	}
 	wp := model.Whitepage{Name: strings.TrimSpace(r.FormValue("name")), Note: r.FormValue("note"),
-		InjectBase: r.FormValue("inject_base") != "false", Key: strings.ToLower(randToken(9)), Kind: "html", Entry: "index.html"}
+		InjectBase: r.FormValue("inject_base") != "false", OwnerID: currentUser(r).ID, Key: strings.ToLower(randToken(9)), Kind: "html", Entry: "index.html"}
 	if wp.Name == "" {
 		wp.Name = strings.TrimSuffix(name, ".zip")
 	}
@@ -123,7 +127,7 @@ func (s *Server) whitepageCreate(r *http.Request) (any, error) {
 
 func (s *Server) whitepageUpload(r *http.Request) (any, error) {
 	ctx := r.Context()
-	wp, err := store.Get[model.Whitepage](ctx, s.st, "whitepages", pathID(r))
+	wp, err := ownedGet[model.Whitepage](ctx, s, "whitepages", pathID(r))
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +146,7 @@ func (s *Server) whitepageUpload(r *http.Request) (any, error) {
 
 func (s *Server) whitepageUpdate(r *http.Request) (any, error) {
 	ctx := r.Context()
-	wp, err := store.Get[model.Whitepage](ctx, s.st, "whitepages", pathID(r))
+	wp, err := ownedGet[model.Whitepage](ctx, s, "whitepages", pathID(r))
 	if err != nil {
 		return nil, err
 	}
@@ -185,6 +189,9 @@ func (s *Server) whitepageUpdate(r *http.Request) (any, error) {
 func (s *Server) whitepageDelete(r *http.Request) (any, error) {
 	ctx := r.Context()
 	id := pathID(r)
+	if _, err := ownedGet[model.Whitepage](ctx, s, "whitepages", id); err != nil {
+		return nil, err
+	}
 	// Refuse while a stream still serves it: that stream would start failing.
 	streams, err := store.List[model.Stream](ctx, s.st, "streams", "id")
 	if err != nil {
@@ -210,8 +217,10 @@ func (s *Server) whitepageDelete(r *http.Request) (any, error) {
 var reAdminPath = regexp.MustCompile(`^[A-Za-z0-9_-]{3,64}$`)
 
 func (s *Server) dataRoutes(r chi.Router) {
-	r.Get("/settings", handler(func(r *http.Request) (any, error) { return s.st.Settings(r.Context()) }))
-	r.Put("/settings", handler(s.settingsSave))
+	// Global configuration and infrastructure are for administrators.
+	admin := r.With(s.requireAdmin)
+	admin.Get("/settings", handler(func(r *http.Request) (any, error) { return s.st.Settings(r.Context()) }))
+	admin.Put("/settings", handler(s.settingsSave))
 
 	r.Get("/meta", handler(s.meta))
 	r.Get("/system", handler(s.system))
@@ -220,22 +229,25 @@ func (s *Server) dataRoutes(r chi.Router) {
 		if err := readJSON(r, &in); err != nil {
 			return nil, err
 		}
+		if _, err := s.campaign(r.Context(), in.CampaignID, model.AccessRead); err != nil {
+			return nil, err
+		}
 		res, err := s.eng.Simulate(r.Context(), in)
 		if err != nil {
 			return nil, bad(err.Error())
 		}
 		return res, nil
 	}))
-	r.Post("/cache/purge", handler(func(*http.Request) (any, error) { s.eng.PurgeRemoteCache(); return nil, nil }))
+	admin.Post("/cache/purge", handler(func(*http.Request) (any, error) { s.eng.PurgeRemoteCache(); return nil, nil }))
 
-	r.Get("/geo/status", handler(func(*http.Request) (any, error) { return s.geo.Status(), nil }))
-	r.Post("/geo/refresh", handler(func(r *http.Request) (any, error) {
+	admin.Get("/geo/status", handler(func(*http.Request) (any, error) { return s.geo.Status(), nil }))
+	admin.Post("/geo/refresh", handler(func(r *http.Request) (any, error) {
 		if err := s.geo.Refresh(r.Context(), s.eng.Snap().Settings, true); err != nil {
 			return nil, bad(err.Error())
 		}
 		return s.geo.Status(), nil
 	}))
-	r.Post("/geo/upload", handler(func(r *http.Request) (any, error) {
+	admin.Post("/geo/upload", handler(func(r *http.Request) (any, error) {
 		r.Body = http.MaxBytesReader(nil, r.Body, 1<<30)
 		f, _, err := r.FormFile("file")
 		if err != nil {
@@ -253,6 +265,9 @@ func (s *Server) dataRoutes(r chi.Router) {
 		if err != nil {
 			return nil, err
 		}
+		if err := s.scope(r.Context(), &q); err != nil {
+			return nil, err
+		}
 		group := r.URL.Query().Get("group")
 		if group == "" {
 			group = "day"
@@ -268,6 +283,9 @@ func (s *Server) dataRoutes(r chi.Router) {
 		if err != nil {
 			return nil, err
 		}
+		if err := s.scope(r.Context(), &q); err != nil {
+			return nil, err
+		}
 		rows, total, err := s.ev.Clicks(r.Context(), q)
 		if err != nil {
 			return nil, err
@@ -275,7 +293,7 @@ func (s *Server) dataRoutes(r chi.Router) {
 		return map[string]any{"rows": rows, "total": total}, nil
 	}))
 	r.Get("/conversions", s.conversions)
-	r.Get("/postbacks/rejected", handler(func(*http.Request) (any, error) {
+	admin.Get("/postbacks/rejected", handler(func(*http.Request) (any, error) {
 		items, total := s.eng.Reject.List()
 		return map[string]any{"rows": items, "total": total}, nil
 	}))
@@ -322,6 +340,10 @@ func parseQuery(r *http.Request) (events.Query, error) {
 func (s *Server) conversions(w http.ResponseWriter, r *http.Request) {
 	q, err := parseQuery(r)
 	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if err := s.scope(r.Context(), &q); err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -447,6 +469,9 @@ func (s *Server) system(r *http.Request) (any, error) {
 	}
 	if err := s.ev.Ping(ctx); err != nil {
 		health["clickhouse"] = err.Error()
+	}
+	if !currentUser(r).IsAdmin() {
+		return map[string]any{"php_enabled": s.pages.FCGIAddr != "", "health": health}, nil
 	}
 	return map[string]any{
 		"stats":  s.eng.Stats(),
