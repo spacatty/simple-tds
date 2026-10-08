@@ -14,8 +14,9 @@ import Stages from './Stages'
 import { AccessBadge } from './Campaigns'
 import { downloadText } from '../format'
 
-type Tab = 'settings' | 'link' | 'funnel' | 'integration' | 'sharing' | 'simulator'
+type Tab = 'streams' | 'settings' | 'link' | 'funnel' | 'integration' | 'sharing' | 'simulator'
 const TABS: { value: Tab; label: string }[] = [
+  { value: 'streams', label: 'Streams' },
   { value: 'settings', label: 'Settings' },
   { value: 'link', label: 'Link' },
   { value: 'funnel', label: 'Funnel' },
@@ -53,7 +54,9 @@ export default function CampaignEditor() {
   const owner = isOwner(campaign)
   // Integration snippets carry the campaign secret (editors only); sharing is the owner's business.
   const tabs = TABS.filter((t) => (t.value === 'integration' ? editable : t.value === 'sharing' ? owner : true))
-  const tab: Tab = tabs.some((t) => t.value === params.tab) ? (params.tab as Tab) : 'settings'
+  // The tab lives in the query (?tab=settings) so reload and Back keep it; /campaigns/1/<tab> links from before still work.
+  const wanted = search.get('tab') ?? params.tab ?? 'streams'
+  const tab: Tab = tabs.some((t) => t.value === wanted) ? (wanted as Tab) : 'streams'
 
   // The settings form lives here so the header's Save button can submit it.
   const [form, setForm] = useState<Form | null>(null)
@@ -66,6 +69,13 @@ export default function CampaignEditor() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campaign?.id])
   const dirty = !!campaign && !!form && JSON.stringify(form) !== JSON.stringify(formOf(campaign))
+
+  useEffect(() => {
+    if (!dirty) return
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault()
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [dirty])
 
   // One domain choice shared by the Link and Integration tabs.
   const sortedDomains = useMemo(() => [...(domains.data ?? [])].sort((a, b) => Number(b.status === 'ok') - Number(a.status === 'ok') || a.name.localeCompare(b.name)), [domains.data])
@@ -95,10 +105,24 @@ export default function CampaignEditor() {
       toast.ok('Campaign saved')
     } catch (e) {
       setFormError(errMsg(e))
-      nav(`/campaigns/${id}/settings`, { replace: true })
+      nav(`/campaigns/${id}?tab=settings`, { replace: true })
     } finally {
       setSaving(false)
     }
+  }
+  /** Runs go() unless the Settings form has unsaved edits the user wants to keep. */
+  const leave = async (go: () => void) => {
+    if (tab === 'settings' && dirty && campaign) {
+      const ok = await confirmDialog({ title: 'Discard unsaved settings?', confirmLabel: 'Discard', message: 'The campaign settings you changed have not been saved.' })
+      if (!ok) return
+      setForm(formOf(campaign))
+    }
+    go()
+  }
+  const goTab = (t: Tab) => {
+    if (t === tab) return
+    // Switching tabs also drops the simulator prefill parameters.
+    leave(() => nav(`/campaigns/${id}${t === 'streams' ? '' : '?tab=' + t}`))
   }
   const setEnabled = async (enabled: boolean) => {
     try {
@@ -188,9 +212,9 @@ export default function CampaignEditor() {
   return (
     <div className="ce">
       <header className="ce-head">
-        <Link to="/campaigns" className="icon-btn" title="Back to campaigns" aria-label="Back to campaigns">
+        <button className="icon-btn" onClick={() => leave(() => nav('/campaigns'))} title="Back to campaigns" aria-label="Back to campaigns">
           <ArrowLeft size={17} />
-        </Link>
+        </button>
         <div className="ce-title">
           <h1 className="ellipsis">{form.name || campaign.name}</h1>
           <AccessBadge c={campaign} />
@@ -198,7 +222,8 @@ export default function CampaignEditor() {
         </div>
         <span className="grow" />
         <Toggle checked={campaign.enabled} disabled={!editable} onChange={setEnabled} label={campaign.enabled ? 'Enabled' : 'Disabled'} />
-        {editable && (
+        {/* Save belongs to the Settings form, so it only shows there. */}
+        {editable && tab === 'settings' && (
           <button className="btn primary" disabled={saving || !dirty || !form.name.trim()} onClick={save} title={dirty ? 'Save the campaign settings' : 'No unsaved settings'}>
             <Save size={14} /> {saving ? 'Saving…' : dirty ? 'Save' : 'Saved'}
           </button>
@@ -213,76 +238,107 @@ export default function CampaignEditor() {
         )}
       </header>
 
-      <div className="ce-body">
-        <aside className="ce-left">
-          <div className="ce-tabs" role="tablist">
-            {tabs.map((t) => (
-              <button key={t.value} role="tab" aria-selected={t.value === tab} className={t.value === tab ? 'active' : ''} onClick={() => nav(`/campaigns/${id}/${t.value}`, { replace: true })}>
-                {t.label}
-                {t.value === 'settings' && dirty && <i className="dot warn" title="Unsaved changes" />}
-              </button>
-            ))}
+      <div className="ce-tabs" role="tablist">
+        {tabs.map((t) => (
+          <button key={t.value} role="tab" aria-selected={t.value === tab} className={t.value === tab ? 'active' : ''} onClick={() => goTab(t.value)}>
+            {t.label}
+            {t.value === 'settings' && dirty && <i className="dot warn" title="Unsaved changes" />}
+          </button>
+        ))}
+      </div>
+
+      <div className={'ce-content' + (tab === 'streams' ? ' wide' : '')}>
+        {!editable && (
+          <Notice>
+            <b>Read-only.</b> {campaign.owner_name || 'The owner'} shared this campaign with you for viewing: you can inspect it and use the simulator, but not change anything.
+          </Notice>
+        )}
+        {editable && !owner && tab !== 'streams' && (
+          <Notice>
+            Shared by <b>{campaign.owner_name || 'its owner'}</b> with edit access. Only the owner can share or delete it.
+          </Notice>
+        )}
+
+        {/* Streams take the whole width; the other tabs are forms at a readable width. */}
+        {tab === 'streams' && <StreamFunnel key={id} campaign={campaign} campaigns={camps.data ?? []} whitepages={wps.data ?? []} presets={presets.data ?? []} readOnly={!editable} range={range} setRange={setRange} />}
+
+        {tab === 'settings' && (
+          <div className="ce-form card">
+            <div className="card-body">
+              <SettingsForm form={form} setForm={setForm} campaign={campaign} readOnly={!editable} error={formError} setEnabled={setEnabled} />
+              {editable && (
+                <div className="form-actions">
+                  <button className="btn primary" disabled={saving || !dirty || !form.name.trim()} onClick={save}>
+                    <Save size={14} /> {saving ? 'Saving…' : 'Save changes'}
+                  </button>
+                  {dirty && (
+                    <button className="btn ghost" onClick={() => setForm(formOf(campaign))}>
+                      Discard
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-          <div className="ce-pane">
-            {!editable && (
-              <Notice>
-                <b>Read-only.</b> {campaign.owner_name || 'The owner'} shared this campaign with you for viewing.
-              </Notice>
-            )}
-            {editable && !owner && (
-              <Notice>
-                Shared by <b>{campaign.owner_name || 'its owner'}</b> with edit access. Only the owner can share or delete it.
-              </Notice>
-            )}
+        )}
 
-            {tab === 'settings' && <SettingsForm form={form} setForm={setForm} campaign={campaign} readOnly={!editable} error={formError} setEnabled={setEnabled} />}
-
-            {tab === 'link' && (
-              <div>
-                {domainSelect}
-                <Field label="Campaign link" help="Send traffic here. Append your own parameters: ?sub1=..&sub2=..&keyword=..">
+        {tab === 'link' && (
+          <div className="ce-form card">
+            <div className="card-body">
+              {domainSelect}
+              <Field label="Campaign link" help="Send traffic here. Append your own parameters: ?sub1=..&sub2=..&keyword=..">
+                <div className="url-line">
+                  <code>{`https://${domain || 'YOUR-DOMAIN'}/${campaign.alias}`}</code>
+                  <CopyButton text={`https://${domain || 'YOUR-DOMAIN'}/${campaign.alias}`} label="Copy" />
+                </div>
+              </Field>
+              {d && d.campaign_id === campaign.id && (
+                <Field label="Domain root" help="This campaign is the default campaign of the domain, so it also answers on “/”.">
                   <div className="url-line">
-                    <code>{`https://${domain || 'YOUR-DOMAIN'}/${campaign.alias}`}</code>
-                    <CopyButton text={`https://${domain || 'YOUR-DOMAIN'}/${campaign.alias}`} label="Copy" />
+                    <code>{`https://${d.name}/`}</code>
+                    <CopyButton text={`https://${d.name}/`} label="Copy" />
                   </div>
                 </Field>
-                {d && d.campaign_id === campaign.id && (
-                  <Field label="Domain root" help="This campaign is the default campaign of the domain, so it also answers on “/”.">
-                    <div className="url-line">
-                      <code>{`https://${d.name}/`}</code>
-                      <CopyButton text={`https://${d.name}/`} label="Copy" />
-                    </div>
-                  </Field>
-                )}
-                <div className="field-help">The link ID is generated by the server and cannot be chosen: a long random string cannot be guessed or enumerated.</div>
-                {editable && (
-                  <div className="form-actions">
-                    <button className="btn danger-outline" onClick={regenerate}>
-                      <RefreshCw size={14} /> Regenerate link
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {tab === 'funnel' && <Stages key={id} campaign={campaign} domain={domain} range={range} readOnly={!editable} onSaved={update} />}
-            {tab === 'integration' && editable && <IntegrationPane campaign={campaign} domain={domain} domainSelect={domainSelect} ready={!domains.loading} />}
-            {tab === 'sharing' && owner && <Sharing key={id} campaign={campaign} />}
-            {tab === 'simulator' && (
-              <Simulator
-                key={id + '|' + search.toString()}
-                campaign={campaign}
-                domains={domains.data ?? []}
-                stacked
-                prefill={{ ip: search.get('ip') ?? undefined, user_agent: search.get('ua') ?? undefined, language: search.get('lang') ?? undefined, referer: search.get('referer') ?? undefined, query: search.get('query') ?? undefined, domain: search.get('domain') ?? undefined }}
-              />
-            )}
+              )}
+              <div className="field-help">The link ID is generated by the server and cannot be chosen: a long random string cannot be guessed or enumerated.</div>
+              {editable && (
+                <div className="form-actions">
+                  <button className="btn danger-outline" onClick={regenerate}>
+                    <RefreshCw size={14} /> Regenerate link
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
-        </aside>
+        )}
 
-        <section className="ce-right">
-          <StreamFunnel key={id} campaign={campaign} campaigns={camps.data ?? []} whitepages={wps.data ?? []} presets={presets.data ?? []} readOnly={!editable} range={range} setRange={setRange} />
-        </section>
+        {tab === 'funnel' && (
+          <div className="ce-form">
+            <Stages key={id} campaign={campaign} domain={domain} range={range} readOnly={!editable} onSaved={update} />
+          </div>
+        )}
+        {tab === 'integration' && editable && (
+          <div className="ce-form card">
+            <div className="card-body">
+              <IntegrationPane campaign={campaign} domain={domain} domainSelect={domainSelect} ready={!domains.loading} />
+            </div>
+          </div>
+        )}
+        {tab === 'sharing' && owner && (
+          <div className="ce-form">
+            <Sharing key={id} campaign={campaign} />
+          </div>
+        )}
+        {tab === 'simulator' && (
+          <div className="ce-sim">
+            <Simulator
+              key={id + '|' + search.toString()}
+              campaign={campaign}
+              domains={domains.data ?? []}
+              prefill={{ ip: search.get('ip') ?? undefined, user_agent: search.get('ua') ?? undefined, language: search.get('lang') ?? undefined, referer: search.get('referer') ?? undefined, query: search.get('query') ?? undefined, domain: search.get('domain') ?? undefined }}
+            />
+          </div>
+        )}
       </div>
     </div>
   )
@@ -301,6 +357,7 @@ function SettingsForm({ form: f, setForm, campaign, readOnly, error, setEnabled 
   }
   return (
     <fieldset className="plain" disabled={readOnly}>
+      <div className="form-grid">
       <Field label="Name" error={!f.name.trim() ? 'Name is required' : ''}>
         <input className="input" value={f.name} onChange={(e) => set({ name: e.target.value })} />
       </Field>
@@ -331,11 +388,11 @@ function SettingsForm({ form: f, setForm, campaign, readOnly, error, setEnabled 
       <Field label="Uniqueness window, hours" help="A visitor (IP + User-Agent) counts as unique once per this period.">
         <NumberInput value={f.unique_hours} min={1} onChange={(unique_hours) => set({ unique_hours })} />
       </Field>
-      <Field label="Note">
+      <Field label="Note" className="span-2">
         <textarea className="input" rows={3} value={f.note} onChange={(e) => set({ note: e.target.value })} />
       </Field>
+      </div>
       {error && <div className="field-error">{error}</div>}
-      {!readOnly && <div className="field-help">Use Save in the header to store these settings.</div>}
     </fieldset>
   )
 }

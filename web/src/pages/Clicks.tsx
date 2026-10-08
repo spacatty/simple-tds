@@ -274,7 +274,7 @@ function ClickDetail({ r, campaign, stream, canSimulate }: { r: Row; campaign: s
     <div className="detail">
       <div className="detail-actions">
         {canSimulate && Number(r.campaign_id) > 0 && (
-          <Link className="btn small" to={`/campaigns/${str(r.campaign_id)}/simulator?${sim.toString()}`} title="Open the campaign's simulator prefilled with this click's IP, User-Agent, language, referrer and query">
+          <Link className="btn small" to={`/campaigns/${str(r.campaign_id)}?tab=simulator&${sim.toString()}`} title="Open the campaign's simulator prefilled with this click's IP, User-Agent, language, referrer and query">
             <FlaskConical size={13} /> Simulate this visitor
           </Link>
         )}

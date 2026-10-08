@@ -212,13 +212,25 @@ export default function StreamFunnel({
                   <span className="lane-node">{ki + 1}</span>
                   <h3>{LANE[kind].title}</h3>
                   <span className="count">{list.length}</span>
-                  <span className="muted grow ellipsis">
-                    {kind === 'regular' ? (campaign.rotation === 'weight' ? 'All matching streams take part in a weighted random draw.' : 'Checked top to bottom — the first stream whose filters match wins.') : LANE[kind].desc}
-                  </span>
                   {!readOnly && (
                     <button className="btn small ghost" onClick={() => add(kind)} title={'Add a ' + LANE[kind].add.toLowerCase()}>
                       <Plus size={14} /> Add
                     </button>
+                  )}
+                  <span className="muted grow ellipsis">
+                    {kind === 'regular' ? (campaign.rotation === 'weight' ? 'All matching streams take part in a weighted random draw.' : 'Checked top to bottom — the first stream whose filters match wins.') : LANE[kind].desc}
+                  </span>
+                  {/* Column titles for the stats of the cards below; the same grid as .scard-stats. */}
+                  {list.length > 0 && (
+                    <div className="lane-cols" aria-hidden="true">
+                      <span>Clicks</span>
+                      <span>Uniques</span>
+                      <span>Bots</span>
+                      <span>Conv.</span>
+                      <span>CR</span>
+                      <span>Revenue</span>
+                      <span>Share</span>
+                    </div>
                   )}
                 </header>
                 <div

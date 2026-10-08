@@ -2196,7 +2196,7 @@ fieldset.plain:disabled .chips-box {
   }
 }
 
-/* ---- campaign editor: two panes -------------------------------------------- */
+/* ---- campaign editor ------------------------------------------------------- */
 .ce {
   height: 100%;
   min-height: 0;
@@ -2208,9 +2208,8 @@ fieldset.plain:disabled .chips-box {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  padding: 9px 16px;
+  padding: 9px 22px 9px 14px;
   background: var(--surface);
-  border-bottom: 1px solid var(--border);
   flex: none;
 }
 .ce-title {
@@ -2221,36 +2220,28 @@ fieldset.plain:disabled .chips-box {
 }
 .ce-title h1 {
   font-size: 17px;
-  max-width: 42vw;
-}
-.ce-body {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: 360px minmax(0, 1fr);
-}
-.ce-left {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  background: var(--surface);
-  border-right: 1px solid var(--border);
+  max-width: 46vw;
 }
 .ce-tabs {
   display: flex;
-  flex-wrap: wrap;
   flex: none;
-  padding: 0 6px;
+  gap: 2px;
+  padding: 0 18px;
+  background: var(--surface);
   border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ce-tabs::-webkit-scrollbar {
+  display: none;
 }
 .ce-tabs button {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   border: 0;
   background: none;
-  padding: 10px 6px 8px;
-  font-size: 12.5px;
+  padding: 8px 12px 9px;
   font-weight: 600;
   color: var(--text-3);
   cursor: pointer;
@@ -2265,55 +2256,41 @@ fieldset.plain:disabled .chips-box {
   color: var(--accent-text);
   border-bottom-color: var(--accent);
 }
-.ce-pane {
+.ce-content {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 14px;
+  padding: 16px 22px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
-.ce-pane .notice {
-  margin-bottom: 12px;
+/* Streams use the full width; the toolbar sticks under the tab bar. */
+.ce-content.wide {
+  padding-top: 0;
+  gap: 0;
 }
-/* Cards reused inside the pane lose their chrome: the pane is the surface. */
-.ce-pane .card {
-  border: 0;
-  box-shadow: none;
-  background: none;
-  border-radius: 0;
+.ce-content.wide > .notice {
+  margin-top: 12px;
 }
-.ce-pane .card-head {
-  padding: 0 0 8px;
-  border: 0;
-  min-height: 0;
+/* Forms stay at a readable width instead of stretching edge to edge. */
+.ce-form {
+  width: 100%;
+  max-width: 860px;
 }
-.ce-pane .card-body {
-  padding: 0;
+.ce-sim {
+  width: 100%;
+  max-width: 1360px;
 }
-.ce-pane .stack > .card:not(:first-child) {
-  border-top: 1px solid var(--border);
-  padding-top: 14px;
-}
-.ce-right {
-  min-height: 0;
-  overflow: auto;
-  padding: 6px 18px 40px;
-}
-@media (max-width: 1000px) {
-  .ce {
-    height: auto;
+@media (max-width: 760px) {
+  .ce-head {
+    padding: 8px 12px;
   }
-  .ce-body {
-    grid-template-columns: minmax(0, 1fr);
+  .ce-tabs {
+    padding: 0 6px;
   }
-  .ce-left {
-    border-right: 0;
-    border-bottom: 1px solid var(--border);
-  }
-  .ce-pane {
-    max-height: 62vh;
-  }
-  .ce-right {
-    overflow: visible;
+  .ce-content {
+    padding: 12px 12px 32px;
   }
 }
 
@@ -2328,11 +2305,12 @@ fieldset.plain:disabled .chips-box {
   --kind: var(--default);
 }
 .funnel {
-  max-width: 1320px;
+  container-type: inline-size;
+  container-name: funnel;
 }
 .funnel-toolbar {
   position: sticky;
-  top: -6px;
+  top: 0;
   z-index: 6;
   display: flex;
   align-items: center;
@@ -2647,25 +2625,42 @@ fieldset.plain:disabled .chips-box {
   opacity: 0.45;
   cursor: not-allowed;
 }
+/* Stats are table columns: every card and the lane header share this grid, so numbers line up down the page. */
+.scard-stats,
+.lane-cols {
+  display: grid;
+  grid-template-columns: repeat(5, 62px) 80px 92px;
+  column-gap: 8px;
+  align-items: center;
+}
 .scard-stats {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 4px 8px 4px 12px;
+  padding: 6px 8px 6px 12px;
   border: 0;
   border-left: 1px solid var(--border);
   border-radius: 0 6px 6px 0;
   background: none;
   color: inherit;
   cursor: pointer;
+  font: inherit;
 }
 .scard-stats:hover {
   background: var(--hover);
 }
+.lane-cols {
+  /* card border + padding, the two row buttons, the grid gap and the stats padding */
+  margin-right: 81px;
+  flex: none;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-3);
+}
+.lane-cols span {
+  text-align: right;
+}
 .st-row {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(44px, auto));
-  gap: 2px 10px;
+  display: contents;
 }
 .st {
   display: flex;
@@ -2678,7 +2673,9 @@ fieldset.plain:disabled .chips-box {
   font-weight: 650;
   font-variant-numeric: tabular-nums;
 }
+/* The lane header names the columns; per-cell labels are for the stacked layout only. */
 .st span {
+  display: none;
   font-size: 9.5px;
   font-weight: 600;
   text-transform: uppercase;
@@ -2693,6 +2690,7 @@ fieldset.plain:disabled .chips-box {
   display: flex;
   align-items: center;
   gap: 6px;
+  padding-left: 6px;
   font-size: 10.5px;
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
@@ -2709,28 +2707,44 @@ fieldset.plain:disabled .chips-box {
   border-radius: 2px;
   background: var(--series-1);
 }
+.share span {
+  min-width: 26px;
+  text-align: right;
+}
 .scard-ctl {
   display: flex;
   align-items: center;
+  width: 56px;
+  justify-content: flex-end;
 }
-@media (max-width: 1320px) {
+/* Narrow funnel: the stats drop below the chips and carry their own labels. */
+@container funnel (max-width: 940px) {
+  .lane-cols {
+    display: none;
+  }
   .scard {
     grid-template-columns: auto auto minmax(0, 1fr) auto;
   }
   .scard-stats {
     grid-column: 3 / -1;
     grid-row: 2;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 18px;
     border-left: 0;
     border-top: 1px solid var(--border);
     border-radius: 0;
     padding: 6px 0 0;
   }
-  .st-row {
-    justify-content: start;
-    gap: 2px 18px;
-  }
   .st {
     align-items: flex-start;
+  }
+  .st span {
+    display: block;
+  }
+  .share {
+    flex: 1 1 120px;
+    padding-left: 0;
   }
 }
 
