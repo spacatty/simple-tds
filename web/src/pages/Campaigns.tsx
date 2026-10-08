@@ -2,11 +2,11 @@ import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { BarChart3, Copy, Eye, Pencil, Plus, Trash2 } from 'lucide-react'
 import { del, get, post, put } from '../api'
-import { canEdit, canRead, isOwner, useLoad, useMeta } from '../hooks'
+import { canEdit, canRead, isOwner, useLoad } from '../hooks'
 import type { Campaign, ReportRow } from '../types'
 import { DataTable } from '../components/DataTable'
 import type { Column } from '../components/DataTable'
-import { Badge, Empty, ErrorBox, Field, Modal, PageHeader, SearchInput, Toggle, confirmDialog, toast, useBusy } from '../components/ui'
+import { Badge, CopyButton, Empty, ErrorBox, Field, Modal, PageHeader, SearchInput, Toggle, confirmDialog, toast, useBusy } from '../components/ui'
 import { presetRange } from '../components/DateRangePicker'
 import { loadReport } from '../reports'
 import { fmtInt, fmtMoney } from '../format'
@@ -45,7 +45,7 @@ export default function Campaigns() {
   const stats = useMemo(() => new Map<string, ReportRow>((today.data ?? []).map((r) => [r.key, r])), [today.data])
   const rows = useMemo(() => {
     const s = q.trim().toLowerCase()
-    return (list.data ?? []).filter((c) => !s || c.name.toLowerCase().includes(s) || c.alias.toLowerCase().includes(s))
+    return (list.data ?? []).filter((c) => !s || c.name.toLowerCase().includes(s) || c.alias.toLowerCase() === s)
   }, [list.data, q])
 
   const setEnabled = async (c: Campaign, enabled: boolean) => {
@@ -60,7 +60,7 @@ export default function Campaigns() {
     try {
       const n = await post<Campaign>(`campaigns/${c.id}/clone`)
       toast.ok(`Cloned as “${n.name}”`)
-      nav(`/campaigns/${n.id}/settings`)
+      nav(`/campaigns/${n.id}`)
     } catch (e) {
       toast.err(e)
     }
@@ -70,7 +70,7 @@ export default function Campaigns() {
       title: 'Delete campaign?',
       message: (
         <>
-          <b>{c.name}</b> and all of its streams will be deleted. Links to <code>/{c.alias}</code> will start returning 404. Collected statistics are kept.
+          <b>{c.name}</b> and all of its streams will be deleted and its link stops working. Collected statistics are kept.
         </>
       ),
     })
@@ -83,6 +83,13 @@ export default function Campaigns() {
       toast.err(e)
     }
   }
+
+  // Stats cells open today's report for the campaign, ready to drill into.
+  const statLink = (c: Campaign, n: number) => (
+    <Link className={'stat-link' + (n === 0 ? ' muted' : '')} to={`/reports?range=today&group=stream&campaign_id=${c.id}`} title="Open today's report for this campaign">
+      {fmtInt(n)}
+    </Link>
+  )
 
   const columns: Column<Campaign>[] = [
     {
@@ -102,12 +109,21 @@ export default function Campaigns() {
         </div>
       ),
     },
-    { key: 'alias', title: 'Alias', sort: (c) => c.alias, render: (c) => <code>/{c.alias}</code> },
+    {
+      key: 'alias',
+      title: 'Link ID',
+      render: (c) => (
+        <span className="row gap-s">
+          <code title={c.alias}>/{c.alias.length > 12 ? c.alias.slice(0, 10) + '…' : c.alias}</code>
+          <CopyButton text={c.alias} className="icon-btn" title="Copy the link ID" />
+        </span>
+      ),
+    },
     { key: 'enabled', title: 'Status', width: 90, sort: (c) => (c.enabled ? 1 : 0), render: (c) => <Toggle checked={c.enabled} disabled={!canEdit(c)} onChange={(v) => setEnabled(c, v)} title={!canEdit(c) ? 'You cannot change this campaign' : c.enabled ? 'Enabled' : 'Disabled'} /> },
     { key: 'rotation', title: 'Rotation', render: (c) => <Badge>{c.rotation}</Badge> },
     { key: 'cost', title: 'Cost model', render: (c) => costLabel(c) },
-    { key: 'clicks', title: 'Clicks today', align: 'right', sort: (c) => stats.get(String(c.id))?.clicks ?? 0, render: (c) => fmtInt(stats.get(String(c.id))?.clicks ?? 0) },
-    { key: 'conv', title: 'Conv. today', align: 'right', sort: (c) => stats.get(String(c.id))?.conversions ?? 0, render: (c) => fmtInt(stats.get(String(c.id))?.conversions ?? 0) },
+    { key: 'clicks', title: 'Clicks today', align: 'right', sort: (c) => stats.get(String(c.id))?.clicks ?? 0, render: (c) => statLink(c, stats.get(String(c.id))?.clicks ?? 0) },
+    { key: 'conv', title: 'Conv. today', align: 'right', sort: (c) => stats.get(String(c.id))?.conversions ?? 0, render: (c) => statLink(c, stats.get(String(c.id))?.conversions ?? 0) },
     {
       key: 'actions',
       title: '',
@@ -168,17 +184,14 @@ export default function Campaigns() {
 }
 
 function CreateCampaign({ onClose, onCreated }: { onClose: () => void; onCreated: (c: Campaign) => void }) {
-  const meta = useMeta()
   const [name, setName] = useState('')
-  const [alias, setAlias] = useState('')
   const [error, setError] = useState('')
   const [busy, run] = useBusy()
-  const aliasErr = alias && !/^[A-Za-z0-9_-]{1,64}$/.test(alias) ? 'Only letters, digits, - and _' : meta.reserved_aliases.includes(alias.toLowerCase()) ? 'This alias is reserved' : ''
   const submit = () =>
     run(async () => {
       setError('')
       try {
-        const c = await post<Campaign>('campaigns', { name, alias, enabled: true })
+        const c = await post<Campaign>('campaigns', { name, enabled: true })
         toast.ok('Campaign created')
         onCreated(c)
       } catch (e) {
@@ -195,7 +208,7 @@ function CreateCampaign({ onClose, onCreated }: { onClose: () => void; onCreated
           <button className="btn" onClick={onClose}>
             Cancel
           </button>
-          <button className="btn primary" disabled={busy || !name.trim() || !!aliasErr} onClick={submit}>
+          <button className="btn primary" disabled={busy || !name.trim()} onClick={submit}>
             Create
           </button>
         </>
@@ -204,14 +217,11 @@ function CreateCampaign({ onClose, onCreated }: { onClose: () => void; onCreated
       <form
         onSubmit={(e) => {
           e.preventDefault()
-          if (name.trim() && !aliasErr) submit()
+          if (name.trim()) submit()
         }}
       >
-        <Field label="Name">
+        <Field label="Name" help="The campaign gets a random, unguessable link and starts with two streams you can edit: a forced “Traffic filter” that stops bots and off-target visitors, and a “Fallback”. Both answer 404 until you point them at a whitepage or an offer.">
           <input className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="FB · DE · sweepstakes" />
-        </Field>
-        <Field label="Alias" help="The campaign URL is https://your-domain/<alias>. Leave empty to generate a random one." error={aliasErr}>
-          <input className="input mono" value={alias} onChange={(e) => setAlias(e.target.value.trim())} placeholder="random" />
         </Field>
         {error && <div className="field-error">{error}</div>}
         <button type="submit" hidden />

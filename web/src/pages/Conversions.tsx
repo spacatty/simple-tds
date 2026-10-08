@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Columns3, Download, Filter as FilterIcon, RefreshCw, X } from 'lucide-react'
 import { get, qs } from '../api'
 import type { Params } from '../api'
@@ -85,7 +85,9 @@ const LIMIT = 100
 function ConvLog() {
   const meta = useMeta()
   const [range, setRange] = useDateRange()
-  const [f, setF] = useState({ key_id: '', campaign_id: '', type: '', click_id: '', ip: '' })
+  const [search] = useSearchParams()
+  // The click log links here with ?click_id=… to show the conversions of one click.
+  const [f, setF] = useState({ key_id: '', campaign_id: search.get('campaign_id') ?? '', type: '', click_id: search.get('click_id') ?? '', ip: '' })
   const [pf, setPf] = useState<Record<string, string>>({})
   const [offset, setOffset] = useState(0)
   const [cols, setCols] = useState<Record<string, boolean>>(loadCols)
@@ -122,6 +124,12 @@ function ConvLog() {
   }
 
   const keyName = (id: unknown) => keys.data?.find((k) => k.id === Number(id))?.name ?? (Number(id) ? `#${id}` : '—')
+  // Built-in types plus the funnel stages of the campaigns in view.
+  const typeOptions = useMemo(() => {
+    const stages = (camps.data ?? []).filter((c) => !f.campaign_id || String(c.id) === f.campaign_id).flatMap((c) => c.stages ?? [])
+    const extra = new Map(stages.filter((s) => !meta.conversion_types.includes(s.key)).map((s) => [s.key, s.key]))
+    return [...meta.conversion_types.map((t) => ({ value: t, label: humanize(t) })), ...[...extra.keys()].sort().map((k) => ({ value: k, label: k }))]
+  }, [camps.data, f.campaign_id, meta.conversion_types])
   const campName = (id: unknown) => camps.data?.find((c) => c.id === Number(id))?.name ?? (Number(id) ? `#${id}` : '—')
 
   const cell = (key: string, r: ConvRow) => {
@@ -231,7 +239,7 @@ function ConvLog() {
       <div className="toolbar wrap">
         <Select value={f.key_id} onChange={(key_id) => setF({ ...f, key_id })} placeholder="All keys" options={(keys.data ?? []).map((k) => ({ value: String(k.id), label: k.name }))} />
         <Select value={f.campaign_id} onChange={(campaign_id) => setF({ ...f, campaign_id })} placeholder="All campaigns" options={(camps.data ?? []).map((c) => ({ value: String(c.id), label: c.name }))} />
-        <Select value={f.type} onChange={(type) => setF({ ...f, type })} placeholder="All types" options={meta.conversion_types.map((t) => ({ value: t, label: humanize(t) }))} />
+        <Select value={f.type} onChange={(type) => setF({ ...f, type })} placeholder="All types" options={typeOptions} />
         <input className="input mono" style={{ width: 220 }} placeholder="Click ID" value={f.click_id} onChange={(e) => setF({ ...f, click_id: e.target.value })} />
         <input className="input mono" style={{ width: 150 }} placeholder="Sender IP" value={f.ip} onChange={(e) => setF({ ...f, ip: e.target.value })} />
         <form

@@ -1,11 +1,22 @@
 import { useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, Trash2 } from 'lucide-react'
-import { errMsg, post, put } from '../api'
+import { Ban, BookmarkPlus, Check, Code2, CornerDownRight, ExternalLink, Eye, FileCode2, FileText, Pencil, Plus, Search, Split, Trash2, X } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import { del, errMsg, get, post, put } from '../api'
 import { useMeta } from '../hooks'
-import type { ActionConfig, ActionDef, ActionField, Campaign, Filter, FilterDef, GeoPreset, Stream, Whitepage } from '../types'
-import { Chips, Drawer, Dropdown, Field, MenuItem, MultiSelect, Notice, NumberInput, Segmented, Select, Toggle } from '../components/ui'
+import type { ActionConfig, ActionDef, ActionField, Campaign, Filter, FilterDef, GeoPreset, Stream, StreamPreset, Whitepage } from '../types'
+import { Chips, Drawer, Dropdown, Field, MenuItem, MultiSelect, Notice, NumberInput, Segmented, Select, Toggle, confirmDialog, toast } from '../components/ui'
 import { CountrySelect } from '../components/CountrySelect'
+
+export const ACTION_ICONS: Record<string, LucideIcon> = {
+  status: Ban,
+  text: FileText,
+  redirect: ExternalLink,
+  whitepage: FileCode2,
+  remote_js: Code2,
+  campaign: Split,
+  nothing: CornerDownRight,
+}
 
 export interface StreamDraft {
   id?: number
@@ -22,6 +33,11 @@ export interface StreamDraft {
   note: string
 }
 
+export interface RefNames {
+  whitepages: Record<string, string>
+  campaigns: Record<string, string>
+}
+
 export function defaultConfig(def: ActionDef | undefined): ActionConfig {
   const cfg: ActionConfig = {}
   for (const f of def?.fields ?? []) {
@@ -32,9 +48,7 @@ export function defaultConfig(def: ActionDef | undefined): ActionConfig {
 }
 
 export function newDraft(campaignId: number, kind: string, actions: ActionDef[]): StreamDraft {
-  // Bots usually go to a whitepage, everything else to an offer.
-  const prefer = kind === 'forced' ? 'whitepage' : 'redirect'
-  const def = actions.find((a) => a.type === prefer) ?? actions[0]
+  const def = actions.find((a) => a.type === 'redirect') ?? actions[0]
   return {
     campaign_id: campaignId,
     name: '',
@@ -43,12 +57,14 @@ export function newDraft(campaignId: number, kind: string, actions: ActionDef[])
     enabled: true,
     js_check: false,
     filter_op: 'and',
-    filters: kind === 'forced' ? [{ type: 'bot', mode: 'is', values: [] }] : [],
+    filters: [],
     action_type: def?.type ?? '',
     action_config: defaultConfig(def),
     note: '',
   }
 }
+
+const cloneFilters = (fs: Filter[] | null | undefined): Filter[] => (fs ?? []).map((f) => ({ type: f.type, mode: f.mode === 'is_not' ? 'is_not' : 'is', values: [...(f.values ?? [])] }))
 
 export function draftFromStream(s: Stream): StreamDraft {
   return {
@@ -60,7 +76,7 @@ export function draftFromStream(s: Stream): StreamDraft {
     enabled: s.enabled,
     js_check: s.js_check,
     filter_op: s.filter_op || 'and',
-    filters: (s.filters ?? []).map((f) => ({ type: f.type, mode: f.mode === 'is_not' ? 'is_not' : 'is', values: [...(f.values ?? [])] })),
+    filters: cloneFilters(s.filters),
     action_type: s.action_type,
     action_config: { ...(s.action_config ?? {}) },
     note: s.note,
@@ -94,6 +110,8 @@ export function cleanConfig(def: ActionDef | undefined, cfg: ActionConfig): Acti
   return out
 }
 
+const cleanFilters = (fs: Filter[]) => fs.map((f) => ({ type: f.type, mode: f.mode, values: f.values.map((v) => v.trim()).filter(Boolean) }))
+
 export function streamBody(d: StreamDraft, actions: ActionDef[]) {
   return {
     campaign_id: d.campaign_id,
@@ -103,8 +121,8 @@ export function streamBody(d: StreamDraft, actions: ActionDef[]) {
     enabled: d.enabled,
     js_check: d.js_check,
     filter_op: d.filter_op,
-    // Every filter is sent whole: the server decodes over the stored list.
-    filters: d.filters.map((f) => ({ type: f.type, mode: f.mode, values: f.values.map((v) => v.trim()).filter(Boolean) })),
+    // Every filter is sent whole.
+    filters: cleanFilters(d.filters),
     action_type: d.action_type,
     action_config: cleanConfig(
       actions.find((a) => a.type === d.action_type),
@@ -120,14 +138,23 @@ interface Props {
   campaigns: Campaign[]
   whitepages: Whitepage[]
   presets: GeoPreset[]
+  /** Built-in and own filter / action presets. */
+  streamPresets: StreamPreset[]
+  onPresetsChanged: () => void
   readOnly?: boolean
   /** Names of referenced whitepages / campaigns that are not in the user's own lists. */
-  refNames?: { whitepages: Record<string, string>; campaigns: Record<string, string> }
+  refNames?: RefNames
   onClose: () => void
   onSaved: (s: Stream, created: boolean, kindChanged: boolean) => void
 }
 
-export default function StreamEditor({ draft: initial, campaign, campaigns, whitepages, presets, readOnly, refNames, onClose, onSaved }: Props) {
+const KIND_HELP: Record<string, string> = {
+  forced: 'Checked before everything else, top to bottom; the first match wins. For traffic that must never reach an offer.',
+  regular: 'The main streams: first match by position, or a weighted draw among the matches, depending on the campaign rotation.',
+  default: 'The fallback when no forced or regular stream matched. Usually has no filters.',
+}
+
+export default function StreamEditor({ draft: initial, campaign, campaigns, whitepages, presets, streamPresets, onPresetsChanged, readOnly, refNames, onClose, onSaved }: Props) {
   const meta = useMeta()
   const [d, setD] = useState<StreamDraft>(initial)
   const [error, setError] = useState('')
@@ -137,6 +164,8 @@ export default function StreamEditor({ draft: initial, campaign, campaigns, whit
 
   const filterDefs = useMemo(() => new Map(meta.filters.map((f) => [f.type, f])), [meta.filters])
   const actionDef = meta.actions.find((a) => a.type === d.action_type)
+  const baseline = useMemo(() => JSON.stringify(streamBody(initial, meta.actions)), [initial, meta.actions])
+  const dirty = !readOnly && JSON.stringify(streamBody(d, meta.actions)) !== baseline
 
   const filterError = (f: Filter): string => {
     const def = filterDefs.get(f.type)
@@ -150,6 +179,11 @@ export default function StreamEditor({ draft: initial, campaign, campaigns, whit
     return v === undefined || v === null || v === '' || v === 0 ? 'Required' : ''
   }
   const invalid = !d.name.trim() || d.filters.some((f) => filterError(f)) || (actionDef?.fields ?? []).some((f) => fieldError(f))
+
+  const close = async () => {
+    if (dirty && !(await confirmDialog({ title: 'Discard unsaved changes?', confirmLabel: 'Discard', message: 'The changes you made to this stream have not been saved.' }))) return
+    onClose()
+  }
 
   const save = async () => {
     setTried(true)
@@ -172,20 +206,29 @@ export default function StreamEditor({ draft: initial, campaign, campaigns, whit
 
   const setFilter = (i: number, patch: Partial<Filter>) => set({ filters: d.filters.map((f, j) => (j === i ? { ...f, ...patch } : f)) })
   const filterOptions = meta.filters.map((f) => ({ value: f.type, label: f.label, group: f.group }))
-  const groups = useMemo(() => {
-    const out: { group: string; items: FilterDef[] }[] = []
-    for (const f of meta.filters) {
-      let g = out.find((x) => x.group === f.group)
-      if (!g) out.push((g = { group: f.group, items: [] }))
-      g.items.push(f)
-    }
-    return out
-  }, [meta.filters])
+
+  const applyFilterPreset = async (p: StreamPreset) => {
+    if (d.filters.length > 0 && !(await confirmDialog({ title: 'Replace the current filters?', danger: false, confirmLabel: 'Replace', message: <>The {d.filters.length} filter{d.filters.length === 1 ? '' : 's'} of this stream will be replaced by preset <b>{p.name}</b>.</> }))) return
+    set({ filters: cloneFilters(p.data.filters), filter_op: p.data.filter_op === 'or' ? 'or' : 'and' })
+  }
+  const applyActionPreset = (p: StreamPreset) => {
+    const def = meta.actions.find((a) => a.type === p.data.action_type)
+    if (!def) return toast.err(`Preset “${p.name}” uses an action this server does not have`)
+    set({ action_type: def.type, action_config: { ...defaultConfig(def), ...(p.data.action_config ?? {}) } })
+  }
+
+  const showWeight = d.kind === 'regular'
 
   return (
     <Drawer
-      title={d.id ? `Stream: ${initial.name}${readOnly ? ' (read-only)' : ''}` : 'New stream'}
-      onClose={onClose}
+      title={
+        <>
+          {d.id ? (readOnly ? 'Stream' : 'Edit stream') : 'New stream'}
+          {readOnly && <span className="badge neutral">read-only</span>}
+          {dirty && <span className="badge warn">unsaved</span>}
+        </>
+      }
+      onClose={close}
       size="xl"
       footer={
         readOnly ? (
@@ -193,55 +236,62 @@ export default function StreamEditor({ draft: initial, campaign, campaigns, whit
             Close
           </button>
         ) : (
-        <>
-          {error && <div className="field-error grow">{error}</div>}
-          <button className="btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="btn primary" disabled={busy} onClick={save}>
-            {busy ? 'Saving…' : d.id ? 'Save stream' : 'Create stream'}
-          </button>
-        </>
+          <>
+            {error && <div className="field-error grow">{error}</div>}
+            <button className="btn" onClick={close}>
+              Cancel
+            </button>
+            <button className="btn primary" disabled={busy || (!!d.id && !dirty)} onClick={save}>
+              {busy ? 'Saving…' : d.id ? 'Save stream' : 'Create stream'}
+            </button>
+          </>
         )
       }
     >
-      <fieldset className="plain" disabled={readOnly}>
-      <div className="form-section">
-        <div className="form-grid">
-          <Field label="Name" error={tried && !d.name.trim() ? 'Name is required' : ''} className="span-2">
-            <input className="input" autoFocus={!d.id} value={d.name} onChange={(e) => set({ name: e.target.value })} placeholder="e.g. Bots → whitepage" />
-          </Field>
-          <Field label="Kind" help={KIND_HELP[d.kind]} className="span-2">
-            <Segmented
-              value={d.kind}
-              onChange={(kind) => set({ kind })}
-              options={[
-                { value: 'forced', label: 'Forced' },
-                { value: 'regular', label: 'Regular' },
-                { value: 'default', label: 'Default' },
-              ]}
-            />
-          </Field>
-          <Field label="Weight" help={campaign.rotation === 'weight' ? 'Share of matching traffic among regular streams. 0 excludes the stream from the draw.' : 'Used only when the campaign rotation is “weight” (currently “position”).'}>
-            <NumberInput value={d.weight} min={0} max={100000} onChange={(weight) => set({ weight })} />
-          </Field>
-          <Field label="Status">
-            <Toggle checked={d.enabled} onChange={(enabled) => set({ enabled })} label={d.enabled ? 'Enabled' : 'Disabled'} />
-          </Field>
-          <Field
-            className="span-2"
-            label="JS check"
-            help="Before the action runs, the visitor's browser must execute a small script and reload. Works on the direct campaign URL only (JS and PHP integrations skip it), adds one extra round trip, and browsers that fail it are re-routed as bots."
-          >
-            <Toggle checked={d.js_check} onChange={(js_check) => set({ js_check })} label="Verify the browser with JavaScript" />
-          </Field>
-        </div>
-      </div>
+      <fieldset className="plain se" disabled={readOnly}>
+        {/* ---- header ---- */}
+        <section className="se-head">
+          <div className="se-name">
+            <input className={'input input-lg' + (tried && !d.name.trim() ? ' invalid' : '')} autoFocus={!d.id} value={d.name} onChange={(e) => set({ name: e.target.value })} placeholder="Stream name, e.g. DE mobile → offer A" aria-label="Stream name" />
+            {tried && !d.name.trim() && <div className="field-error">Name is required</div>}
+          </div>
+          <div className="se-opts">
+            <div className="se-opt">
+              <span className="se-opt-label">Kind</span>
+              <Segmented
+                small
+                value={d.kind}
+                onChange={(kind) => set({ kind })}
+                options={[
+                  { value: 'forced', label: 'Forced', title: KIND_HELP.forced },
+                  { value: 'regular', label: 'Regular', title: KIND_HELP.regular },
+                  { value: 'default', label: 'Default', title: KIND_HELP.default },
+                ]}
+              />
+            </div>
+            {showWeight && (
+              <div className="se-opt" title={campaign.rotation === 'weight' ? 'Share of matching traffic among regular streams. 0 excludes the stream from the draw.' : 'Used only when the campaign rotation is “weight” (currently “position”).'}>
+                <span className="se-opt-label">Weight{campaign.rotation !== 'weight' && ' (unused)'}</span>
+                <NumberInput className="input-sm w-80" value={d.weight} min={0} max={100000} onChange={(weight) => set({ weight })} />
+              </div>
+            )}
+            <div className="se-opt">
+              <span className="se-opt-label">Status</span>
+              <Toggle checked={d.enabled} onChange={(enabled) => set({ enabled })} label={d.enabled ? 'Enabled' : 'Disabled'} />
+            </div>
+            <div className="se-opt" title="Before the action runs, the visitor's browser must execute a small script and reload. Works on the direct campaign URL only (JS and PHP integrations skip it), adds one extra round trip, and browsers that fail it are re-routed as bots.">
+              <span className="se-opt-label">JS check</span>
+              <Toggle checked={d.js_check} onChange={(js_check) => set({ js_check })} label={d.js_check ? 'On' : 'Off'} />
+            </div>
+          </div>
+          <div className="field-help">{KIND_HELP[d.kind]}</div>
+          {d.js_check && <div className="field-help">JS check: direct campaign URL only; adds one extra round trip; browsers that fail are re-routed as bots.</div>}
+        </section>
 
-      <div className="form-section">
-        <div className="section-head">
-          <h4>Filters</h4>
-          {d.filters.length > 1 && (
+        {/* ---- filters ---- */}
+        <section className="se-section">
+          <header className="se-section-head">
+            <h4>Filters</h4>
             <Segmented
               small
               value={d.filter_op === 'or' ? 'or' : 'and'}
@@ -251,18 +301,24 @@ export default function StreamEditor({ draft: initial, campaign, campaigns, whit
                 { value: 'or', label: 'OR', title: 'Any filter may match' },
               ]}
             />
-          )}
-          <span className="muted grow">{d.filters.length === 0 ? 'No filters: the stream matches every visitor.' : d.filter_op === 'or' ? 'Matches when any filter passes.' : 'Matches when all filters pass.'}</span>
-        </div>
+            <span className="muted grow ellipsis">{d.filters.length === 0 ? 'No filters: matches every visitor.' : d.filter_op === 'or' ? 'Matches when any filter passes.' : 'Matches when all filters pass.'}</span>
+            <PresetControls
+              kind="filters"
+              presets={streamPresets}
+              canSave={d.filters.length > 0 && !d.filters.some((f) => filterError(f))}
+              getData={() => ({ filter_op: d.filter_op, filters: cleanFilters(d.filters) })}
+              onApply={applyFilterPreset}
+              onChanged={onPresetsChanged}
+            />
+          </header>
 
-        <div className="filters">
-          {d.filters.map((f, i) => {
-            const def = filterDefs.get(f.type)
-            const err = tried ? filterError(f) : ''
-            return (
-              <div className={'filter-row' + (err ? ' invalid' : '')} key={i}>
-                {i > 0 && <div className="filter-op">{d.filter_op === 'or' ? 'OR' : 'AND'}</div>}
-                <div className="filter-main">
+          <div className="filters">
+            {d.filters.map((f, i) => {
+              const def = filterDefs.get(f.type)
+              const err = tried ? filterError(f) : ''
+              return (
+                <div className={'filter-row' + (err ? ' invalid' : '')} key={i}>
+                  <span className="filter-join">{i === 0 ? 'IF' : d.filter_op === 'or' ? 'OR' : 'AND'}</span>
                   <Select className="filter-type" value={f.type} options={filterOptions} onChange={(type) => setFilter(i, { type, values: [] })} />
                   <div className={'mode-pill ' + (f.mode === 'is_not' ? 'not' : 'is')}>
                     <button type="button" className={f.mode !== 'is_not' ? 'active' : ''} onClick={() => setFilter(i, { mode: 'is' })}>
@@ -274,97 +330,284 @@ export default function StreamEditor({ draft: initial, campaign, campaigns, whit
                   </div>
                   <div className="filter-value">
                     <FilterValue def={def} values={f.values} onChange={(values) => setFilter(i, { values })} presets={presets} />
-                    {err ? <div className="field-error">{err}</div> : def?.help ? <div className="field-help">{def.help}</div> : null}
+                    {err ? <div className="field-error">{err}</div> : def?.help && def.input !== 'none' ? <div className="field-help">{def.help}</div> : null}
                   </div>
-                  <button className="icon-btn danger" title="Remove filter" onClick={() => set({ filters: d.filters.filter((_, j) => j !== i) })}>
-                    <Trash2 size={15} />
+                  <button type="button" className="icon-btn danger" title="Remove filter" onClick={() => set({ filters: d.filters.filter((_, j) => j !== i) })}>
+                    <X size={15} />
                   </button>
                 </div>
-              </div>
-            )
-          })}
-        </div>
-        <Dropdown
-          className="btn small"
-          label={
-            <>
-              <Plus size={14} /> Add filter
-            </>
-          }
-        >
-          {(close) => (
-            <div className="menu menu-cols">
-              {groups.map((g) => (
-                <div key={g.group}>
-                  <div className="menu-title">{g.group}</div>
-                  {g.items.map((f) => (
-                    <MenuItem
-                      key={f.type}
-                      onClick={() => {
-                        set({ filters: [...d.filters, { type: f.type, mode: 'is', values: [] }] })
-                        close()
-                      }}
-                    >
-                      {f.label}
-                    </MenuItem>
-                  ))}
-                </div>
-              ))}
-            </div>
+              )
+            })}
+          </div>
+          <AddFilter defs={meta.filters} onAdd={(type) => set({ filters: [...d.filters, { type, mode: 'is', values: [] }] })} />
+        </section>
+
+        {/* ---- action ---- */}
+        <section className="se-section">
+          <header className="se-section-head">
+            <h4>Action</h4>
+            <span className="muted grow ellipsis">{actionDef?.description ?? 'What the matched visitor gets.'}</span>
+            <PresetControls
+              kind="action"
+              presets={streamPresets}
+              canSave={!!actionDef && !(actionDef.fields ?? []).some((f) => fieldError(f))}
+              getData={() => ({ action_type: d.action_type, action_config: cleanConfig(actionDef, d.action_config) })}
+              onApply={applyActionPreset}
+              onChanged={onPresetsChanged}
+            />
+          </header>
+          <div className="action-cards">
+            {meta.actions.map((a) => {
+              const Icon = ACTION_ICONS[a.type] ?? CornerDownRight
+              return (
+                <button
+                  type="button"
+                  key={a.type}
+                  className={'action-card' + (a.type === d.action_type ? ' active' : '')}
+                  title={a.description}
+                  onClick={() => {
+                    if (a.type !== d.action_type) set({ action_type: a.type, action_config: a.type === initial.action_type ? { ...initial.action_config } : defaultConfig(a) })
+                  }}
+                >
+                  <Icon size={17} />
+                  <span>{a.label}</span>
+                </button>
+              )
+            })}
+          </div>
+          {actionDef && (
+            <ActionForm
+              key={actionDef.type}
+              def={actionDef}
+              config={d.action_config}
+              onChange={(action_config) => set({ action_config })}
+              errorFor={(f) => (tried ? fieldError(f) : '')}
+              whitepages={whitepages}
+              campaigns={campaigns.filter((c) => c.id !== campaign.id)}
+              refNames={refNames}
+              macros={meta.macros}
+            />
           )}
-        </Dropdown>
-      </div>
+        </section>
 
-      <div className="form-section">
-        <div className="section-head">
-          <h4>Action</h4>
-          <span className="muted grow">What the matched visitor gets.</span>
-        </div>
-        <div className="action-types">
-          {meta.actions.map((a) => (
-            <button
-              type="button"
-              key={a.type}
-              className={'action-type' + (a.type === d.action_type ? ' active' : '')}
-              title={a.description}
-              onClick={() => {
-                if (a.type !== d.action_type) set({ action_type: a.type, action_config: a.type === initial.action_type ? { ...initial.action_config } : defaultConfig(a) })
-              }}
-            >
-              {a.label}
-            </button>
-          ))}
-        </div>
-        {actionDef && <div className="muted action-desc">{actionDef.description}</div>}
-        {actionDef && (
-          <ActionForm
-            key={actionDef.type}
-            def={actionDef}
-            config={d.action_config}
-            onChange={(action_config) => set({ action_config })}
-            errorFor={(f) => (tried ? fieldError(f) : '')}
-            whitepages={whitepages}
-            campaigns={campaigns.filter((c) => c.id !== campaign.id)}
-            refNames={refNames}
-            macros={meta.macros}
-          />
-        )}
-      </div>
-
-      <div className="form-section">
-        <Field label="Note">
-          <input className="input" value={d.note} onChange={(e) => set({ note: e.target.value })} placeholder="Optional, for your own reference" />
-        </Field>
-      </div>
+        <section className="se-section">
+          <Field label="Note">
+            <input className="input" value={d.note} onChange={(e) => set({ note: e.target.value })} placeholder="Optional, for your own reference" />
+          </Field>
+        </section>
       </fieldset>
     </Drawer>
   )
 }
 
-const KIND_HELP: Record<string, string> = {
-  forced: 'Checked before everything else, top to bottom; the first match wins. Use it for traffic that must never reach an offer, such as bots.',
-  regular: 'The main streams: first match by position, or a weighted draw among the matches, depending on the campaign rotation.',
-  default: 'The fallback when no forced or regular stream matched. Usually has no filters.',
+// ---- presets -----------------------------------------------------------------
+
+/** "Apply preset" (with rename/delete of own presets) and "Save as preset…" for one kind. */
+export function PresetControls({
+  kind,
+  presets,
+  canSave,
+  getData,
+  onApply,
+  onChanged,
+}: {
+  kind: 'filters' | 'action'
+  presets: StreamPreset[]
+  canSave: boolean
+  getData: () => StreamPreset['data']
+  onApply: (p: StreamPreset) => void
+  onChanged: () => void
+}) {
+  const list = presets.filter((p) => p.kind === kind)
+  const [name, setName] = useState('')
+  const [renaming, setRenaming] = useState<{ id: number; name: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const act = async (fn: () => Promise<unknown>, ok: string): Promise<boolean> => {
+    setBusy(true)
+    try {
+      await fn()
+      toast.ok(ok)
+      onChanged()
+      return true
+    } catch (e) {
+      toast.err(e)
+      return false
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="row gap-s preset-controls">
+      <Dropdown align="right" className="btn small" label="Apply preset" title="Presets: built-in and your own">
+        {(close) => (
+          <div className="menu preset-menu">
+            {list.length === 0 && <div className="muted pad-s">No presets yet. Set this section up and use “Save as preset”.</div>}
+            {list.map((p, i) =>
+              renaming && p.id === renaming.id ? (
+                <form
+                  key={p.id}
+                  className="row gap-s pad-s"
+                  onSubmit={async (e) => {
+                    e.preventDefault()
+                    if (renaming.name.trim() && (await act(() => put(`stream-presets/${renaming.id}`, { name: renaming.name.trim() }), 'Preset renamed'))) setRenaming(null)
+                  }}
+                >
+                  <input className="input input-sm grow" autoFocus value={renaming.name} onChange={(e) => setRenaming({ id: renaming.id, name: e.target.value })} />
+                  <button className="icon-btn" disabled={busy || !renaming.name.trim()} title="Save name">
+                    <Check size={14} />
+                  </button>
+                  <button type="button" className="icon-btn" title="Cancel" onClick={() => setRenaming(null)}>
+                    <X size={14} />
+                  </button>
+                </form>
+              ) : (
+                <div className="preset-row" key={p.id ?? 'b' + i}>
+                  <button
+                    type="button"
+                    className="menu-item grow"
+                    onClick={() => {
+                      close()
+                      onApply(p)
+                    }}
+                  >
+                    <span className="grow ellipsis">{p.name}</span>
+                    {p.builtin && <span className="badge neutral">built-in</span>}
+                  </button>
+                  {!p.builtin && p.id !== undefined && (
+                    <>
+                      <button type="button" className="icon-btn" title="Rename preset" onClick={() => setRenaming({ id: p.id as number, name: p.name })}>
+                        <Pencil size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-btn danger"
+                        title="Delete preset"
+                        disabled={busy}
+                        onClick={async () => {
+                          if (await confirmDialog({ title: 'Delete preset?', message: <>Preset <b>{p.name}</b> will be deleted. Streams that used it keep their settings.</> })) act(() => del(`stream-presets/${p.id}`), 'Preset deleted')
+                        }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              ),
+            )}
+          </div>
+        )}
+      </Dropdown>
+      <Dropdown
+        align="right"
+        className="btn small"
+        chevron={false}
+        disabled={!canSave}
+        title={canSave ? 'Save the current setup as a reusable preset' : 'Complete this section first'}
+        label={
+          <>
+            <BookmarkPlus size={14} /> Save as preset…
+          </>
+        }
+      >
+        {(close) => (
+          <form
+            className="pad-s preset-save"
+            onSubmit={async (e) => {
+              e.preventDefault()
+              if (!name.trim()) return
+              if (await act(() => post('stream-presets', { name: name.trim(), kind, data: getData() }), `Preset “${name.trim()}” saved`)) {
+                setName('')
+                close()
+              }
+            }}
+          >
+            <div className="field-label">Preset name</div>
+            <div className="row gap-s">
+              <input className="input input-sm grow" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={kind === 'filters' ? 'e.g. Tier-1 mobile' : 'e.g. Main whitepage'} />
+              <button className="btn small primary" disabled={busy || !name.trim()}>
+                Save
+              </button>
+            </div>
+          </form>
+        )}
+      </Dropdown>
+    </div>
+  )
+}
+
+// ---- filters -----------------------------------------------------------------
+
+function AddFilter({ defs, onAdd }: { defs: FilterDef[]; onAdd: (type: string) => void }) {
+  const [q, setQ] = useState('')
+  const groups = useMemo(() => {
+    const s = q.trim().toLowerCase()
+    const out: { group: string; items: FilterDef[] }[] = []
+    for (const f of defs) {
+      if (s && !f.label.toLowerCase().includes(s) && !f.type.includes(s) && !f.group.toLowerCase().includes(s)) continue
+      let g = out.find((x) => x.group === f.group)
+      if (!g) out.push((g = { group: f.group, items: [] }))
+      g.items.push(f)
+    }
+    return out
+  }, [defs, q])
+  const first = groups[0]?.items[0]
+  return (
+    <Dropdown
+      className="btn small add-filter"
+      chevron={false}
+      label={
+        <>
+          <Plus size={14} /> Add filter
+        </>
+      }
+    >
+      {(close) => (
+        <div className="filter-menu">
+          <div className="search">
+            <Search size={14} />
+            <input
+              className="input"
+              autoFocus
+              placeholder="Search filters…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && first) {
+                  e.preventDefault()
+                  onAdd(first.type)
+                  setQ('')
+                  close()
+                }
+              }}
+            />
+          </div>
+          <div className="filter-menu-list">
+            {groups.length === 0 && <div className="muted pad-s">No filter matches “{q}”.</div>}
+            {groups.map((g) => (
+              <div key={g.group} className="filter-menu-group">
+                <div className="menu-title">{g.group}</div>
+                {g.items.map((f) => (
+                  <MenuItem
+                    key={f.type}
+                    title={f.help}
+                    onClick={() => {
+                      onAdd(f.type)
+                      setQ('')
+                      close()
+                    }}
+                  >
+                    {f.label}
+                  </MenuItem>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </Dropdown>
+  )
 }
 
 function FilterValue({ def, values, onChange, presets }: { def?: FilterDef; values: string[]; onChange: (v: string[]) => void; presets: GeoPreset[] }) {
@@ -379,9 +622,11 @@ function FilterValue({ def, values, onChange, presets }: { def?: FilterDef; valu
     case 'lines':
       return <textarea className="input mono" rows={Math.min(8, Math.max(2, values.length + 1))} value={values.join('\n')} placeholder="One value per line" onChange={(e) => onChange(e.target.value === '' ? [] : e.target.value.split('\n'))} />
     default:
-      return <div className="filter-flag">true</div>
+      return <div className="filter-flag">{def.help ?? 'No value needed'}</div>
   }
 }
+
+// ---- action form ---------------------------------------------------------------
 
 type TextEl = HTMLInputElement | HTMLTextAreaElement
 
@@ -401,7 +646,7 @@ function ActionForm({
   errorFor: (f: ActionField) => string
   whitepages: Whitepage[]
   campaigns: Campaign[]
-  refNames?: { whitepages: Record<string, string>; campaigns: Record<string, string> }
+  refNames?: RefNames
   macros: string[]
 }) {
   const fields = def.fields ?? []
@@ -431,6 +676,15 @@ function ActionForm({
         el.setSelectionRange(pos, pos)
       }
     })
+  }
+
+  const preview = async (id: number) => {
+    try {
+      const r = await get<{ url: string }>(`whitepages/${id}/preview-url`)
+      window.open(r.url, '_blank', 'noopener')
+    } catch (e) {
+      toast.err(e)
+    }
   }
 
   if (fields.length === 0) return <div className="muted">This action has no settings.</div>
@@ -475,7 +729,8 @@ function ActionForm({
                   <Select value={String(v ?? '')} onChange={(s) => setVal(f.name, s)} options={(f.options ?? []).map((o) => ({ value: o, label: o }))} />
                 </Field>
               )
-            case 'whitepage':
+            case 'whitepage': {
+              const own = whitepages.some((w) => w.id === Number(v))
               return (
                 <Field
                   key={f.name}
@@ -492,18 +747,36 @@ function ActionForm({
                     )
                   }
                 >
-                  <Select
-                    value={v ? String(v) : ''}
-                    placeholder="Choose a whitepage…"
-                    onChange={(s) => setVal(f.name, s ? Number(s) : '')}
-                    options={[
-                      // A whitepage set by the campaign owner is not in a co-editor's own list; keep it selectable.
-                      ...(v && !whitepages.some((w) => w.id === Number(v)) ? [{ value: String(v), label: refNames?.whitepages[String(v)] ? `${refNames.whitepages[String(v)]} (owner's)` : `Whitepage #${v} (not available)` }] : []),
-                      ...whitepages.map((w) => ({ value: String(w.id), label: `${w.name} (${w.kind}, ${w.file_count} files)` })),
-                    ]}
-                  />
+                  <div className="row gap-s">
+                    <Select
+                      className="grow"
+                      value={v ? String(v) : ''}
+                      placeholder="Choose a whitepage…"
+                      onChange={(s) => setVal(f.name, s ? Number(s) : '')}
+                      options={[
+                        // A whitepage set by the campaign owner is not in a co-editor's own list; keep it selectable.
+                        ...(v && !own ? [{ value: String(v), label: refNames?.whitepages[String(v)] ? `${refNames.whitepages[String(v)]} (owner's)` : `Whitepage #${v} (not available)` }] : []),
+                        ...whitepages.map((w) => ({ value: String(w.id), label: `${w.name} (${w.kind}, ${w.file_count} files)` })),
+                      ]}
+                    />
+                    {/* The fieldset may be disabled (read-only view); a link still works there. */}
+                    {own && (
+                      <a
+                        className="btn"
+                        href="#preview"
+                        title="Open a sandboxed preview in a new tab"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          preview(Number(v))
+                        }}
+                      >
+                        <Eye size={14} /> Preview
+                      </a>
+                    )}
+                  </div>
                 </Field>
               )
+            }
             case 'campaign':
               return (
                 <Field key={f.name} label={label} help={f.help} error={err} className="span-2">

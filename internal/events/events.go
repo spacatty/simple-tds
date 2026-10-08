@@ -62,10 +62,26 @@ type Conversion struct {
 	Params     string
 	CampaignID uint32
 	StreamID   uint32
+	// Goal: the event counts as a conversion. Other funnel stages are steps
+	// on the way to one.
+	Goal bool
+	// ClickTS is when the attributed click happened; zero when there is none.
+	ClickTS time.Time
 	// Denormalised from the click so reports need no join.
 	Domain, Country, Region, City, ISP, DeviceType, OS, Browser, Lang, RefDomain, Keyword string
 	IsBot                                                                                 bool // the attributed click was flagged as a bot
 	Sub                                                                                   [5]string
+}
+
+// FromClick copies what reports group by from the attributed click.
+func (c *Conversion) FromClick(click *Click) {
+	if click == nil {
+		return
+	}
+	c.ClickTS = click.TS
+	c.Domain, c.Country, c.Region, c.City, c.ISP = click.Domain, click.Country, click.Region, click.City, click.ISP
+	c.DeviceType, c.OS, c.Browser, c.Lang = click.DeviceType, click.OS, click.Browser, click.Lang
+	c.RefDomain, c.Keyword, c.Sub, c.IsBot = click.RefDomain, click.Keyword, click.Sub, click.IsBot
 }
 
 const ddlClicks = `CREATE TABLE IF NOT EXISTS clicks (
@@ -87,6 +103,7 @@ const ddlConversions = `CREATE TABLE IF NOT EXISTS conversions (
  region String, city String, isp String, device_type LowCardinality(String), os LowCardinality(String),
  browser LowCardinality(String), lang LowCardinality(String), ref_domain String, keyword String,
  sub1 String, sub2 String, sub3 String, sub4 String, sub5 String, is_bot UInt8,
+ goal UInt8 DEFAULT type != 'rejected', click_ts DateTime64(3,'UTC'),
  INDEX idx_click click_id TYPE bloom_filter(0.01) GRANULARITY 4
 ) ENGINE = MergeTree PARTITION BY toYYYYMM(ts) ORDER BY (ts)`
 
@@ -96,11 +113,14 @@ const insertClick = `INSERT INTO clicks (ts, click_id, campaign_id, stream_id, d
 
 const insertConv = `INSERT INTO conversions (ts, conv_id, click_id, key_id, type, revenue, cost, currency, sender_ip, params,
  campaign_id, stream_id, domain, country, region, city, isp, device_type, os, browser, lang, ref_domain, keyword,
- sub1, sub2, sub3, sub4, sub5, is_bot)`
+ sub1, sub2, sub3, sub4, sub5, is_bot, goal, click_ts)`
 
 // Columns added after the first release; safe to run on every start.
 var chMigrations = []string{
 	"ALTER TABLE conversions ADD COLUMN IF NOT EXISTS is_bot UInt8",
+	// Before funnels every accepted conversion was the goal.
+	"ALTER TABLE conversions ADD COLUMN IF NOT EXISTS goal UInt8 DEFAULT type != 'rejected'",
+	"ALTER TABLE conversions ADD COLUMN IF NOT EXISTS click_ts DateTime64(3,'UTC')",
 }
 
 type Config struct {
@@ -254,9 +274,14 @@ func (db *DB) AddConversion(ctx context.Context, c *Conversion) error {
 	if err != nil {
 		return err
 	}
+	clickTS := c.ClickTS
+	if clickTS.IsZero() {
+		clickTS = time.Unix(0, 0) // the column's "no click" value
+	}
 	err = batch.Append(c.TS, c.ConvID, c.ClickID, c.KeyID, c.Type, c.Revenue, c.Cost, c.Currency, c.SenderIP, c.Params,
 		c.CampaignID, c.StreamID, c.Domain, c.Country, c.Region, c.City, c.ISP, c.DeviceType, c.OS, c.Browser, c.Lang,
-		c.RefDomain, c.Keyword, c.Sub[0], c.Sub[1], c.Sub[2], c.Sub[3], c.Sub[4], b2u(c.IsBot))
+		c.RefDomain, c.Keyword, c.Sub[0], c.Sub[1], c.Sub[2], c.Sub[3], c.Sub[4], b2u(c.IsBot),
+		b2u(c.Goal), clickTS)
 	if err != nil {
 		batch.Abort()
 		return err

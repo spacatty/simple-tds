@@ -130,6 +130,7 @@ CREATE TABLE IF NOT EXISTS campaign_shares (
 CREATE TABLE IF NOT EXISTS stream_presets (
   id bigserial PRIMARY KEY, owner_id bigint REFERENCES users(id), name text NOT NULL,
   kind text NOT NULL, data jsonb NOT NULL DEFAULT '{}');
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS stages jsonb NOT NULL DEFAULT '[]';
 `
 
 // OwnedTables are the tables whose rows belong to a user.

@@ -134,8 +134,32 @@ type Campaign struct {
 	CostValue   float64   `db:"cost_value" json:"cost_value"`
 	Currency    string    `db:"currency" json:"currency"`
 	UniqueHours int       `db:"unique_hours" json:"unique_hours"`
+	Stages      []Stage   `db:"stages" json:"stages"` // conversion funnel, first step first; empty = single-stage
 	Note        string    `db:"note" json:"note"`
 	CreatedAt   time.Time `db:"created_at" json:"created_at"`
+}
+
+// Stage is one step of a campaign's conversion funnel. Events reach it as a
+// conversion whose type is the stage key.
+type Stage struct {
+	Key  string `json:"key"`
+	Name string `json:"name"`
+	// Goal marks the stage that counts as the conversion: it drives CR and
+	// carries the CPA cost. Exactly one stage of a funnel is the goal.
+	Goal bool `json:"goal"`
+	// Public stages can be reported from the visitor's browser with nothing
+	// but the click id. They never carry revenue or cost.
+	Public bool `json:"public"`
+}
+
+// Stage returns the campaign's stage with this key, or nil.
+func (c *Campaign) Stage(key string) *Stage {
+	for i := range c.Stages {
+		if c.Stages[i].Key == key {
+			return &c.Stages[i]
+		}
+	}
+	return nil
 }
 
 // Filter is one stream condition. Mode is "is" or "is_not".
@@ -325,7 +349,14 @@ func DefaultSettings() Settings {
 	}
 }
 
-// ConversionTypes are the fixed conversion kinds accepted by postbacks.
+// TypeRejected marks a conversion the advertiser declined.
+const TypeRejected = "rejected"
+
+// MaxStages caps a campaign's conversion funnel.
+const MaxStages = 12
+
+// ConversionTypes are the built-in conversion kinds, accepted by every
+// postback. Campaigns add their own on top by defining stages.
 var ConversionTypes = []string{"lead", "sale", "install", "registration", "deposit", "action", "rejected"}
 
 // CostModels are the supported campaign cost models.

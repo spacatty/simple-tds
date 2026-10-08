@@ -22,7 +22,9 @@ export function qs(params?: Params): string {
   if (!params) return ''
   const sp = new URLSearchParams()
   for (const [k, v] of Object.entries(params)) {
-    if (v === undefined || v === null || v === '') continue
+    if (v === undefined || v === null) continue
+    // An empty f.<dimension> is a real filter ("no country"); every other empty value means "not set".
+    if (v === '' && !k.startsWith('f.')) continue
     sp.set(k, String(v))
   }
   const s = sp.toString()

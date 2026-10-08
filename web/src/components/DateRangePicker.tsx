@@ -45,6 +45,16 @@ export function presetRange(preset: string): DateRange {
 // The chosen range follows the user from page to page.
 let remembered: DateRange | null = null
 
+export function rememberRange(r: DateRange) {
+  remembered = r
+}
+
+/** The range last chosen anywhere in the panel (presets recomputed for today). */
+export function currentRange(initial = 'today'): DateRange {
+  if (!remembered) return presetRange(initial)
+  return remembered.preset === 'custom' ? remembered : presetRange(remembered.preset)
+}
+
 export function useDateRange(initial = 'today'): [DateRange, (r: DateRange) => void] {
   const [range, setRange] = useState<DateRange>(() => {
     if (!remembered) return presetRange(initial)

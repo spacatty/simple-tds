@@ -17,6 +17,7 @@ import (
 
 	"simpletds/internal/antibot"
 	"simpletds/internal/engine"
+	"simpletds/internal/events"
 	"simpletds/internal/model"
 	"simpletds/internal/store"
 )
@@ -445,10 +446,57 @@ func (s *Server) validateCampaign(_ context.Context, c *model.Campaign, old *mod
 	if c.UniqueHours <= 0 {
 		c.UniqueHours = 24
 	}
+	if err := validateStages(c); err != nil {
+		return err
+	}
 	if old == nil {
 		c.Token = randToken(24)
 	} else {
 		c.Token = old.Token
+	}
+	return nil
+}
+
+// validateStages normalises the campaign's conversion funnel.
+func validateStages(c *model.Campaign) error {
+	if len(c.Stages) > model.MaxStages {
+		return bad(fmt.Sprintf("a funnel can have at most %d stages", model.MaxStages))
+	}
+	seen := map[string]bool{}
+	goals := 0
+	for i := range c.Stages {
+		st := &c.Stages[i]
+		st.Key = strings.ToLower(strings.TrimSpace(st.Key))
+		st.Name = strings.TrimSpace(st.Name)
+		switch {
+		case !events.ValidStageKey(st.Key):
+			return bad(fmt.Sprintf("stage %d: the key is what postbacks send as type — 1-32 lowercase letters, digits or _", i+1))
+		case st.Key == model.TypeRejected:
+			return bad(`"rejected" is reserved for declined conversions and cannot be a stage`)
+		case seen[st.Key]:
+			return bad(fmt.Sprintf("stage key %q is used twice", st.Key))
+		case len(st.Name) > 64:
+			return bad(fmt.Sprintf("stage %q: the name is too long", st.Key))
+		case st.Goal && st.Public:
+			return bad(fmt.Sprintf("stage %q: the goal cannot be reported from the browser — anyone holding a click id could trigger it", st.Key))
+		}
+		if st.Name == "" {
+			st.Name = st.Key
+		}
+		seen[st.Key] = true
+		if st.Goal {
+			goals++
+		}
+	}
+	if goals > 1 {
+		return bad("only one stage can be the goal")
+	}
+	// Without an explicit goal the end of the funnel is the conversion.
+	if n := len(c.Stages); goals == 0 && n > 0 {
+		if c.Stages[n-1].Public {
+			return bad("mark the stage that counts as the conversion as the goal")
+		}
+		c.Stages[n-1].Goal = true
 	}
 	return nil
 }
@@ -982,6 +1030,7 @@ func (s *Server) campaignIntegration(r *http.Request) (any, error) {
 	js := fmt.Sprintf(`<script>(function(){var s=document.createElement("script");s.src=%q+"?_url="+encodeURIComponent(location.href)+"&_ref="+encodeURIComponent(document.referrer);s.async=true;document.head.appendChild(s)})();</script>`,
 		base+jsPrefix+c.Alias)
 	return map[string]string{
+		"event_url":    base + eventPrefix + "{stage}?cid={click_id}",
 		"direct_url":   base + "/" + c.Alias,
 		"direct_note":  "Append your own parameters: ?sub1=..&sub2=..&keyword=..",
 		"js":           js,

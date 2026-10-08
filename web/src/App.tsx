@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
-import { BarChart3, FileCode2, Globe, LayoutDashboard, LogOut, Moon, MousePointerClick, Settings as SettingsIcon, ShieldCheck, Split, Sun, Target, UserRound, Users as UsersIcon } from 'lucide-react'
+import { Navigate, Route, Routes } from 'react-router-dom'
 import { ApiError, api, errMsg, get, onUnauthorized, post } from './api'
 import { AppContext, useTheme } from './hooks'
 import type { Meta, User } from './types'
 import { ConfirmHost, ErrorBox, ToastHost } from './components/ui'
+import { Sidebar } from './components/Sidebar'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Campaigns from './pages/Campaigns'
@@ -17,19 +17,6 @@ import Clicks from './pages/Clicks'
 import Antibot from './pages/Antibot'
 import SettingsPage from './pages/Settings'
 import UsersPage from './pages/Users'
-
-const NAV: { to: string; label: string; icon: typeof Split; end?: boolean; admin?: boolean }[] = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/campaigns', label: 'Campaigns', icon: Split },
-  { to: '/domains', label: 'Domains', icon: Globe },
-  { to: '/whitepages', label: 'Whitepages', icon: FileCode2 },
-  { to: '/conversions', label: 'Conversions', icon: Target },
-  { to: '/reports', label: 'Reports', icon: BarChart3 },
-  { to: '/clicks', label: 'Clicks', icon: MousePointerClick },
-  { to: '/antibot', label: 'Anti-bot', icon: ShieldCheck, admin: true },
-  { to: '/users', label: 'Users', icon: UsersIcon, admin: true },
-  { to: '/settings', label: 'Settings', icon: SettingsIcon },
-]
 
 export default function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
@@ -98,37 +85,7 @@ export default function App() {
   return (
     <AppContext.Provider value={ctx}>
       <div className="app">
-        <aside className="sidebar">
-          <div className="brand">
-            <span className="brand-mark">
-              <Split size={16} />
-            </span>
-            <span>TDS</span>
-          </div>
-          <nav>
-            {NAV.filter((n) => !n.admin || user.role === 'admin').map((n) => (
-              <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')}>
-                <n.icon size={16} />
-                <span>{n.label}</span>
-              </NavLink>
-            ))}
-          </nav>
-          <div className="sidebar-foot">
-            <button className="nav-item" onClick={toggleTheme} title="Switch theme">
-              {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-              <span>{theme === 'dark' ? 'Light theme' : 'Dark theme'}</span>
-            </button>
-            <div className="whoami" title={`Signed in as ${user.username} (${user.role === 'admin' ? 'administrator' : 'user'})`}>
-              <UserRound size={16} />
-              <span className="ellipsis grow strong">{user.username}</span>
-              <span className={'badge ' + (user.role === 'admin' ? 'accent' : 'neutral')}>{user.role === 'admin' ? 'admin' : 'user'}</span>
-            </div>
-            <button className="nav-item" onClick={logout} title="Sign out">
-              <LogOut size={16} />
-              <span>Sign out</span>
-            </button>
-          </div>
-        </aside>
+        <Sidebar user={user} theme={theme} toggleTheme={toggleTheme} logout={logout} />
         <main className="main">
           <Routes>
             <Route path="/" element={<Dashboard />} />

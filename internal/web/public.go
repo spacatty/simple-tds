@@ -20,12 +20,13 @@ const (
 	checkPath    = "/.well-known/tds-check"
 	postbackPath = "/postback"
 	jsPrefix     = "/_j/"
+	eventPrefix  = "/_e/"
 	phpAPIPath   = "/_api/click"
 	maxBody      = 1 << 20
 )
 
 // ReservedAliases cannot be used as campaign aliases: they are routes.
-var ReservedAliases = []string{"postback", "_a", "_j", "_api", ".well-known", "favicon.ico", "robots.txt"}
+var ReservedAliases = []string{"postback", "_a", "_j", "_e", "_api", ".well-known", "favicon.ico", "robots.txt"}
 
 func hostOnly(hostport string) string {
 	h := hostport
@@ -141,6 +142,8 @@ func (s *Server) servePublic(w http.ResponseWriter, r *http.Request) {
 		} else {
 			stock404(w)
 		}
+	case strings.HasPrefix(path, eventPrefix):
+		s.serveEvent(w, r, d, snap)
 	case path == phpAPIPath:
 		s.servePHPAPI(w, r, d, snap)
 	case path == "/":
@@ -350,6 +353,25 @@ func (s *Server) servePostback(w http.ResponseWriter, r *http.Request, ip netip.
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	io.WriteString(w, body)
+}
+
+// serveEvent records a public funnel stage reported by the visitor's browser:
+// /_e/<stage>?cid=<click id>, as a beacon, a pixel or a fetch from any origin.
+// The answer never tells whether the event was accepted.
+func (s *Server) serveEvent(w http.ResponseWriter, r *http.Request, d *engine.DomainRT, snap *engine.Snapshot) {
+	h := w.Header()
+	h.Set("Access-Control-Allow-Origin", "*")
+	h.Set("Cache-Control", "no-store")
+	if r.Method == http.MethodGet || r.Method == http.MethodPost {
+		q := r.URL.Query()
+		id := q.Get("cid")
+		if id == "" {
+			id = q.Get("click_id")
+		}
+		s.eng.Event(&engine.EventInput{Ctx: r.Context(), IP: clientIP(r, d.IPSource, snap), OwnerID: d.OwnerID,
+			ClickID: id, Stage: strings.TrimPrefix(r.URL.Path, eventPrefix)})
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) pageRequest(r *http.Request, w http.ResponseWriter, host string, ip netip.Addr, secure bool) *whitepage.Request {

@@ -17,13 +17,30 @@ const UA_PRESETS: { label: string; ua: string }[] = [
   { label: 'curl', ua: 'curl/8.5.0' },
 ]
 
-export default function Simulator({ campaign, domains }: { campaign: Campaign; domains: Domain[] }) {
+interface SimForm {
+  ip: string
+  user_agent: string
+  country: string
+  language: string
+  referer: string
+  query: string
+  domain: string
+  force_bot: string
+}
+
+/** prefill: values taken from a recorded click ("Simulate this visitor"); stacked: single-column layout for a narrow pane. */
+export default function Simulator({ campaign, domains, prefill, stacked }: { campaign: Campaign; domains: Domain[]; prefill?: Partial<Record<keyof SimForm, string | undefined>>; stacked?: boolean }) {
   const meta = useMeta()
-  const [f, setF] = useState({ ip: '8.8.8.8', user_agent: UA_PRESETS[0].ua, country: '', language: 'en', referer: '', query: '', domain: '', force_bot: 'auto' })
+  const [f, setF] = useState<SimForm>(() => {
+    const base: SimForm = { ip: '8.8.8.8', user_agent: UA_PRESETS[0].ua, country: '', language: 'en', referer: '', query: '', domain: '', force_bot: 'auto' }
+    for (const [k, v] of Object.entries(prefill ?? {})) if (v !== undefined) base[k as keyof SimForm] = v
+    return base
+  })
+  const fromClick = !!prefill && Object.values(prefill).some((v) => v !== undefined)
   const [res, setRes] = useState<SimResult | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const set = (patch: Partial<typeof f>) => setF((x) => ({ ...x, ...patch }))
+  const set = (patch: Partial<SimForm>) => setF((x) => ({ ...x, ...patch }))
 
   const run = async () => {
     setBusy(true)
@@ -54,9 +71,10 @@ export default function Simulator({ campaign, domains }: { campaign: Campaign; d
   const preset = UA_PRESETS.find((p) => p.ua === f.user_agent)
 
   return (
-    <div className="grid-sim">
+    <div className={stacked ? 'stack' : 'grid-sim'}>
       <Card title="Hypothetical visitor">
         <p className="muted">Shows which stream a visitor would get. Nothing is recorded and the action is not executed.</p>
+        {fromClick && <Notice>Prefilled from a recorded click. Cookies, TLS fingerprint and other headers of the original request are not replayed, so the verdict can differ.</Notice>}
         <form
           onSubmit={(e) => {
             e.preventDefault()

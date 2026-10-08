@@ -129,13 +129,16 @@ func (w *where) sql() string {
 	return strings.Join(w.parts, " AND ")
 }
 
-func (q *Query) base() *where {
+func (q *Query) base() *where { return q.baseAt("ts") }
+
+// baseAt is base with the period applied to another time column.
+func (q *Query) baseAt(ts string) *where {
 	w := &where{}
 	if !q.From.IsZero() {
-		w.add("ts >= ?", q.From)
+		w.add(ts+" >= ?", q.From)
 	}
 	if !q.To.IsZero() {
-		w.add("ts < ?", q.To)
+		w.add(ts+" < ?", q.To)
 	}
 	if q.CampaignID != 0 {
 		w.add("campaign_id = ?", q.CampaignID)
@@ -202,8 +205,10 @@ func (q *Query) clickWhere() *where {
 	return w
 }
 
-func (q *Query) convWhere() *where {
-	w := q.base()
+func (q *Query) convWhere() *where { return q.convWhereAt("ts") }
+
+func (q *Query) convWhereAt(ts string) *where {
+	w := q.baseAt(ts)
 	q.drill(w, false)
 	if q.Scoped {
 		w.add("(campaign_id IN (" + idList(q.Campaigns) + ") OR key_id IN (" + idList(q.Keys) + "))")
@@ -255,10 +260,8 @@ type ReportRow struct {
 	CR          float64          `json:"cr"`  // conversions / real clicks, %
 	ROI         float64          `json:"roi"` // %
 	EPC         float64          `json:"epc"`
-	Types       map[string]int64 `json:"types"`
+	Types       map[string]int64 `json:"types"` // events by conversion type, funnel stages included
 }
-
-var convTypes = []string{"lead", "sale", "install", "registration", "deposit", "action"}
 
 // Report aggregates clicks and conversions by one dimension.
 func (db *DB) Report(ctx context.Context, group string, q Query) ([]ReportRow, error) {
@@ -293,24 +296,23 @@ func (db *DB) Report(ctx context.Context, group string, q Query) ([]ReportRow, e
 	}
 	if d.convs {
 		w := q.convWhere()
-		sel := "SELECT " + expr + " AS k, countIf(type != 'rejected') AS conversions, countIf(type = 'rejected') AS rejected, sumIf(revenue, type != 'rejected') AS revenue, sum(cost) AS cost"
-		for _, t := range convTypes {
-			sel += fmt.Sprintf(", countIf(type = '%s') AS t_%s", t, t)
-		}
-		rows, err := db.query(ctx, sel+" FROM conversions WHERE "+w.sql()+" GROUP BY k", w.args...)
+		// Only goal events are conversions: the other stages of a funnel are
+		// steps towards one, though any of them may bring revenue.
+		rows, err := db.query(ctx, "SELECT "+expr+" AS k, toString(type) AS t, count() AS n, sum(goal) AS conversions, sumIf(revenue, type != 'rejected') AS revenue, sum(cost) AS cost FROM conversions WHERE "+w.sql()+" GROUP BY k, t", w.args...)
 		if err != nil {
 			return nil, err
 		}
 		for _, r := range rows {
 			row := get(fmt.Sprint(r["k"]))
-			row.Conversions, row.Rejected = int64(num(r["conversions"])), int64(num(r["rejected"]))
-			row.Revenue = num(r["revenue"])
-			row.Cost += num(r["cost"])
-			for _, t := range convTypes {
-				if n := int64(num(r["t_"+t])); n > 0 {
-					row.Types[t] = n
-				}
+			t, n := fmt.Sprint(r["t"]), int64(num(r["n"]))
+			if t == "rejected" {
+				row.Rejected += n
+			} else {
+				row.Types[t] += n
 			}
+			row.Conversions += int64(num(r["conversions"]))
+			row.Revenue += num(r["revenue"])
+			row.Cost += num(r["cost"])
 		}
 	}
 	out := make([]ReportRow, 0, len(byKey))

@@ -415,6 +415,7 @@ export function Dropdown({
   className = 'btn',
   title,
   disabled,
+  chevron = true,
 }: {
   label: ReactNode
   children: (close: () => void) => ReactNode
@@ -422,24 +423,39 @@ export function Dropdown({
   className?: string
   title?: string
   disabled?: boolean
+  chevron?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useOutside(ref, () => setOpen(false), open)
   return (
     <div className="dropdown" ref={ref}>
-      <button type="button" className={className} title={title} disabled={disabled} onClick={() => setOpen((o) => !o)}>
+      <button
+        type="button"
+        className={className + (open ? ' open' : '')}
+        title={title}
+        disabled={disabled}
+        aria-expanded={open}
+        onClick={(e) => {
+          e.stopPropagation()
+          setOpen((o) => !o)
+        }}
+      >
         {label}
-        <ChevronDown size={14} />
+        {chevron && <ChevronDown size={14} />}
       </button>
-      {open && <div className={'popover ' + align}>{children(() => setOpen(false))}</div>}
+      {open && (
+        <div className={'popover ' + align} onClick={(e) => e.stopPropagation()}>
+          {children(() => setOpen(false))}
+        </div>
+      )}
     </div>
   )
 }
 
-export function MenuItem({ onClick, children, danger }: { onClick: () => void; children: ReactNode; danger?: boolean }) {
+export function MenuItem({ onClick, children, danger, disabled, title }: { onClick: () => void; children: ReactNode; danger?: boolean; disabled?: boolean; title?: string }) {
   return (
-    <button type="button" className={'menu-item' + (danger ? ' danger' : '')} onClick={onClick}>
+    <button type="button" className={'menu-item' + (danger ? ' danger' : '')} disabled={disabled} title={title} onClick={onClick}>
       {children}
     </button>
   )

@@ -123,3 +123,29 @@ func TestSignPostback(t *testing.T) {
 		t.Error("signature must change with the data")
 	}
 }
+
+func TestConversionKind(t *testing.T) {
+	plain := &CampaignRT{}
+	funnel := &CampaignRT{Campaign: model.Campaign{Stages: []model.Stage{{Key: "signup"}, {Key: "order", Goal: true}}}}
+	cases := []struct {
+		name        string
+		c           *CampaignRT
+		typ         string
+		goal, known bool
+	}{
+		{"built-in type is a conversion", plain, "sale", true, true},
+		{"unattributed built-in type", nil, "lead", true, true},
+		{"rejected is never a conversion", plain, "rejected", false, true},
+		{"stage keys need a funnel", plain, "signup", false, false},
+		{"step of a funnel", funnel, "signup", false, true},
+		{"goal of a funnel", funnel, "order", true, true},
+		{"built-in type next to a funnel is not its goal", funnel, "sale", false, true},
+		{"rejected with a funnel", funnel, "rejected", false, true},
+		{"unknown", funnel, "nosuch", false, false},
+	}
+	for _, c := range cases {
+		if goal, known := conversionKind(c.c, c.typ); goal != c.goal || known != c.known {
+			t.Errorf("%s: got goal=%v known=%v", c.name, goal, known)
+		}
+	}
+}

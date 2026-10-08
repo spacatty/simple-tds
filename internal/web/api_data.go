@@ -278,6 +278,30 @@ func (s *Server) dataRoutes(r chi.Router) {
 		}
 		return map[string]any{"rows": rows}, nil
 	}))
+	r.Get("/reports/funnel", handler(func(r *http.Request) (any, error) {
+		q, err := parseQuery(r)
+		if err != nil {
+			return nil, err
+		}
+		// A funnel belongs to one campaign; access to it is all that is needed.
+		c, err := s.campaign(r.Context(), int64(q.CampaignID), model.AccessStats)
+		if err != nil {
+			return nil, err
+		}
+		keys := make([]string, len(c.Stages))
+		for i, st := range c.Stages {
+			keys[i] = st.Key
+		}
+		group := r.URL.Query().Get("group")
+		if group == "" {
+			group = "total"
+		}
+		rows, err := s.ev.Funnel(r.Context(), group, keys, r.URL.Query().Get("strict") == "1", q)
+		if err != nil {
+			return nil, bad(err.Error())
+		}
+		return map[string]any{"stages": c.Stages, "rows": rows}, nil
+	}))
 	r.Get("/clicks", handler(func(r *http.Request) (any, error) {
 		q, err := parseQuery(r)
 		if err != nil {
@@ -467,6 +491,8 @@ func (s *Server) meta(*http.Request) (any, error) {
 		"stream_presets":      builtinPresets,
 		"integration_presets": integrationPresets,
 		"postback_path":       postbackPath,
+		"event_prefix":        eventPrefix,
+		"max_stages":          model.MaxStages,
 		"reserved_aliases":    ReservedAliases,
 	}, nil
 }

@@ -137,11 +137,7 @@ func (e *Engine) Postback(in *PostbackInput) (int, string) {
 	if typ == "" {
 		typ = key.DefaultType
 	}
-	valid := false
-	for _, t := range model.ConversionTypes {
-		valid = valid || t == typ
-	}
-	if !valid {
+	if !events.ValidStageKey(typ) {
 		return reject(http.StatusBadRequest, "unknown conversion type "+clip(typ, 32))
 	}
 
@@ -164,7 +160,7 @@ func (e *Engine) Postback(in *PostbackInput) (int, string) {
 		}
 		switch {
 		case err == nil && now.Sub(ref.At) <= window:
-			conv.ClickID, conv.CampaignID, conv.StreamID = id, ref.CampaignID, ref.StreamID
+			conv.ClickID, conv.CampaignID, conv.StreamID, conv.ClickTS = id, ref.CampaignID, ref.StreamID, ref.At
 			if c, ok := e.recent.Get(id); ok {
 				click = c
 			} else if c, err := e.Events.ClickByID(in.Ctx, id, ref.CampaignID, ref.At); err == nil {
@@ -192,32 +188,25 @@ func (e *Engine) Postback(in *PostbackInput) (int, string) {
 		}
 		if c != nil {
 			click = c
-			conv.ClickID, conv.CampaignID, conv.StreamID = c.ClickID, c.CampaignID, c.StreamID
+			conv.ClickID, conv.CampaignID, conv.StreamID, conv.ClickTS = c.ClickID, c.CampaignID, c.StreamID, c.TS
 		} else if key.RequireClick {
 			return reject(http.StatusBadRequest, "no click from "+target.String())
 		}
 	}
 
-	if key.Dedupe && conv.ClickID != "" {
-		dk := conv.ClickID + "|" + typ
-		if _, seen := e.convs.Get(dk); seen {
-			return http.StatusOK, "DUPLICATE"
-		}
-		if dup, err := e.Events.ConversionExists(in.Ctx, conv.ClickID, typ); err == nil && dup {
-			e.convs.Add(dk, struct{}{})
-			return http.StatusOK, "DUPLICATE"
-		}
-		e.convs.Add(dk, struct{}{})
-	}
-
-	if click != nil {
-		conv.Domain, conv.Country, conv.Region, conv.City, conv.ISP = click.Domain, click.Country, click.Region, click.City, click.ISP
-		conv.DeviceType, conv.OS, conv.Browser, conv.Lang = click.DeviceType, click.OS, click.Browser, click.Lang
-		conv.RefDomain, conv.Keyword, conv.Sub, conv.IsBot = click.RefDomain, click.Keyword, click.Sub, click.IsBot
-	}
-
+	// Which types exist depends on the campaign, so this waits for attribution.
 	campaign := snap.ByID[int64(conv.CampaignID)]
-	if typ != "rejected" {
+	var known bool
+	if conv.Goal, known = conversionKind(campaign, typ); !known {
+		return reject(http.StatusBadRequest, "unknown conversion type "+clip(typ, 32))
+	}
+
+	if key.Dedupe && e.duplicate(in.Ctx, conv) {
+		return http.StatusOK, "DUPLICATE"
+	}
+	conv.FromClick(click)
+
+	if typ != model.TypeRejected {
 		conv.Revenue = key.DefaultRevenue
 		if s := first(q, "revenue", "payout"); s != "" {
 			if f, err := strconv.ParseFloat(s, 64); err == nil && f >= 0 && f < 1e12 {
@@ -227,7 +216,10 @@ func (e *Engine) Postback(in *PostbackInput) (int, string) {
 		if campaign != nil {
 			switch campaign.CostModel {
 			case "cpa":
-				conv.Cost = campaign.CostValue
+				// One payout per customer, however many stages they pass.
+				if conv.Goal {
+					conv.Cost = campaign.CostValue
+				}
 			case "revshare":
 				conv.Cost = conv.Revenue * campaign.CostValue / 100
 			}
@@ -248,16 +240,106 @@ func (e *Engine) Postback(in *PostbackInput) (int, string) {
 	pj, _ := json.Marshal(params)
 	conv.Params = string(pj)
 
-	var rnd [9]byte
-	rand.Read(rnd[:])
-	conv.ConvID = hex.EncodeToString(rnd[:])
-
-	if err := e.Events.AddConversion(in.Ctx, conv); err != nil {
-		slog.Error("conversion not stored", "err", err)
-		if key.Dedupe && conv.ClickID != "" {
-			e.convs.Remove(conv.ClickID + "|" + typ) // let the sender retry
-		}
+	if err := e.addConversion(in.Ctx, conv); err != nil {
 		return http.StatusServiceUnavailable, "RETRY"
 	}
 	return http.StatusOK, "OK"
+}
+
+// conversionKind reports whether typ is a conversion type the campaign
+// accepts, and whether such an event is a conversion (goal) rather than a
+// step towards one. c is nil for events not attributed to a click.
+func conversionKind(c *CampaignRT, typ string) (goal, known bool) {
+	if c != nil && len(c.Stages) > 0 {
+		if st := c.Stage(typ); st != nil {
+			return st.Goal, true
+		}
+	}
+	for _, t := range model.ConversionTypes {
+		if t == typ {
+			// With a funnel only its goal stage is the conversion; a built-in
+			// type arriving next to it is kept as an extra event.
+			return typ != model.TypeRejected && (c == nil || len(c.Stages) == 0), true
+		}
+	}
+	return false, false
+}
+
+// duplicate reports whether the click already has an event of this type, and
+// remembers this one otherwise.
+func (e *Engine) duplicate(ctx context.Context, conv *events.Conversion) bool {
+	if conv.ClickID == "" {
+		return false
+	}
+	dk := conv.ClickID + "|" + conv.Type
+	if _, seen := e.convs.Get(dk); seen {
+		return true
+	}
+	dup, err := e.Events.ConversionExists(ctx, conv.ClickID, conv.Type)
+	e.convs.Add(dk, struct{}{})
+	return err == nil && dup
+}
+
+func (e *Engine) addConversion(ctx context.Context, conv *events.Conversion) error {
+	var rnd [9]byte
+	rand.Read(rnd[:])
+	conv.ConvID = hex.EncodeToString(rnd[:])
+	err := e.Events.AddConversion(ctx, conv)
+	if err != nil {
+		slog.Error("conversion not stored", "err", err)
+		e.convs.Remove(conv.ClickID + "|" + conv.Type) // let the sender retry
+	}
+	return err
+}
+
+// ---- stage events from the browser ------------------------------------------
+
+// EventInput is a funnel stage reported by the visitor's own browser: a
+// landing page button, an offer link. The signed click id is the only proof
+// it carries, so only stages marked public are accepted this way.
+type EventInput struct {
+	Ctx     context.Context
+	IP      netip.Addr
+	OwnerID int64 // owner of the domain the event arrived on
+	ClickID string
+	Stage   string
+}
+
+const (
+	// A browser reports its stages while the visitor is still on the page.
+	publicEventWindow = 7 * 24 * time.Hour
+	maxEventsPerMin   = 60 // per IP
+)
+
+// Event stores a public stage event and reports whether it was accepted.
+// Callers answer the same either way.
+func (e *Engine) Event(in *EventInput) bool {
+	ip := in.IP.Unmap()
+	if !e.limits.Allow("ev|"+ip.String(), maxEventsPerMin) {
+		return false
+	}
+	ref, err := e.parseClickID(in.ClickID)
+	now := time.Now()
+	if err != nil || now.Sub(ref.At) > publicEventWindow {
+		return false
+	}
+	c := e.Snap().ByID[int64(ref.CampaignID)]
+	if c == nil || !c.UsableBy(in.OwnerID) {
+		return false
+	}
+	st := c.Stage(strings.ToLower(in.Stage))
+	if st == nil || !st.Public {
+		return false
+	}
+	conv := &events.Conversion{TS: now.UTC(), Type: st.Key, SenderIP: ip.String(), Params: "{}",
+		ClickID: in.ClickID, CampaignID: ref.CampaignID, StreamID: ref.StreamID, ClickTS: ref.At, Currency: c.Currency}
+	if e.duplicate(in.Ctx, conv) {
+		return false
+	}
+	click, ok := e.recent.Get(in.ClickID)
+	if !ok {
+		click, _ = e.Events.ClickByID(in.Ctx, in.ClickID, ref.CampaignID, ref.At)
+	}
+	conv.FromClick(click)
+	return e.addConversion(in.Ctx, conv) == nil
 }

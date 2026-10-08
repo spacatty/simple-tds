@@ -199,7 +199,8 @@ and which filter decided it.
 https://domain/postback?key=KEY&click_id={click_id}&type=sale&revenue=10&currency=USD&any=thing
 ```
 
-- Types are fixed: `lead, sale, install, registration, deposit, action, rejected`.
+- Built-in types: `lead, sale, install, registration, deposit, action, rejected`.
+  A campaign with a funnel (below) also accepts its stage keys.
 - Any other parameter is stored and shown as its own column in
   Conversions → Log, filterable, and included in the CSV export.
 - GET, form POST and flat JSON POST are accepted. The key may also be sent as
@@ -219,6 +220,24 @@ Keys are named, and each has its own rules:
 A key embedded in an installer can be extracted, so for installs prefer `ip`
 attribution with *require click* and *dedupe* on: a stolen key can then only
 produce one install per real click.
+
+### Multi-stage funnels
+
+A campaign can define its own ordered stages (campaign → Funnel), for example
+`lp_click → offer_click → registration → order → install → subscription`.
+Each stage is a conversion whose `type` is the stage key, so attribution stays
+what the key says: different keys, with different attribution, can feed the
+same click.
+
+- One stage is the **goal**. Only it counts as a conversion in reports (CR)
+  and only it is charged the CPA cost; revenue is summed from every stage.
+- Stages marked **browser event** need no key — the page reports them with the
+  signed click id alone: `https://domain/_e/<stage>?cid=<click id>` (GET or
+  beacon, any origin). They carry no revenue, are counted once per click and
+  are accepted for 7 days after it.
+- The Funnel tab shows how many clicks of the period reached each stage,
+  whenever the events arrived, in any order or strictly in order. Give keys a
+  window long enough for the late stages.
 
 ## Whitepages
 

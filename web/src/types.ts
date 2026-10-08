@@ -41,6 +41,26 @@ export interface Domain {
   created_at: string
 }
 
+/** One step of a campaign's conversion funnel; `key` is the conversion type postbacks send. */
+export interface Stage {
+  key: string
+  name: string
+  /** The stage that counts as the conversion (CR, CPA cost). */
+  goal: boolean
+  /** May be reported from the visitor's browser with only the click id. */
+  public: boolean
+}
+
+export interface FunnelRow {
+  key: string
+  clicks: number
+  uniques: number
+  bots: number
+  cost: number
+  /** One entry per stage, in funnel order. */
+  steps: { reached: number; events: number; revenue: number }[]
+}
+
 export interface Campaign {
   id: number
   name: string
@@ -52,6 +72,7 @@ export interface Campaign {
   cost_value: number
   currency: string
   unique_hours: number
+  stages?: Stage[] | null
   note: string
   created_at: string
   owner_id: number
@@ -208,6 +229,16 @@ export interface IntegrationPreset {
   description: string
 }
 
+export interface StreamPreset {
+  /** Absent on built-in presets. */
+  id?: number
+  name: string
+  kind: 'filters' | 'action' | string
+  /** {filter_op, filters} or {action_type, action_config} */
+  data: { filter_op?: string; filters?: Filter[] | null; action_type?: string; action_config?: ActionConfig | null }
+  builtin?: boolean
+}
+
 export interface Meta {
   actions: ActionDef[]
   filters: FilterDef[]
@@ -217,7 +248,11 @@ export interface Meta {
   report_groups: string[]
   integration_presets: IntegrationPreset[]
   postback_path: string
+  event_prefix?: string
+  max_stages?: number
   reserved_aliases: string[]
+  stream_presets?: StreamPreset[] | null
+  report_filters?: string[] | null
 }
 
 export interface GeoFileStatus {
