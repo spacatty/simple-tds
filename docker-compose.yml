@@ -1,0 +1,80 @@
+name: simple-tds
+
+services:
+  tds:
+    build: .
+    restart: unless-stopped
+    depends_on: [postgres, clickhouse, php]
+    environment:
+      TDS_POSTGRES_DSN: postgres://tds:${POSTGRES_PASSWORD:-tds}@postgres:5432/tds
+      TDS_CLICKHOUSE_ADDR: clickhouse:9000
+      TDS_CLICKHOUSE_DB: tds
+      TDS_CLICKHOUSE_USER: tds
+      TDS_CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-tds}
+      TDS_PHP_FCGI: php:9000
+      TDS_ADMIN_USER: ${TDS_ADMIN_USER:-admin}
+      TDS_ADMIN_PASSWORD: ${TDS_ADMIN_PASSWORD:-}
+      TDS_FORCE_PANEL_IP: ${TDS_FORCE_PANEL_IP:-}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "${PANEL_PORT:-8080}:8080"
+    # Lets the unprivileged process bind 80/443.
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
+    volumes:
+      - data:/data
+      - whitepages:/data/whitepages
+    networks: [edge, backend, phpnet]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  # Executes uploaded PHP whitepages. No access to the databases or the
+  # internet: its only network is the private link to tds.
+  php:
+    build: deploy/php
+    restart: unless-stopped
+    read_only: true
+    tmpfs: ["/tmp:size=64m"]
+    volumes:
+      - whitepages:/data/whitepages:ro
+    networks: [phpnet]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tds
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tds}
+      POSTGRES_DB: tds
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    networks: [backend]
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8-alpine
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: tds
+      CLICKHOUSE_USER: tds
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-tds}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    volumes:
+      - clickhouse:/var/lib/clickhouse
+      - ./deploy/clickhouse/tds.xml:/etc/clickhouse-server/config.d/tds.xml:ro
+    networks: [backend]
+
+networks:
+  edge: {}
+  backend: { internal: true }
+  phpnet: { internal: true }
+
+volumes:
+  data:
+  whitepages:
+  postgres:
+  clickhouse:

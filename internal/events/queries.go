@@ -1,0 +1,460 @@
+package events
+
+import (
+	"context"
+	"encoding/csv"
+	"encoding/json"
+	"fmt"
+	"io"
+	"reflect"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// Query is the common filter set for reports and logs.
+type Query struct {
+	From, To   time.Time
+	TZ         string
+	CampaignID uint32
+	StreamID   uint32
+	KeyID      uint32
+	Country    string
+	Domain     string
+	Type       string
+	IP         string
+	ClickID    string
+	Bots       string            // "" | only | exclude
+	Params     map[string]string // conversion postback params, exact match
+	Limit      int
+	Offset     int
+}
+
+type dim struct {
+	expr          string // %s is replaced by the quoted timezone
+	clicks, convs bool
+	timeline      bool
+}
+
+var dims = map[string]dim{
+	"total":       {"'total'", true, true, false},
+	"day":         {"toString(toDate(ts, %s))", true, true, true},
+	"hour":        {"formatDateTime(ts, '%%Y-%%m-%%d %%H:00', %s)", true, true, true},
+	"campaign":    {"toString(campaign_id)", true, true, false},
+	"stream":      {"toString(stream_id)", true, true, false},
+	"domain":      {"domain", true, true, false},
+	"country":     {"country", true, true, false},
+	"region":      {"region", true, true, false},
+	"city":        {"city", true, true, false},
+	"isp":         {"isp", true, true, false},
+	"device_type": {"device_type", true, true, false},
+	"os":          {"os", true, true, false},
+	"browser":     {"browser", true, true, false},
+	"lang":        {"lang", true, true, false},
+	"ref_domain":  {"ref_domain", true, true, false},
+	"keyword":     {"keyword", true, true, false},
+	"sub1":        {"sub1", true, true, false},
+	"sub2":        {"sub2", true, true, false},
+	"sub3":        {"sub3", true, true, false},
+	"sub4":        {"sub4", true, true, false},
+	"sub5":        {"sub5", true, true, false},
+	"action":      {"action", true, false, false},
+	"bot_reason":  {"bot_reason", true, false, false},
+	"key":         {"toString(key_id)", false, true, false},
+	"type":        {"type", false, true, false},
+}
+
+// Dimensions lists the report groupings, for the panel.
+func Dimensions() []string {
+	out := make([]string, 0, len(dims))
+	for k := range dims {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+var tzRe = regexp.MustCompile(`^[A-Za-z0-9_+\-/]{1,64}$`)
+
+func tzLiteral(tz string) string {
+	if tz == "" || !tzRe.MatchString(tz) {
+		return "'UTC'"
+	}
+	if _, err := time.LoadLocation(tz); err != nil {
+		return "'UTC'"
+	}
+	return "'" + tz + "'"
+}
+
+type where struct {
+	parts []string
+	args  []any
+}
+
+func (w *where) add(cond string, args ...any) {
+	w.parts = append(w.parts, cond)
+	w.args = append(w.args, args...)
+}
+
+func (w *where) sql() string {
+	if len(w.parts) == 0 {
+		return "1"
+	}
+	return strings.Join(w.parts, " AND ")
+}
+
+func (q *Query) base() *where {
+	w := &where{}
+	if !q.From.IsZero() {
+		w.add("ts >= ?", q.From)
+	}
+	if !q.To.IsZero() {
+		w.add("ts < ?", q.To)
+	}
+	if q.CampaignID != 0 {
+		w.add("campaign_id = ?", q.CampaignID)
+	}
+	if q.StreamID != 0 {
+		w.add("stream_id = ?", q.StreamID)
+	}
+	if q.Country != "" {
+		w.add("country = ?", q.Country)
+	}
+	if q.Domain != "" {
+		w.add("domain = ?", q.Domain)
+	}
+	if q.ClickID != "" {
+		w.add("click_id = ?", q.ClickID)
+	}
+	return w
+}
+
+func (q *Query) clickWhere() *where {
+	w := q.base()
+	switch q.Bots {
+	case "only":
+		w.add("is_bot = 1")
+	case "exclude":
+		w.add("is_bot = 0")
+	}
+	if q.IP != "" {
+		w.add("ip = ?", q.IP)
+	}
+	return w
+}
+
+func (q *Query) convWhere() *where {
+	w := q.base()
+	if q.KeyID != 0 {
+		w.add("key_id = ?", q.KeyID)
+	}
+	if q.Type != "" {
+		w.add("type = ?", q.Type)
+	}
+	if q.IP != "" {
+		w.add("sender_ip = ?", q.IP)
+	}
+	for k, v := range q.Params {
+		w.add("JSONExtractString(params, ?) = ?", k, v)
+	}
+	return w
+}
+
+func num(v any) float64 {
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return float64(rv.Int())
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return float64(rv.Uint())
+	case reflect.Float32, reflect.Float64:
+		return rv.Float()
+	}
+	return 0
+}
+
+type ReportRow struct {
+	Key         string           `json:"key"`
+	Clicks      int64            `json:"clicks"`
+	Uniques     int64            `json:"uniques"`
+	Bots        int64            `json:"bots"`
+	Conversions int64            `json:"conversions"`
+	Rejected    int64            `json:"rejected"`
+	Revenue     float64          `json:"revenue"`
+	Cost        float64          `json:"cost"`
+	Profit      float64          `json:"profit"`
+	CR          float64          `json:"cr"`  // conversions / real clicks, %
+	ROI         float64          `json:"roi"` // %
+	EPC         float64          `json:"epc"`
+	Types       map[string]int64 `json:"types"`
+}
+
+var convTypes = []string{"lead", "sale", "install", "registration", "deposit", "action"}
+
+// Report aggregates clicks and conversions by one dimension.
+func (db *DB) Report(ctx context.Context, group string, q Query) ([]ReportRow, error) {
+	d, ok := dims[group]
+	if !ok {
+		return nil, fmt.Errorf("unknown grouping %q", group)
+	}
+	expr := d.expr
+	if strings.Contains(expr, "%s") {
+		expr = fmt.Sprintf(expr, tzLiteral(q.TZ))
+	}
+	byKey := map[string]*ReportRow{}
+	get := func(k string) *ReportRow {
+		r := byKey[k]
+		if r == nil {
+			r = &ReportRow{Key: k, Types: map[string]int64{}}
+			byKey[k] = r
+		}
+		return r
+	}
+	if d.clicks {
+		w := q.clickWhere()
+		rows, err := db.query(ctx, "SELECT "+expr+" AS k, count() AS clicks, sum(is_unique) AS uniques, sum(is_bot) AS bots, sum(cost) AS cost FROM clicks WHERE "+w.sql()+" GROUP BY k", w.args...)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range rows {
+			row := get(fmt.Sprint(r["k"]))
+			row.Clicks, row.Uniques, row.Bots = int64(num(r["clicks"])), int64(num(r["uniques"])), int64(num(r["bots"]))
+			row.Cost = num(r["cost"])
+		}
+	}
+	if d.convs {
+		w := q.convWhere()
+		sel := "SELECT " + expr + " AS k, countIf(type != 'rejected') AS conversions, countIf(type = 'rejected') AS rejected, sumIf(revenue, type != 'rejected') AS revenue, sum(cost) AS cost"
+		for _, t := range convTypes {
+			sel += fmt.Sprintf(", countIf(type = '%s') AS t_%s", t, t)
+		}
+		rows, err := db.query(ctx, sel+" FROM conversions WHERE "+w.sql()+" GROUP BY k", w.args...)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range rows {
+			row := get(fmt.Sprint(r["k"]))
+			row.Conversions, row.Rejected = int64(num(r["conversions"])), int64(num(r["rejected"]))
+			row.Revenue = num(r["revenue"])
+			row.Cost += num(r["cost"])
+			for _, t := range convTypes {
+				if n := int64(num(r["t_"+t])); n > 0 {
+					row.Types[t] = n
+				}
+			}
+		}
+	}
+	out := make([]ReportRow, 0, len(byKey))
+	for _, r := range byKey {
+		r.Profit = r.Revenue - r.Cost
+		if real := r.Clicks - r.Bots; real > 0 {
+			r.CR = float64(r.Conversions) / float64(real) * 100
+			r.EPC = r.Revenue / float64(real)
+		}
+		if r.Cost > 0 {
+			r.ROI = r.Profit / r.Cost * 100
+		}
+		out = append(out, *r)
+	}
+	if d.timeline {
+		sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+	} else {
+		sort.Slice(out, func(i, j int) bool {
+			if out[i].Clicks != out[j].Clicks {
+				return out[i].Clicks > out[j].Clicks
+			}
+			return out[i].Conversions > out[j].Conversions
+		})
+	}
+	return out, nil
+}
+
+const clickCols = `ts, click_id, campaign_id, stream_id, domain, ip, country, region, city, asn, isp, device_type, os, os_version,
+ browser, browser_version, ua, lang, referer, ref_domain, is_bot, bot_reason, is_dc, is_unique, action, integration,
+ sub1, sub2, sub3, sub4, sub5, keyword, params, ja3, ja4, cost`
+
+func (q *Query) page() (int, int) {
+	limit := q.Limit
+	if limit <= 0 || limit > 1000 {
+		limit = 100
+	}
+	if q.Offset < 0 {
+		q.Offset = 0
+	}
+	return limit, q.Offset
+}
+
+// Clicks returns the raw click log, newest first.
+func (db *DB) Clicks(ctx context.Context, q Query) ([]Row, uint64, error) {
+	w := q.clickWhere()
+	limit, offset := q.page()
+	rows, err := db.query(ctx, fmt.Sprintf("SELECT %s FROM clicks WHERE %s ORDER BY ts DESC LIMIT %d OFFSET %d", clickCols, w.sql(), limit, offset), w.args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	var total uint64
+	if err := db.conn.QueryRow(ctx, "SELECT count() FROM clicks WHERE "+w.sql(), w.args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	return rows, total, nil
+}
+
+const convCols = `ts, conv_id, click_id, key_id, type, revenue, cost, currency, sender_ip, params, campaign_id, stream_id,
+ domain, country, city, device_type, os, browser, sub1, sub2, sub3, sub4, sub5`
+
+func decodeParams(rows []Row) {
+	for _, r := range rows {
+		m := map[string]string{}
+		if s, _ := r["params"].(string); s != "" {
+			json.Unmarshal([]byte(s), &m)
+		}
+		r["params"] = m
+	}
+}
+
+// paramKeys returns every postback parameter name seen in the selection, so
+// the panel can render them as table columns.
+func (db *DB) paramKeys(ctx context.Context, w *where) ([]string, error) {
+	var keys []string
+	err := db.conn.QueryRow(ctx, "SELECT arraySort(groupUniqArrayArray(JSONExtractKeys(params))) FROM conversions WHERE "+w.sql(), w.args...).Scan(&keys)
+	if keys == nil {
+		keys = []string{}
+	}
+	return keys, err
+}
+
+// Conversions returns the conversion log plus the union of postback params.
+func (db *DB) Conversions(ctx context.Context, q Query) (rows []Row, keys []string, total uint64, err error) {
+	w := q.convWhere()
+	limit, offset := q.page()
+	rows, err = db.query(ctx, fmt.Sprintf("SELECT %s FROM conversions WHERE %s ORDER BY ts DESC LIMIT %d OFFSET %d", convCols, w.sql(), limit, offset), w.args...)
+	if err != nil {
+		return
+	}
+	decodeParams(rows)
+	if keys, err = db.paramKeys(ctx, w); err != nil {
+		return
+	}
+	err = db.conn.QueryRow(ctx, "SELECT count() FROM conversions WHERE "+w.sql(), w.args...).Scan(&total)
+	return
+}
+
+const csvMaxRows = 1_000_000
+
+// ConversionsCSV streams the selection as CSV with one column per postback param.
+// keyNames maps key ids to their display names.
+func (db *DB) ConversionsCSV(ctx context.Context, out io.Writer, q Query, keyNames map[uint32]string) error {
+	w := q.convWhere()
+	keys, err := db.paramKeys(ctx, w)
+	if err != nil {
+		return err
+	}
+	rows, err := db.conn.Query(ctx, fmt.Sprintf(`SELECT ts, conv_id, click_id, key_id, type, revenue, cost, currency, sender_ip,
+		campaign_id, stream_id, domain, country, city, device_type, os, browser, sub1, sub2, sub3, sub4, sub5, params
+		FROM conversions WHERE %s ORDER BY ts DESC LIMIT %d`, w.sql(), csvMaxRows), w.args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	cw := csv.NewWriter(out)
+	head := []string{"time", "conversion_id", "click_id", "key", "type", "revenue", "cost", "currency", "sender_ip",
+		"campaign_id", "stream_id", "domain", "country", "city", "device_type", "os", "browser", "sub1", "sub2", "sub3", "sub4", "sub5"}
+	fixed := map[string]bool{}
+	for _, h := range head {
+		fixed[h] = true
+	}
+	for _, k := range keys {
+		if fixed[k] {
+			k = "param_" + k // keep header names unique
+		}
+		head = append(head, k)
+	}
+	cw.Write(head)
+	for rows.Next() {
+		var (
+			ts                              time.Time
+			convID, clickID, typ, cur, sip  string
+			keyID, campID, streamID         uint32
+			rev, cost                       float64
+			domain, country, city, dev, osn string
+			browser, s1, s2, s3, s4, s5, pj string
+		)
+		if err := rows.Scan(&ts, &convID, &clickID, &keyID, &typ, &rev, &cost, &cur, &sip, &campID, &streamID,
+			&domain, &country, &city, &dev, &osn, &browser, &s1, &s2, &s3, &s4, &s5, &pj); err != nil {
+			return err
+		}
+		keyName := keyNames[keyID]
+		if keyName == "" {
+			keyName = strconv.FormatUint(uint64(keyID), 10)
+		}
+		rec := []string{ts.UTC().Format(time.RFC3339), convID, clickID, keyName, typ,
+			strconv.FormatFloat(rev, 'f', -1, 64), strconv.FormatFloat(cost, 'f', -1, 64), cur, sip,
+			strconv.FormatUint(uint64(campID), 10), strconv.FormatUint(uint64(streamID), 10),
+			domain, country, city, dev, osn, browser, s1, s2, s3, s4, s5}
+		params := map[string]string{}
+		json.Unmarshal([]byte(pj), &params)
+		for _, k := range keys {
+			rec = append(rec, csvSafe(params[k]))
+		}
+		if err := cw.Write(rec); err != nil {
+			return err
+		}
+	}
+	cw.Flush()
+	return rows.Err()
+}
+
+// csvSafe neutralises spreadsheet formula injection from third-party postback data.
+func csvSafe(s string) string {
+	if s != "" && strings.ContainsRune("=+-@\t\r", rune(s[0])) {
+		return "'" + s
+	}
+	return s
+}
+
+func scanClick(rows interface {
+	Next() bool
+	Scan(...any) error
+}) (*Click, error) {
+	if !rows.Next() {
+		return nil, nil
+	}
+	c := &Click{}
+	err := rows.Scan(&c.TS, &c.ClickID, &c.CampaignID, &c.StreamID, &c.Domain, &c.IP, &c.Country, &c.Region, &c.City, &c.ISP,
+		&c.DeviceType, &c.OS, &c.Browser, &c.Lang, &c.RefDomain, &c.Keyword, &c.Sub[0], &c.Sub[1], &c.Sub[2], &c.Sub[3], &c.Sub[4])
+	return c, err
+}
+
+const lookupCols = `ts, click_id, campaign_id, stream_id, domain, ip, country, region, city, isp, device_type, os, browser,
+ lang, ref_domain, keyword, sub1, sub2, sub3, sub4, sub5`
+
+// ClickByID finds a click. The id carries its campaign and timestamp, so the
+// lookup is a narrow primary-key range rather than a scan.
+func (db *DB) ClickByID(ctx context.Context, id string, campaignID uint32, at time.Time) (*Click, error) {
+	rows, err := db.conn.Query(ctx, "SELECT "+lookupCols+" FROM clicks WHERE campaign_id = ? AND ts >= ? AND ts < ? AND click_id = ? LIMIT 1",
+		campaignID, at.Add(-2*time.Second), at.Add(2*time.Second), id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanClick(rows)
+}
+
+// LastClickByIP finds the most recent human click from ip since the given time.
+func (db *DB) LastClickByIP(ctx context.Context, ip string, since time.Time) (*Click, error) {
+	rows, err := db.conn.Query(ctx, "SELECT "+lookupCols+" FROM clicks WHERE ip = ? AND ts >= ? AND is_bot = 0 ORDER BY ts DESC LIMIT 1", ip, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanClick(rows)
+}
+
+// ConversionExists reports whether a click already has a conversion of this type.
+func (db *DB) ConversionExists(ctx context.Context, clickID, typ string) (bool, error) {
+	var n uint64
+	err := db.conn.QueryRow(ctx, "SELECT count() FROM conversions WHERE click_id = ? AND type = ?", clickID, typ).Scan(&n)
+	return n > 0, err
+}

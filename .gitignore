@@ -1,0 +1,6 @@
+.env
+web/node_modules/
+internal/web/ui/dist/*
+!internal/web/ui/dist/index.html
+/tds
+/tds.exe
