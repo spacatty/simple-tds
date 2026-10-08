@@ -2244,6 +2244,17 @@ fieldset.plain:disabled .chips-box {
   font-size: 15px !important;
   letter-spacing: 0.08em;
 }
+.totp-qr {
+  display: block;
+  width: 200px;
+  height: 200px;
+  padding: 10px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin: 4px 0 12px;
+  image-rendering: pixelated;
+}
 .totp-setup {
   max-width: 720px;
 }

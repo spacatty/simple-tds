@@ -251,6 +251,8 @@ export interface SystemInfo {
     admin_path: string
   }
   php_enabled: boolean
+  /** Public address of the server, for DNS hints; may be empty. */
+  server_ip?: string
 }
 
 export interface ReportRow {
@@ -318,6 +320,8 @@ export interface Rejected {
   at: string
   ip: string
   key: string
+  /** Name of the conversion key, empty when the key is unknown. */
+  key_name?: string
   reason: string
   query: string
 }

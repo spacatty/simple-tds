@@ -3,7 +3,7 @@ import type { DragEvent } from 'react'
 import { AlertTriangle, ArrowDown, Ban, Code2, Copy, CornerDownRight, ExternalLink, Eye, FileCode2, FileText, GripVertical, Pencil, Plus, ShieldCheck, Split, Trash2 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { del, get, post, put } from '../api'
-import { canEdit, isOwner, useLoad, useMeta } from '../hooks'
+import { canEdit, useLoad, useMeta } from '../hooks'
 import type { ActionDef, Campaign, Filter, FilterDef, GeoPreset, Stream, Whitepage } from '../types'
 import { Badge, ErrorBox, Skeleton, Toggle, confirmDialog, toast } from '../components/ui'
 import StreamEditor, { draftFromStream, newDraft, streamBody } from './StreamEditor'
@@ -14,6 +14,14 @@ import { ratioPct } from '../format'
 interface StreamsResp {
   streams: Stream[] | null
   errors: Record<string, string> | null
+  /** Names of every whitepage / target campaign the streams reference, including ones the viewer does not own. */
+  whitepages?: Record<string, string> | null
+  campaigns?: Record<string, string> | null
+}
+
+export interface RefNames {
+  whitepages: Record<string, string>
+  campaigns: Record<string, string>
 }
 
 const KINDS = ['forced', 'regular', 'default'] as const
@@ -37,6 +45,7 @@ export default function StreamFunnel({ campaign, campaigns, whitepages, presets,
 
   const streams = useMemo(() => res.data?.streams ?? [], [res.data])
   const errors = res.data?.errors ?? {}
+  const refNames: RefNames = useMemo(() => ({ whitepages: res.data?.whitepages ?? {}, campaigns: res.data?.campaigns ?? {} }), [res.data])
   const byKind = useMemo(() => {
     const m: Record<string, Stream[]> = { forced: [], regular: [], default: [] }
     for (const s of streams) (m[s.kind] ?? m.regular).push(s)
@@ -44,7 +53,7 @@ export default function StreamFunnel({ campaign, campaigns, whitepages, presets,
   }, [streams])
   const filterDefs = useMemo(() => new Map(meta.filters.map((f) => [f.type, f])), [meta.filters])
 
-  const setStreams = (next: Stream[]) => res.setData({ streams: next, errors: res.data?.errors ?? {} })
+  const setStreams = (next: Stream[]) => res.setData({ ...res.data, streams: next, errors: res.data?.errors ?? {} })
 
   /** Persists the order forced → regular → default, as given. */
   const saveOrder = async (groups: Record<string, Stream[]>) => {
@@ -171,7 +180,7 @@ export default function StreamFunnel({ campaign, campaigns, whitepages, presets,
                     stream={s}
                     index={i}
                     readOnly={readOnly}
-                    refsMayBeHidden={!isOwner(campaign)}
+                    refNames={refNames}
                     error={errors[String(s.id)]}
                     showWeight={campaign.rotation === 'weight' && kind === 'regular'}
                     totalWeight={totalWeight}
@@ -208,7 +217,7 @@ export default function StreamFunnel({ campaign, campaigns, whitepages, presets,
         <span>{byKind.default.some((s) => s.enabled) ? 'if the default stream does not match either: 404' : 'nothing matched: the visitor gets a 404'}</span>
       </div>
 
-      {editing && <StreamEditor readOnly={readOnly} draft={editing} campaign={campaign} campaigns={campaigns.filter(canEdit)} whitepages={whitepages} presets={presets} onClose={() => setEditing(null)} onSaved={onSaved} />}
+      {editing && <StreamEditor readOnly={readOnly} refNames={refNames} draft={editing} campaign={campaign} campaigns={campaigns.filter(canEdit)} whitepages={whitepages} presets={presets} onClose={() => setEditing(null)} onSaved={onSaved} />}
     </div>
   )
 }
@@ -239,9 +248,7 @@ function filterChip(f: Filter, def: FilterDef | undefined) {
   return { label, not, text, title: `${label} ${not ? 'is not' : 'is'}${vals.length ? ': ' + vals.join(', ') : ''}` }
 }
 
-export function actionSummary(s: Stream, actions: ActionDef[], whitepages: Whitepage[], campaigns: Campaign[], refsMayBeHidden = false): { label: string; detail: string } {
-  // In a shared campaign the owner's whitepages and campaigns are not in the viewer's lists.
-  const gone = refsMayBeHidden ? '' : ' (missing)'
+export function actionSummary(s: Stream, actions: ActionDef[], whitepages: Whitepage[], campaigns: Campaign[], refNames?: RefNames): { label: string; detail: string } {
   const def = actions.find((a) => a.type === s.action_type)
   const cfg = s.action_config ?? {}
   const str = (k: string) => (cfg[k] === undefined || cfg[k] === null ? '' : String(cfg[k]))
@@ -252,12 +259,13 @@ export function actionSummary(s: Stream, actions: ActionDef[], whitepages: White
       break
     case 'whitepage': {
       const w = whitepages.find((x) => x.id === Number(cfg.whitepage_id))
-      detail = w ? w.name : cfg.whitepage_id ? `#${str('whitepage_id')}${gone}` : 'not chosen'
+      // In a shared campaign the owner's whitepages are not in the viewer's own list: the server supplies their names.
+      detail = w ? w.name : cfg.whitepage_id ? refNames?.whitepages[str('whitepage_id')] ?? `#${str('whitepage_id')} (missing)` : 'not chosen'
       break
     }
     case 'campaign': {
       const c = campaigns.find((x) => x.id === Number(cfg.campaign_id))
-      detail = c ? c.name : cfg.campaign_id ? `#${str('campaign_id')}${gone}` : 'not chosen'
+      detail = c ? c.name : cfg.campaign_id ? refNames?.campaigns[str('campaign_id')] ?? `#${str('campaign_id')} (missing)` : 'not chosen'
       break
     }
     case 'status':
@@ -281,7 +289,7 @@ function StreamCard({
   stream: s,
   index,
   readOnly,
-  refsMayBeHidden,
+  refNames,
   error,
   showWeight,
   totalWeight,
@@ -302,7 +310,7 @@ function StreamCard({
   stream: Stream
   index: number
   readOnly: boolean
-  refsMayBeHidden: boolean
+  refNames: RefNames
   error?: string
   showWeight: boolean
   totalWeight: number
@@ -322,7 +330,7 @@ function StreamCard({
 }) {
   const [armed, setArmed] = useState(false)
   const filters = s.filters ?? []
-  const act = actionSummary(s, actions, whitepages, campaigns, refsMayBeHidden)
+  const act = actionSummary(s, actions, whitepages, campaigns, refNames)
   const Icon = ACTION_ICONS[s.action_type] ?? CornerDownRight
   return (
     <div

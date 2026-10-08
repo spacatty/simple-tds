@@ -224,11 +224,14 @@ func (e *Engine) Allow(key string, limit int) bool { return e.limits.Allow(key, 
 // ---- rejected postbacks -----------------------------------------------------
 
 type Rejected struct {
-	At     time.Time `json:"at"`
-	IP     string    `json:"ip"`
-	Key    string    `json:"key"`
-	Reason string    `json:"reason"`
-	Query  string    `json:"query"`
+	At      time.Time `json:"at"`
+	IP      string    `json:"ip"`
+	Key     string    `json:"key"`      // first characters of the key that was sent
+	KeyName string    `json:"key_name"` // empty when the key is unknown
+	// OwnerID is the key's owner, 0 for unknown keys: only admins see those.
+	OwnerID int64  `json:"-"`
+	Reason  string `json:"reason"`
+	Query   string `json:"query"`
 }
 
 // rejectLog keeps the most recent refused postbacks for the panel.
@@ -253,13 +256,19 @@ func (l *rejectLog) add(r Rejected) {
 	l.mu.Unlock()
 }
 
-// List returns rejected postbacks, newest first.
-func (l *rejectLog) List() ([]Rejected, int64) {
+// List returns rejected postbacks, newest first. ownerID 0 returns all of
+// them with the lifetime total; otherwise only that owner's keys.
+func (l *rejectLog) List(ownerID int64) ([]Rejected, int64) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	out := make([]Rejected, len(l.items))
-	for i, r := range l.items {
-		out[len(l.items)-1-i] = r
+	out := make([]Rejected, 0, len(l.items))
+	for i := len(l.items) - 1; i >= 0; i-- {
+		if ownerID == 0 || l.items[i].OwnerID == ownerID {
+			out = append(out, l.items[i])
+		}
 	}
-	return out, l.Total
+	if ownerID == 0 {
+		return out, l.Total
+	}
+	return out, int64(len(out))
 }

@@ -89,9 +89,14 @@ func (e *Engine) Postback(in *PostbackInput) (int, string) {
 	if keyStr == "" {
 		keyStr = in.HeaderKey
 	}
+	key := snap.Keys[keyStr]
 	reject := func(status int, reason string) (int, string) {
 		e.limits.Allow("pb-rej|"+ip.String(), 1<<30)
-		e.Reject.add(Rejected{At: time.Now(), IP: ip.String(), Key: clip(keyStr, 12), Reason: reason, Query: q.Encode()})
+		r := Rejected{At: time.Now(), IP: ip.String(), Key: clip(keyStr, 12), Reason: reason, Query: q.Encode()}
+		if key != nil {
+			r.KeyName, r.OwnerID = key.Name, key.OwnerID
+		}
+		e.Reject.add(r)
 		return status, http.StatusText(status)
 	}
 
@@ -99,7 +104,6 @@ func (e *Engine) Postback(in *PostbackInput) (int, string) {
 	if e.limits.Count("pb-rej|"+ip.String()) > maxRejectsPerMinute {
 		return http.StatusTooManyRequests, http.StatusText(http.StatusTooManyRequests)
 	}
-	key := snap.Keys[keyStr]
 	if key == nil {
 		return reject(http.StatusForbidden, "unknown or disabled key")
 	}
@@ -209,7 +213,7 @@ func (e *Engine) Postback(in *PostbackInput) (int, string) {
 	if click != nil {
 		conv.Domain, conv.Country, conv.Region, conv.City, conv.ISP = click.Domain, click.Country, click.Region, click.City, click.ISP
 		conv.DeviceType, conv.OS, conv.Browser, conv.Lang = click.DeviceType, click.OS, click.Browser, click.Lang
-		conv.RefDomain, conv.Keyword, conv.Sub = click.RefDomain, click.Keyword, click.Sub
+		conv.RefDomain, conv.Keyword, conv.Sub, conv.IsBot = click.RefDomain, click.Keyword, click.Sub, click.IsBot
 	}
 
 	campaign := snap.ByID[int64(conv.CampaignID)]

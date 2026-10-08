@@ -64,6 +64,7 @@ type Conversion struct {
 	StreamID   uint32
 	// Denormalised from the click so reports need no join.
 	Domain, Country, Region, City, ISP, DeviceType, OS, Browser, Lang, RefDomain, Keyword string
+	IsBot                                                                                 bool // the attributed click was flagged as a bot
 	Sub                                                                                   [5]string
 }
 
@@ -85,7 +86,7 @@ const ddlConversions = `CREATE TABLE IF NOT EXISTS conversions (
  campaign_id UInt32, stream_id UInt32, domain LowCardinality(String), country LowCardinality(String),
  region String, city String, isp String, device_type LowCardinality(String), os LowCardinality(String),
  browser LowCardinality(String), lang LowCardinality(String), ref_domain String, keyword String,
- sub1 String, sub2 String, sub3 String, sub4 String, sub5 String,
+ sub1 String, sub2 String, sub3 String, sub4 String, sub5 String, is_bot UInt8,
  INDEX idx_click click_id TYPE bloom_filter(0.01) GRANULARITY 4
 ) ENGINE = MergeTree PARTITION BY toYYYYMM(ts) ORDER BY (ts)`
 
@@ -95,7 +96,12 @@ const insertClick = `INSERT INTO clicks (ts, click_id, campaign_id, stream_id, d
 
 const insertConv = `INSERT INTO conversions (ts, conv_id, click_id, key_id, type, revenue, cost, currency, sender_ip, params,
  campaign_id, stream_id, domain, country, region, city, isp, device_type, os, browser, lang, ref_domain, keyword,
- sub1, sub2, sub3, sub4, sub5)`
+ sub1, sub2, sub3, sub4, sub5, is_bot)`
+
+// Columns added after the first release; safe to run on every start.
+var chMigrations = []string{
+	"ALTER TABLE conversions ADD COLUMN IF NOT EXISTS is_bot UInt8",
+}
 
 type Config struct {
 	Addr, Database, User, Password string
@@ -136,7 +142,7 @@ func Open(ctx context.Context, c Config) (*DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: %w", err)
 	}
-	for _, ddl := range []string{ddlClicks, ddlConversions} {
+	for _, ddl := range append([]string{ddlClicks, ddlConversions}, chMigrations...) {
 		if err := conn.Exec(ctx, ddl); err != nil {
 			return nil, fmt.Errorf("clickhouse schema: %w", err)
 		}
@@ -250,7 +256,7 @@ func (db *DB) AddConversion(ctx context.Context, c *Conversion) error {
 	}
 	err = batch.Append(c.TS, c.ConvID, c.ClickID, c.KeyID, c.Type, c.Revenue, c.Cost, c.Currency, c.SenderIP, c.Params,
 		c.CampaignID, c.StreamID, c.Domain, c.Country, c.Region, c.City, c.ISP, c.DeviceType, c.OS, c.Browser, c.Lang,
-		c.RefDomain, c.Keyword, c.Sub[0], c.Sub[1], c.Sub[2], c.Sub[3], c.Sub[4])
+		c.RefDomain, c.Keyword, c.Sub[0], c.Sub[1], c.Sub[2], c.Sub[3], c.Sub[4], b2u(c.IsBot))
 	if err != nil {
 		batch.Abort()
 		return err

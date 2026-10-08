@@ -2,10 +2,10 @@ import { useMemo, useState } from 'react'
 import { Check, FolderCog, Pencil, Plus, RefreshCw, Trash2, X } from 'lucide-react'
 import { del, errMsg, get, post, put } from '../api'
 import { canEdit, useInterval, useIsAdmin, useLoad } from '../hooks'
-import type { BulkAddResult, Campaign, Domain, DomainGroup } from '../types'
+import type { BulkAddResult, Campaign, Domain, DomainGroup, SystemInfo } from '../types'
 import { DataTable } from '../components/DataTable'
 import type { Column } from '../components/DataTable'
-import { Badge, Dropdown, Empty, ErrorBox, Field, MenuItem, Modal, Notice, PageHeader, SearchInput, Select, Toggle, confirmDialog, toast, useBusy } from '../components/ui'
+import { Badge, CopyButton, Dropdown, Empty, ErrorBox, Field, MenuItem, Modal, Notice, PageHeader, SearchInput, Select, Toggle, confirmDialog, toast, useBusy } from '../components/ui'
 import type { Tone } from '../components/ui'
 import { fmtAgo, fmtDateTime } from '../format'
 
@@ -29,6 +29,7 @@ export default function Domains() {
   const camps = useLoad(() => get<Campaign[]>('campaigns'), [])
   // A domain may only serve campaigns the user can edit.
   const usable = useMemo(() => (camps.data ?? []).filter(canEdit), [camps.data])
+  const sys = useLoad(() => get<SystemInfo>('system'), [])
   const [q, setQ] = useState('')
   const [group, setGroup] = useState('')
   const [status, setStatus] = useState('')
@@ -181,8 +182,7 @@ export default function Domains() {
   ]
 
   const groupOptions = [{ value: 'none', label: 'Without group' }, ...(groups.data ?? []).map((g) => ({ value: String(g.id), label: g.name }))]
-  const host = window.location.hostname
-  const serverIP = /^(\d{1,3}\.){3}\d{1,3}$/.test(host) || host.includes(':') ? host : ''
+  const serverIP = sys.data?.server_ip ?? ''
 
   return (
     <div className="page">
@@ -196,7 +196,7 @@ export default function Domains() {
       </PageHeader>
 
       <Notice>
-        Point an <b>A record</b> of each domain at this server{serverIP && <> (<code>{serverIP}</code>)</>}. The domain is checked automatically and its status turns <Badge tone="ok">ok</Badge> once it is verified
+        Point an <b>A record</b> of each domain at {serverIP ? <><code>{serverIP}</code> <CopyButton text={serverIP} className="icon-btn" title="Copy the server IP" /></> : 'this server'}. The domain is checked automatically and its status turns <Badge tone="ok">ok</Badge> once it is verified
         {' '}— in Auto TLS mode that includes issuing the certificate, which can take a minute. Behind Cloudflare choose TLS “Proxy / CDN” and real IP “CF-Connecting-IP”.
       </Notice>
       <ErrorBox error={list.error} retry={list.reload} />
@@ -319,7 +319,8 @@ export default function Domains() {
           domain={editing}
           isAdmin={isAdmin}
           groups={groups.data ?? []}
-          campaigns={usable}
+          // The picker offers editable campaigns, plus the current one if it was set by someone with more rights.
+          campaigns={[...(camps.data ?? []).filter((c) => c.id === editing.campaign_id && !canEdit(c)), ...usable]}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null)

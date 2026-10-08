@@ -170,6 +170,12 @@ func (q *Query) convWhere() *where {
 	if q.Scoped {
 		w.add("(campaign_id IN (" + idList(q.Campaigns) + ") OR key_id IN (" + idList(q.Keys) + "))")
 	}
+	switch q.Bots {
+	case "only":
+		w.add("is_bot = 1")
+	case "exclude":
+		w.add("is_bot = 0")
+	}
 	if q.KeyID != 0 {
 		w.add("key_id = ?", q.KeyID)
 	}
@@ -445,13 +451,15 @@ func scanClick(rows interface {
 		return nil, nil
 	}
 	c := &Click{}
+	var bot uint8
+	defer func() { c.IsBot = bot == 1 }()
 	err := rows.Scan(&c.TS, &c.ClickID, &c.CampaignID, &c.StreamID, &c.Domain, &c.IP, &c.Country, &c.Region, &c.City, &c.ISP,
-		&c.DeviceType, &c.OS, &c.Browser, &c.Lang, &c.RefDomain, &c.Keyword, &c.Sub[0], &c.Sub[1], &c.Sub[2], &c.Sub[3], &c.Sub[4])
+		&c.DeviceType, &c.OS, &c.Browser, &c.Lang, &c.RefDomain, &c.Keyword, &c.Sub[0], &c.Sub[1], &c.Sub[2], &c.Sub[3], &c.Sub[4], &bot)
 	return c, err
 }
 
 const lookupCols = `ts, click_id, campaign_id, stream_id, domain, ip, country, region, city, isp, device_type, os, browser,
- lang, ref_domain, keyword, sub1, sub2, sub3, sub4, sub5`
+ lang, ref_domain, keyword, sub1, sub2, sub3, sub4, sub5, is_bot`
 
 // ClickByID finds a click. The id carries its campaign and timestamp, so the
 // lookup is a narrow primary-key range rather than a scan.

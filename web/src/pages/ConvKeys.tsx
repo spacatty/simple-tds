@@ -159,7 +159,7 @@ export default function ConvKeys() {
         />
       </div>
 
-      {isAdmin && <RejectedTable />}
+      <RejectedTable all={isAdmin} />
 
       {editing && (
         <KeyEditor
@@ -374,12 +374,27 @@ function KeyEditor({ k, types, onClose, onSaved }: { k: ConvKey | null; types: s
   )
 }
 
-function RejectedTable() {
+function RejectedTable({ all }: { all: boolean }) {
   const res = useLoad(() => get<{ rows: Rejected[] | null; total: number }>('postbacks/rejected'), [])
   const columns: Column<Rejected>[] = [
     { key: 'at', title: 'Time', width: 170, render: (r) => <span className="nowrap">{fmtDateTime(r.at)}</span> },
     { key: 'ip', title: 'Sender IP', render: (r) => <span className="mono">{r.ip}</span> },
-    { key: 'key', title: 'Key (prefix)', render: (r) => (r.key ? <code>{r.key}</code> : <span className="muted">none</span>) },
+    {
+      key: 'key',
+      title: 'Key',
+      render: (r) =>
+        r.key_name ? (
+          <span className="strong" title={r.key ? `Key starts with ${r.key}` : undefined}>
+            {r.key_name}
+          </span>
+        ) : r.key ? (
+          <span title="No key with this value exists (prefix shown)">
+            <code>{r.key}…</code> <span className="muted small">unknown</span>
+          </span>
+        ) : (
+          <span className="muted">none</span>
+        ),
+    },
     { key: 'reason', title: 'Reason', render: (r) => <Badge tone="err">{r.reason}</Badge> },
     { key: 'query', title: 'Parameters', render: (r) => <span className="mono small break">{r.query}</span> },
   ]
@@ -400,7 +415,7 @@ function RejectedTable() {
         rowKey={(_, i) => i}
         loading={res.loading}
         maxHeight={360}
-        empty={<Empty title="No rejected postbacks">Refused postbacks (wrong key, bad signature, missing click…) show up here with the reason. The list is kept in memory and resets on restart.</Empty>}
+        empty={<Empty title="No rejected postbacks">{all ? 'Refused postbacks (wrong key, bad signature, missing click…) show up here with the reason.' : 'Postbacks refused for your keys (bad signature, missing click, rate limit…) show up here with the reason.'} The list is kept in memory and resets on restart.</Empty>}
       />
     </Card>
   )

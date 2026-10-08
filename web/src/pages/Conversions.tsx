@@ -314,7 +314,7 @@ function ConvLog() {
           rowKey={(r, i) => String(r.conv_id ?? i)}
           loading={res.loading}
           maxHeight="calc(100vh - 330px)"
-          empty={<Empty title="No conversions for this selection">Check the date range and filters, and that the sender uses the postback URL from the Keys tab.</Empty>}
+          empty={<Empty title="No conversions for this selection">Check the date range and filters, or look at rejected postbacks on the Keys tab.</Empty>}
         />
         <Pagination total={res.data?.total ?? 0} limit={LIMIT} offset={offset} onChange={setOffset} />
       </div>

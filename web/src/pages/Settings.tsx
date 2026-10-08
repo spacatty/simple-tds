@@ -313,7 +313,7 @@ function Account() {
   const [pwError, setPwError] = useState('')
   const [busy, run] = useBusy()
 
-  const [setup, setSetup] = useState<{ secret: string; url: string } | null>(null)
+  const [setup, setSetup] = useState<{ secret: string; url: string; qr?: string } | null>(null)
   const [code, setCode] = useState('')
   const [disablePw, setDisablePw] = useState('')
   const [totpError, setTotpError] = useState('')
@@ -328,9 +328,7 @@ function Account() {
         setCur('')
         setNext('')
         setAgain('')
-        toast.ok('Password changed. All sessions were signed out — sign in again.')
-        // Every session, including this one, was revoked: the next request shows the login screen.
-        get('me').catch(() => undefined)
+        toast.ok('Password changed. Your other devices were signed out.')
       } catch (e) {
         setPwError(errMsg(e))
       }
@@ -340,7 +338,7 @@ function Account() {
     run(async () => {
       setTotpError('')
       try {
-        setSetup(await post<{ secret: string; url: string }>('me/totp/setup'))
+        setSetup(await post<{ secret: string; url: string; qr?: string }>('me/totp/setup'))
         setCode('')
       } catch (e) {
         setTotpError(errMsg(e))
@@ -398,7 +396,7 @@ function Account() {
           <button className="btn primary" disabled={busy || !cur || next.length < 10 || next !== again}>
             Change password
           </button>
-          <span className="muted small">Signs out every device, including this one.</span>
+          <span className="muted small">Signs out your other devices; this session stays signed in.</span>
         </div>
       </form>
 
@@ -433,8 +431,9 @@ function Account() {
       ) : (
         <div className="totp-setup">
           <p>
-            1. Add a new account in your authenticator app using <b>manual entry</b> with the secret below, or open the otpauth link on a device that has the app.
+            1. {setup.qr ? <>Scan this QR code with your authenticator app, or add the account by <b>manual entry</b> with the secret below.</> : <>Add a new account in your authenticator app using <b>manual entry</b> with the secret below, or open the otpauth link on a device that has the app.</>}
           </p>
+          {setup.qr && setup.qr.startsWith('data:image/') && <img className="totp-qr" src={setup.qr} width={200} height={200} alt="QR code for the authenticator app" />}
           <div className="field-label">Secret</div>
           <div className="url-line">
             <code className="totp-secret">{setup.secret.replace(/(.{4})/g, '$1 ').trim()}</code>

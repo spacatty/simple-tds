@@ -11,12 +11,16 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"io"
 	"log/slog"
 	"math/big"
 	"net"
 	"net/http"
 	"net/netip"
+	"os"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mholt/acmez/v3"
@@ -54,6 +58,8 @@ type Server struct {
 
 	sessMu   sync.Mutex
 	sessions map[string]sessionEntry
+
+	publicIP atomic.Value // string; this server's public address, for DNS hints
 
 	checkMu sync.Mutex
 	servers []*http.Server
@@ -229,8 +235,44 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 }
 
+// serverIP is the address users should point their domains at.
+func (s *Server) serverIP() string {
+	ip, _ := s.publicIP.Load().(string)
+	return ip
+}
+
+// detectPublicIP learns the server's public address: from TDS_PUBLIC_IP if
+// set, otherwise by asking an echo service. Purely informational.
+func (s *Server) detectPublicIP(ctx context.Context) {
+	if ip := strings.TrimSpace(os.Getenv("TDS_PUBLIC_IP")); ip != "" {
+		s.publicIP.Store(ip)
+		return
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	for _, u := range []string{"https://1.1.1.1/cdn-cgi/trace", "https://api.ipify.org"} {
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		resp, err := client.Do(req)
+		if err != nil {
+			continue
+		}
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		resp.Body.Close()
+		text := strings.TrimSpace(string(body))
+		for _, line := range strings.Split(text, "\n") {
+			if v, ok := strings.CutPrefix(line, "ip="); ok {
+				text = v
+			}
+		}
+		if addr, err := netip.ParseAddr(strings.TrimSpace(text)); err == nil {
+			s.publicIP.Store(addr.String())
+			return
+		}
+	}
+}
+
 // background runs the periodic jobs: list and geo refresh, domain checks.
 func (s *Server) background(ctx context.Context) {
+	go s.detectPublicIP(ctx)
 	s.lists.Reload(ctx)
 	go func() {
 		s.lists.Refresh(ctx, 0, false)

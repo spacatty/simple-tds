@@ -322,6 +322,11 @@ func (s *Store) DeleteSession(ctx context.Context, hash string) {
 	s.Pool.Exec(ctx, "DELETE FROM sessions WHERE token_hash=$1 OR expires_at<now()", hash)
 }
 
+// DeleteOtherSessions signs a user out everywhere except one session.
+func (s *Store) DeleteOtherSessions(ctx context.Context, userID int64, keepHash string) {
+	s.Pool.Exec(ctx, "DELETE FROM sessions WHERE user_id=$1 AND token_hash<>$2", userID, keepHash)
+}
+
 func (s *Store) DeleteUserSessions(ctx context.Context, userID int64) {
 	s.Pool.Exec(ctx, "DELETE FROM sessions WHERE user_id=$1", userID)
 }

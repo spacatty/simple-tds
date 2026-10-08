@@ -121,11 +121,13 @@ interface Props {
   whitepages: Whitepage[]
   presets: GeoPreset[]
   readOnly?: boolean
+  /** Names of referenced whitepages / campaigns that are not in the user's own lists. */
+  refNames?: { whitepages: Record<string, string>; campaigns: Record<string, string> }
   onClose: () => void
   onSaved: (s: Stream, created: boolean, kindChanged: boolean) => void
 }
 
-export default function StreamEditor({ draft: initial, campaign, campaigns, whitepages, presets, readOnly, onClose, onSaved }: Props) {
+export default function StreamEditor({ draft: initial, campaign, campaigns, whitepages, presets, readOnly, refNames, onClose, onSaved }: Props) {
   const meta = useMeta()
   const [d, setD] = useState<StreamDraft>(initial)
   const [error, setError] = useState('')
@@ -343,6 +345,7 @@ export default function StreamEditor({ draft: initial, campaign, campaigns, whit
             errorFor={(f) => (tried ? fieldError(f) : '')}
             whitepages={whitepages}
             campaigns={campaigns.filter((c) => c.id !== campaign.id)}
+            refNames={refNames}
             macros={meta.macros}
           />
         )}
@@ -389,6 +392,7 @@ function ActionForm({
   errorFor,
   whitepages,
   campaigns,
+  refNames,
   macros,
 }: {
   def: ActionDef
@@ -397,6 +401,7 @@ function ActionForm({
   errorFor: (f: ActionField) => string
   whitepages: Whitepage[]
   campaigns: Campaign[]
+  refNames?: { whitepages: Record<string, string>; campaigns: Record<string, string> }
   macros: string[]
 }) {
   const fields = def.fields ?? []
@@ -493,7 +498,7 @@ function ActionForm({
                     onChange={(s) => setVal(f.name, s ? Number(s) : '')}
                     options={[
                       // A whitepage set by the campaign owner is not in a co-editor's own list; keep it selectable.
-                      ...(v && !whitepages.some((w) => w.id === Number(v)) ? [{ value: String(v), label: `Whitepage #${v} (current, not in your list)` }] : []),
+                      ...(v && !whitepages.some((w) => w.id === Number(v)) ? [{ value: String(v), label: refNames?.whitepages[String(v)] ? `${refNames.whitepages[String(v)]} (owner's)` : `Whitepage #${v} (not available)` }] : []),
                       ...whitepages.map((w) => ({ value: String(w.id), label: `${w.name} (${w.kind}, ${w.file_count} files)` })),
                     ]}
                   />
@@ -507,7 +512,7 @@ function ActionForm({
                     placeholder="Choose a campaign…"
                     onChange={(s) => setVal(f.name, s ? Number(s) : '')}
                     options={[
-                      ...(v && !campaigns.some((c) => c.id === Number(v)) ? [{ value: String(v), label: `Campaign #${v} (current, not editable by you)` }] : []),
+                      ...(v && !campaigns.some((c) => c.id === Number(v)) ? [{ value: String(v), label: refNames?.campaigns[String(v)] ? `${refNames.campaigns[String(v)]} (owner's)` : `Campaign #${v} (not available)` }] : []),
                       ...campaigns.map((c) => ({ value: String(c.id), label: c.enabled ? c.name : `${c.name} (disabled)` })),
                     ]}
                   />

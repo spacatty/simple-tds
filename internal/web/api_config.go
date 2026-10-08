@@ -2,9 +2,12 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"reflect"
 	"regexp"
 	"strings"
 
@@ -115,7 +118,7 @@ func mount[T any](s *Server, r chi.Router, path string, res resource[T]) {
 			return nil, err
 		}
 		v := *old // omitted fields keep their stored value
-		if err := readJSON(r, &v); err != nil {
+		if err := readPatch(r, &v); err != nil {
 			return nil, err
 		}
 		if o, ok := any(&v).(model.Owned); ok {
@@ -144,6 +147,34 @@ func mount[T any](s *Server, r chi.Router, path string, res resource[T]) {
 		}
 		return nil, after(r.Context(), pathID(r), true)
 	}))
+}
+
+// readPatch decodes a partial update over v. Fields absent from the body keep
+// their value; maps and slices that are present replace the old ones outright
+// (plain decoding would merge into the old map and reuse the old slice).
+func readPatch(r *http.Request, v any) error {
+	body, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, 4<<20))
+	if err != nil {
+		return bad("request too large")
+	}
+	var present map[string]json.RawMessage
+	if err := json.Unmarshal(body, &present); err != nil {
+		return bad("invalid JSON: " + err.Error())
+	}
+	rv := reflect.ValueOf(v).Elem()
+	for i := 0; i < rv.NumField(); i++ {
+		name, _, _ := strings.Cut(rv.Type().Field(i).Tag.Get("json"), ",")
+		if _, ok := present[name]; !ok {
+			continue
+		}
+		if f := rv.Field(i); f.Kind() == reflect.Map || f.Kind() == reflect.Slice {
+			f.Set(reflect.Zero(f.Type()))
+		}
+	}
+	if err := json.Unmarshal(body, v); err != nil {
+		return bad("invalid JSON: " + err.Error())
+	}
+	return nil
 }
 
 // idOf reads the ID field every model struct has.
@@ -759,7 +790,25 @@ func (s *Server) campaignStreams(r *http.Request) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"streams": streams, "errors": s.eng.StreamErrors(r.Context())}, nil
+	// Streams may point at whitepages and campaigns the viewer cannot list
+	// (they belong to the campaign's owner): send their names along.
+	pages, targets := map[int64]string{}, map[int64]string{}
+	snap := s.eng.Snap()
+	for _, st := range streams {
+		var ref struct {
+			Whitepage int64 `json:"whitepage_id"`
+			Campaign  int64 `json:"campaign_id"`
+		}
+		json.Unmarshal(st.ActionConfig, &ref)
+		if wp := snap.Whitepages[ref.Whitepage]; wp != nil && st.ActionType == "whitepage" {
+			pages[wp.ID] = wp.Name
+		}
+		if c := snap.ByID[ref.Campaign]; c != nil && st.ActionType == "campaign" {
+			targets[c.ID] = c.Name
+		}
+	}
+	return map[string]any{"streams": streams, "errors": s.eng.StreamErrors(r.Context()),
+		"whitepages": pages, "campaigns": targets}, nil
 }
 
 func (s *Server) streamsReorder(r *http.Request) (any, error) {

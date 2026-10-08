@@ -293,8 +293,14 @@ func (s *Server) dataRoutes(r chi.Router) {
 		return map[string]any{"rows": rows, "total": total}, nil
 	}))
 	r.Get("/conversions", s.conversions)
-	admin.Get("/postbacks/rejected", handler(func(*http.Request) (any, error) {
-		items, total := s.eng.Reject.List()
+	r.Get("/postbacks/rejected", handler(func(r *http.Request) (any, error) {
+		// Admins see every refusal, including probes with unknown keys;
+		// users see what was refused on their own keys.
+		var owner int64
+		if u := currentUser(r); !u.IsAdmin() {
+			owner = u.ID
+		}
+		items, total := s.eng.Reject.List(owner)
 		return map[string]any{"rows": items, "total": total}, nil
 	}))
 }
@@ -471,7 +477,7 @@ func (s *Server) system(r *http.Request) (any, error) {
 		health["clickhouse"] = err.Error()
 	}
 	if !currentUser(r).IsAdmin() {
-		return map[string]any{"php_enabled": s.pages.FCGIAddr != "", "health": health}, nil
+		return map[string]any{"php_enabled": s.pages.FCGIAddr != "", "health": health, "server_ip": s.serverIP()}, nil
 	}
 	return map[string]any{
 		"stats":  s.eng.Stats(),
@@ -484,5 +490,6 @@ func (s *Server) system(r *http.Request) (any, error) {
 			"admin_path":      snap.Settings.AdminPath,
 		},
 		"php_enabled": s.pages.FCGIAddr != "",
+		"server_ip":   s.serverIP(),
 	}, nil
 }

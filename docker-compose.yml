@@ -15,6 +15,7 @@ services:
       TDS_ADMIN_USER: ${TDS_ADMIN_USER:-admin}
       TDS_ADMIN_PASSWORD: ${TDS_ADMIN_PASSWORD:-}
       TDS_FORCE_PANEL_IP: ${TDS_FORCE_PANEL_IP:-}
+      TDS_PUBLIC_IP: ${TDS_PUBLIC_IP:-}
     ports:
       - "80:80"
       - "443:443"

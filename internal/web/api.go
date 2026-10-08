@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/rand"
@@ -9,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"image/png"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -244,8 +246,13 @@ func (s *Server) changePassword(r *http.Request) (any, error) {
 	if _, err := s.st.Pool.Exec(r.Context(), "UPDATE users SET password_hash=$2 WHERE id=$1", u.ID, string(hash)); err != nil {
 		return nil, err
 	}
-	// Sign out every other device.
-	s.st.DeleteUserSessions(r.Context(), u.ID)
+	// Sign out every other device, but not the one that just proved it
+	// knows the password.
+	keep := ""
+	if c, err := r.Cookie(sessionCookie); err == nil {
+		keep = hashToken(c.Value)
+	}
+	s.st.DeleteOtherSessions(r.Context(), u.ID, keep)
 	s.dropSessions()
 	return nil, nil
 }
@@ -260,7 +267,14 @@ func (s *Server) totpSetup(r *http.Request) (any, error) {
 		return nil, err
 	}
 	s.dropSessions()
-	return map[string]string{"secret": key.Secret(), "url": key.URL()}, nil
+	out := map[string]string{"secret": key.Secret(), "url": key.URL()}
+	if img, err := key.Image(240, 240); err == nil {
+		var buf bytes.Buffer
+		if png.Encode(&buf, img) == nil {
+			out["qr"] = "data:image/png;base64," + base64.StdEncoding.EncodeToString(buf.Bytes())
+		}
+	}
+	return out, nil
 }
 
 func (s *Server) totpEnable(r *http.Request) (any, error) {

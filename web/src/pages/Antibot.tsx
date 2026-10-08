@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { FlaskConical, Pencil, Plus, RefreshCw, Trash2, Upload } from 'lucide-react'
-import { api, del, errMsg, get, post, put, upload } from '../api'
+import { del, errMsg, get, post, put, upload } from '../api'
 import { useLoad, useMeta } from '../hooks'
 import type { GeoPreset, GeoStatus, IPList, Integration, IntegrationTestResult, Settings } from '../types'
 import { DataTable } from '../components/DataTable'
@@ -506,13 +506,9 @@ function IntegrationEditor({ item, onClose, onSaved }: { item: Integration | nul
       setError('')
       const body = build()
       try {
-        if (item) {
-          // PUT decodes over the stored record, and Go merges JSON objects into existing maps,
-          // so removed header/mapping keys would survive. Nulling both first makes it a replace.
-          await api(`integrations/${item.id}`, { method: 'PUT', rawBody: '{"headers":null,"mapping":null,' + JSON.stringify(body).slice(1) })
-        } else {
-          await post('integrations', body)
-        }
+        // headers and mapping are always sent whole: PUT replaces maps that are present in the body.
+        if (item) await put(`integrations/${item.id}`, body)
+        else await post('integrations', body)
         toast.ok(item ? 'Integration saved' : 'Integration created')
         onSaved()
       } catch (e) {
