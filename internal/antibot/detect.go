@@ -7,6 +7,7 @@ import (
 	"context"
 	"net/http"
 	"net/netip"
+	"slices"
 	"strings"
 	"sync/atomic"
 
@@ -38,7 +39,7 @@ func NewDetector(lists *Lists) *Detector {
 
 // Configure swaps in new settings and external anti-bot providers.
 func (d *Detector) Configure(st model.Settings, integrations []model.Integration) {
-	c := &config{st: st, ua: newUAParser(st.BotUAPatterns),
+	c := &config{st: st,
 		botASN: map[uint32]bool{}, dcASN: map[uint32]bool{}, ja3: map[string]bool{}, ja4: map[string]bool{}}
 	for _, a := range st.BotASNs {
 		c.botASN[a] = true
@@ -54,8 +55,14 @@ func (d *Detector) Configure(st model.Settings, integrations []model.Integration
 	}
 	for _, in := range integrations {
 		if in.Enabled && in.Kind == "antibot" {
-			c.providers = append(c.providers, extapi.New(in))
+			c.providers = append(c.providers, extapi.Shared(in))
 		}
+	}
+	// Parsed User-Agents stay valid until the signatures change.
+	if old := d.cfg.Load(); old != nil && slices.Equal(old.st.BotUAPatterns, st.BotUAPatterns) {
+		c.ua = old.ua
+	} else {
+		c.ua = newUAParser(st.BotUAPatterns)
 	}
 	if c.st.BotThreshold <= 0 {
 		c.st.BotThreshold = 100

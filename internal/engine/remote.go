@@ -20,12 +20,16 @@ import (
 const (
 	remoteMaxBody    = 2 << 20
 	remoteMaxEntries = 5000
+	// How long a source that failed with nothing cached is left alone.
+	remoteRetryAfter = 5 * time.Second
 )
 
 type remoteEntry struct {
 	mu         sync.Mutex // serialises the first fetch
 	body       []byte
 	fetched    time.Time
+	failed     time.Time // last failed first fetch
+	err        error
 	refreshing atomic.Bool
 }
 
@@ -125,10 +129,19 @@ func (c *remoteCache) get(ctx context.Context, url string, headers [][2]string, 
 	e := c.entry(url)
 	e.mu.Lock()
 	if e.body == nil {
+		// A source that is down must not be retried by every visitor in turn:
+		// they queue on this lock, each waiting out a full timeout.
+		if time.Since(e.failed) < remoteRetryAfter {
+			err := e.err
+			e.mu.Unlock()
+			return nil, false, err
+		}
 		// First request for this URL: fetch while holding the lock so
 		// concurrent visitors wait for one request instead of each sending one.
-		b, err := c.fetch(ctx, url, headers, timeout)
+		// It is shared, so one visitor leaving must not fail it for the rest.
+		b, err := c.fetch(context.WithoutCancel(ctx), url, headers, timeout)
 		if err != nil {
+			e.failed, e.err = time.Now(), err
 			e.mu.Unlock()
 			return nil, false, err
 		}

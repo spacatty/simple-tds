@@ -5,12 +5,16 @@ package extapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hashicorp/golang-lru/v2/expirable"
@@ -20,11 +24,30 @@ import (
 
 type Provider struct {
 	Cfg    model.Integration
-	cache  *expirable.LRU[string, any]
+	stored model.Integration // as configured, to tell whether it changed
+	cache  *expirable.LRU[string, answer]
 	client *http.Client
+	// Circuit breaker: a provider that keeps failing is left alone for a
+	// while instead of costing every new visitor a timeout.
+	fails  atomic.Int32
+	paused atomic.Int64 // unix nanoseconds until which lookups are skipped
 }
 
+type answer struct {
+	doc    any
+	failed time.Time // zero for a good answer
+}
+
+const (
+	failTTL    = time.Minute // how long a failed lookup is remembered
+	breakAfter = 10          // consecutive failures that pause the provider
+	breakFor   = 30 * time.Second
+)
+
+var errPaused = errors.New("provider paused after repeated failures")
+
 func New(cfg model.Integration) *Provider {
+	stored := cfg
 	if cfg.TimeoutMs <= 0 {
 		cfg.TimeoutMs = 300
 	}
@@ -34,26 +57,62 @@ func New(cfg model.Integration) *Provider {
 	}
 	return &Provider{
 		Cfg:    cfg,
-		cache:  expirable.NewLRU[string, any](100_000, nil, ttl),
+		stored: stored,
+		cache:  expirable.NewLRU[string, answer](100_000, nil, ttl),
 		client: &http.Client{Timeout: time.Duration(cfg.TimeoutMs) * time.Millisecond},
 	}
 }
 
-// Lookup returns the decoded JSON document for ip. Failures are cached as nil
-// like any other answer, so a dead provider costs one timeout per address
-// rather than one per click.
+var (
+	sharedMu sync.Mutex
+	shared   = map[int64]*Provider{}
+)
+
+// Shared returns the provider of a stored integration. The same provider, and
+// with it the cache of answers, is handed out for as long as the integration
+// is unchanged, so saving unrelated configuration does not send every visitor
+// back to the external service.
+func Shared(cfg model.Integration) *Provider {
+	sharedMu.Lock()
+	defer sharedMu.Unlock()
+	if p := shared[cfg.ID]; p != nil && reflect.DeepEqual(p.stored, cfg) {
+		return p
+	}
+	p := New(cfg)
+	shared[cfg.ID] = p
+	return p
+}
+
+// Lookup returns the decoded JSON document for ip. Good answers are cached
+// for the configured time and failures for a minute, so a dead provider costs
+// one timeout per address rather than one per click, yet a blip does not
+// blind the tracker to that address for long.
 func (p *Provider) Lookup(ctx context.Context, ip, ua string) (any, error) {
-	usesUA := strings.Contains(p.Cfg.URL, "{ua}")
 	key := ip
-	if usesUA {
+	if strings.Contains(p.Cfg.URL, "{ua}") {
 		key += "|" + ua
 	}
-	if v, ok := p.cache.Get(key); ok {
-		return v, nil
+	if v, ok := p.cache.Get(key); ok && (v.failed.IsZero() || time.Since(v.failed) < failTTL) {
+		return v.doc, nil
 	}
-	doc, err := p.fetch(ctx, ip, ua)
-	p.cache.Add(key, doc)
-	return doc, err
+	now := time.Now()
+	if now.UnixNano() < p.paused.Load() {
+		return nil, errPaused
+	}
+	// The answer is cached for everyone: a visitor who disconnects must not
+	// turn it into a failure. The client timeout still bounds the request.
+	doc, err := p.fetch(context.WithoutCancel(ctx), ip, ua)
+	if err != nil {
+		p.cache.Add(key, answer{failed: now})
+		if p.fails.Add(1) >= breakAfter {
+			p.fails.Store(0)
+			p.paused.Store(now.Add(breakFor).UnixNano())
+		}
+		return nil, err
+	}
+	p.fails.Store(0)
+	p.cache.Add(key, answer{doc: doc})
+	return doc, nil
 }
 
 func (p *Provider) fetch(ctx context.Context, ip, ua string) (any, error) {

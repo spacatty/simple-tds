@@ -64,30 +64,6 @@ func loadSecret(dataDir string) ([]byte, error) {
 	return b, os.WriteFile(path, b, 0o600)
 }
 
-func ensureAdmin(ctx context.Context, st *store.Store) error {
-	var n int
-	if err := st.Pool.QueryRow(ctx, "SELECT count(*) FROM users").Scan(&n); err != nil || n > 0 {
-		return err
-	}
-	user, pass := env("TDS_ADMIN_USER", "admin"), os.Getenv("TDS_ADMIN_PASSWORD")
-	generated := pass == ""
-	if generated {
-		pass = randomString(15)
-	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(pass), 12)
-	if err != nil {
-		return err
-	}
-	if _, err := st.Pool.Exec(ctx, "INSERT INTO users(username, password_hash, role) VALUES($1,$2,'admin')", user, string(hash)); err != nil {
-		return err
-	}
-	if generated {
-		// Printed once, to the container log only.
-		fmt.Printf("\n==== first start: panel login is %q with password %q — change it in Settings ====\n\n", user, pass)
-	}
-	return nil
-}
-
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	if err := run(); err != nil {
@@ -116,9 +92,6 @@ func run() error {
 
 	secret, err := loadSecret(dataDir)
 	if err != nil {
-		return err
-	}
-	if err := ensureAdmin(ctx, st); err != nil {
 		return err
 	}
 	if err := st.AdoptOrphans(ctx); err != nil {

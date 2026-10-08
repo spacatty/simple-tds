@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -20,7 +21,7 @@ const (
 	checkPath    = "/.well-known/tds-check"
 	postbackPath = "/postback"
 	jsPrefix     = "/_j/"
-	eventPrefix  = "/_e/"
+	eventPrefix  = engine.EventPrefix
 	phpAPIPath   = "/_api/click"
 	maxBody      = 1 << 20
 )
@@ -77,6 +78,15 @@ func clientIP(r *http.Request, source string, snap *engine.Snapshot) netip.Addr 
 	return remote
 }
 
+// panelIP is the address of whoever is using the panel. Behind a CDN every
+// user shares the proxy's socket address, and with it one login rate limit.
+func panelIP(r *http.Request) netip.Addr {
+	if a, ok := r.Context().Value(clientIPKey).(netip.Addr); ok {
+		return a
+	}
+	return remoteAddr(r)
+}
+
 func isSecure(r *http.Request, snap *engine.Snapshot) bool {
 	if r.TLS != nil {
 		return true
@@ -125,6 +135,7 @@ func (s *Server) servePublic(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if strings.HasPrefix(path, prefix+"/") {
+			r = r.WithContext(context.WithValue(r.Context(), clientIPKey, clientIP(r, d.IPSource, snap)))
 			http.StripPrefix(prefix, s.panel).ServeHTTP(w, r)
 			return
 		}
@@ -282,7 +293,7 @@ func (s *Server) servePHPAPI(w http.ResponseWriter, r *http.Request, d *engine.D
 	}
 	var c *engine.CampaignRT
 	for _, cand := range snap.ByID {
-		if cand.Enabled && hmac.Equal([]byte(cand.Token), []byte(in.Token)) {
+		if cand.Enabled && cand.UsableBy(d.OwnerID) && hmac.Equal([]byte(cand.Token), []byte(in.Token)) {
 			c = cand
 		}
 	}

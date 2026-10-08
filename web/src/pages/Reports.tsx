@@ -15,18 +15,22 @@ import type { MetricKey } from '../reports'
 import { CLICK_ONLY, CONV_ONLY, bucketRange, buildSearch, dimLabel, filterParams, paramFor, parseFilters, rangeFromSearch, writeRange } from '../filters'
 import type { Crumb } from '../filters'
 import { csvEscape, downloadText, fmtInt, humanize, ymd } from '../format'
-import { countryName, flag } from '../countries'
+import { countryName } from '../countries'
+import { dimIcon } from '../components/icons'
+import { t, tn, ts, tx } from '../i18n'
 
 const GROUP_SECTIONS: [string, string[]][] = [
-  ['Time', ['total', 'day', 'hour']],
-  ['Routing', ['campaign', 'stream', 'domain', 'action']],
-  ['Geo', ['country', 'region', 'city', 'isp', 'lang']],
-  ['Device', ['device_type', 'os', 'browser']],
-  ['Source', ['ref_domain', 'keyword', 'sub1', 'sub2', 'sub3', 'sub4', 'sub5']],
-  ['Quality', ['bot_reason']],
-  ['Conversions', ['key', 'type']],
+  [t('Time'), ['total', 'day', 'hour']],
+  [t('Routing'), ['campaign', 'stream', 'domain', 'action']],
+  [t('Geo'), ['country', 'region', 'city', 'isp', 'lang']],
+  [t('Device'), ['device_type', 'os', 'browser']],
+  [t('Source'), ['ref_domain', 'keyword', 'sub1', 'sub2', 'sub3', 'sub4', 'sub5']],
+  [t('Quality'), ['bot_reason']],
+  [t('Conversions'), ['key', 'type']],
 ]
-const GROUP_NOTE: Record<string, string> = { action: ' (clicks only)', bot_reason: ' (clicks only)', key: ' (conversions only)', type: ' (conversions only)' }
+const clicksOnly = (name: string) => t('{name} (clicks only)', { name })
+const convOnly = (name: string) => t('{name} (conversions only)', { name })
+const GROUP_NOTE: Record<string, (name: string) => string> = { action: clicksOnly, bot_reason: clicksOnly, key: convOnly, type: convOnly }
 
 // The order in which "drill into" is offered; the first applicable one is the suggested next step.
 const DRILL_ORDER = ['campaign', 'stream', 'country', 'device_type', 'os', 'browser', 'day', 'hour', 'region', 'city', 'isp', 'lang', 'ref_domain', 'domain', 'keyword', 'sub1', 'sub2', 'sub3', 'sub4', 'sub5', 'action', 'bot_reason', 'key', 'type']
@@ -71,12 +75,12 @@ export default function Reports() {
     for (const [section, items] of GROUP_SECTIONS) {
       for (const g of items) {
         if (avail.has(g)) {
-          out.push({ value: g, label: dimLabel(g) + (GROUP_NOTE[g] ?? ''), group: section })
+          out.push({ value: g, label: GROUP_NOTE[g]?.(dimLabel(g)) ?? dimLabel(g), group: section })
           seen.add(g)
         }
       }
     }
-    for (const g of meta.report_groups) if (!seen.has(g)) out.push({ value: g, label: dimLabel(g), group: 'Other' })
+    for (const g of meta.report_groups) if (!seen.has(g)) out.push({ value: g, label: dimLabel(g), group: t('Other') })
     return out
   }, [meta.report_groups])
 
@@ -84,17 +88,20 @@ export default function Reports() {
   const valueText = (dim: string, k: string): string => {
     switch (dim) {
       case 'campaign':
-        return k === '0' ? '(no campaign)' : camps.data?.find((c) => String(c.id) === k)?.name ?? `#${k}`
+        return k === '0' ? t('(no campaign)') : camps.data?.find((c) => String(c.id) === k)?.name ?? `#${k}`
       case 'stream':
-        return k === '0' ? '(no stream)' : streams.data?.find((s) => String(s.id) === k)?.name ?? `#${k}`
+        return k === '0' ? t('(no stream)') : streams.data?.find((s) => String(s.id) === k)?.name ?? `#${k}`
       case 'key':
-        return k === '0' ? '(no key)' : keys.data?.find((x) => String(x.id) === k)?.name ?? `#${k}`
+        return k === '0' ? t('(no key)') : keys.data?.find((x) => String(x.id) === k)?.name ?? `#${k}`
       case 'country':
-        return k ? `${countryName(k)} (${k})` : '(unknown)'
+        return k ? `${countryName(k)} (${k})` : t('(unknown)')
       case 'total':
-        return 'Total'
+        return t('Total')
+      case 'action':
+      case 'type':
+        return k === '' ? t('(empty)') : ts(k)
       default:
-        return k === '' ? '(empty)' : k
+        return k === '' ? t('(empty)') : k
     }
   }
 
@@ -149,8 +156,8 @@ export default function Reports() {
       title: dimLabel(group),
       sort: (r) => (timeline ? r.key : valueText(group, r.key).toLowerCase()),
       render: (r) => (
-        <span className={timeline ? 'mono nowrap' : ''}>
-          {group === 'country' && r.key ? flag(r.key) + ' ' : ''}
+        <span className={timeline ? 'mono nowrap' : 'with-icon'}>
+          {dimIcon(group, r.key)}
           {valueText(group, r.key)}
         </span>
       ),
@@ -166,10 +173,11 @@ export default function Reports() {
         render: (r) => <span className={m.key === 'profit' || m.key === 'roi' ? (r[m.key] > 0 ? 'pos' : r[m.key] < 0 ? 'neg' : 'muted') : r[m.key] === 0 ? 'muted' : ''}>{m.fmt(r[m.key])}</span>,
       }),
     ),
-    ...typeCols.map((t): Column<ReportRow> => ({ key: 't_' + t, title: humanize(t), headTitle: `Conversions of type “${t}”`, align: 'right', sort: (r) => r.types?.[t] ?? 0, render: (r) => fmtInt(r.types?.[t] ?? 0) })),
+    ...typeCols.map((ty): Column<ReportRow> => ({ key: 't_' + ty, title: ts(humanize(ty)), headTitle: t('Conversions of type “{type}”', { type: ty }), align: 'right', sort: (r) => r.types?.[ty] ?? 0, render: (r) => fmtInt(r.types?.[ty] ?? 0) })),
   ]
 
   const metricDef = METRICS.find((m) => m.key === metric) ?? METRICS[0]
+  const chartVars = { metric: metricDef.label, dim: dimLabel(group).toLowerCase() }
   const chartData = useMemo(() => {
     if (timeline) return rows.map((r) => ({ key: r.key, [metric]: r[metric] }))
     return [...rows]
@@ -192,16 +200,16 @@ export default function Reports() {
 
   return (
     <div className="page">
-      <PageHeader title="Reports" sub="Click any row to drill into it.">
+      <PageHeader title={t('Reports')} sub={t('Click any row to drill into it.')}>
         <DateRangePicker value={range} onChange={setRange} />
-        <button className="btn" onClick={() => rep.reload()} title="Refresh">
+        <button className="btn" onClick={() => rep.reload()} title={t('Refresh')} aria-label={t('Refresh')}>
           <RefreshCw size={14} className={rep.loading ? 'spin' : ''} />
         </button>
       </PageHeader>
 
       <div className="toolbar wrap">
         <label className="inline-field">
-          <span className="muted">Group by</span>
+          <span className="muted">{t('Group by')}</span>
           <Select value={group} onChange={(g) => update((n) => n.set('group', g))} options={groupOptions} />
         </label>
         <Select
@@ -213,7 +221,7 @@ export default function Reports() {
               if (v) n.set('campaign_id', v)
             })
           }
-          placeholder="All campaigns"
+          placeholder={t('All campaigns')}
           options={(camps.data ?? []).map((c) => ({ value: String(c.id), label: c.name }))}
         />
         <Segmented
@@ -226,36 +234,36 @@ export default function Reports() {
             })
           }
           options={[
-            { value: '', label: 'All traffic' },
-            { value: 'exclude', label: 'No bots' },
-            { value: 'only', label: 'Bots only' },
+            { value: '', label: t('All traffic') },
+            { value: 'exclude', label: t('No bots') },
+            { value: 'only', label: t('Bots only') },
           ]}
         />
         <span className="grow" />
-        <Link className="btn" to={'/clicks' + clicksSearch()} title="Open the click log with the same filters">
-          <MousePointerClick size={14} /> View clicks
+        <Link className="btn" to={'/clicks' + clicksSearch()} title={t('Open the click log with the same filters')}>
+          <MousePointerClick size={14} /> {t('View clicks')}
         </Link>
         <button className="btn" disabled={!rows.length} onClick={exportCSV}>
-          <Download size={14} /> Export CSV
+          <Download size={14} /> {t('Export CSV')}
         </button>
       </div>
 
       {filters.crumbs.length > 0 && (
-        <nav className="crumbs" aria-label="Active filters">
-          <span className="muted">Filtered by</span>
+        <nav className="crumbs" aria-label={t('Active filters')}>
+          <span className="muted">{t('Filtered by')}</span>
           {filters.crumbs.map((c, i) => (
             <span className="crumb-wrap" key={c.param}>
               {i > 0 && <ChevronRight size={13} className="muted" />}
               <span className="crumb">
                 <span className="muted">{dimLabel(c.dim)}:</span> <b>{crumbText(c)}</b>
-                <button aria-label={`Remove filter ${dimLabel(c.dim)}`} title="Remove this filter" onClick={() => update((n) => n.delete(c.param))}>
+                <button aria-label={t('Remove filter {name}', { name: dimLabel(c.dim) })} title={t('Remove this filter')} onClick={() => update((n) => n.delete(c.param))}>
                   <X size={12} />
                 </button>
               </span>
             </span>
           ))}
           <button className="btn small ghost" onClick={() => update((n) => filters.crumbs.forEach((c) => n.delete(c.param)))}>
-            Clear all
+            {t('Clear all')}
           </button>
         </nav>
       )}
@@ -264,11 +272,11 @@ export default function Reports() {
 
       {group !== 'total' && (
         <Card
-          title={`${metricDef.label} by ${dimLabel(group).toLowerCase()}${!timeline && rows.length > 20 ? ' — top 20' : ''}`}
+          title={!timeline && rows.length > 20 ? t('{metric} by {dim} — top 20', chartVars) : t('{metric} by {dim}', chartVars)}
           actions={<Select value={metric} onChange={(m) => setMetric(m as MetricKey)} options={METRICS.map((m) => ({ value: m.key, label: m.title ? `${m.label} — ${m.title}` : m.label }))} />}
         >
           {rows.length === 0 ? (
-            <div className="muted pad">{rep.loading ? 'Loading…' : 'No data for this selection.'}</div>
+            <div className="muted pad">{rep.loading ? t('Loading…') : t('No data for this selection.')}</div>
           ) : timeline ? (
             <TimeChart data={chartData} series={[{ key: metric, label: metricDef.label, color: 'var(--series-1)' }]} fmt={metricDef.fmt} height={200} />
           ) : (
@@ -285,15 +293,13 @@ export default function Reports() {
           rowKey={(r) => r.key}
           loading={rep.loading}
           maxHeight="calc(100vh - 200px)"
-          empty={<Empty title="No data for this selection">Try a wider date range or fewer filters.</Empty>}
+          empty={<Empty title={t('No data for this selection')}>{t('Try a wider date range or fewer filters.')}</Empty>}
           expand={
             canDrill
               ? (r) => (
                   <div className="drill">
                     <CornerDownRight size={15} className="muted" />
-                    <span>
-                      Drill into <b>{valueText(group, r.key)}</b> by
-                    </span>
+                    <span>{tx('Drill into {name} by', { name: <b>{valueText(group, r.key)}</b> })}</span>
                     {drillTargets.slice(0, 14).map((g, i) => (
                       <button key={g} className={'btn small' + (i === 0 ? ' primary' : '')} onClick={() => drill(r, g)}>
                         {dimLabel(g)}
@@ -302,7 +308,7 @@ export default function Reports() {
                     <span className="grow" />
                     {!CONV_ONLY.includes(group) && (
                       <Link className="btn small" to={'/clicks' + (timeline ? clicksSearch(undefined, bucketRange(r.key)) : clicksSearch(rowParam ? { param: rowParam, value: r.key } : undefined))}>
-                        <MousePointerClick size={13} /> Clicks
+                        <MousePointerClick size={13} /> {t('Clicks')}
                       </Link>
                     )}
                   </div>
@@ -312,7 +318,7 @@ export default function Reports() {
           footer={
             <tr>
               {canDrill && <td />}
-              <td>Total · {fmtInt(rows.length)} rows</td>
+              <td>{tn(rows.length, 'Total · {n} row', 'Total · {n} rows', { n: fmtInt(rows.length) })}</td>
               {METRICS.map((m) => (
                 <td key={m.key} style={{ textAlign: 'right' }}>
                   {m.fmt(total[m.key])}

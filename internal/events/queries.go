@@ -458,10 +458,10 @@ func (db *DB) ConversionsCSV(ctx context.Context, out io.Writer, q Query, keyNam
 		if keyName == "" {
 			keyName = strconv.FormatUint(uint64(keyID), 10)
 		}
-		rec := []string{ts.UTC().Format(time.RFC3339), convID, clickID, keyName, typ,
-			strconv.FormatFloat(rev, 'f', -1, 64), strconv.FormatFloat(cost, 'f', -1, 64), cur, sip,
+		rec := []string{ts.UTC().Format(time.RFC3339), convID, clickID, csvSafe(keyName), typ,
+			strconv.FormatFloat(rev, 'f', -1, 64), strconv.FormatFloat(cost, 'f', -1, 64), csvSafe(cur), sip,
 			strconv.FormatUint(uint64(campID), 10), strconv.FormatUint(uint64(streamID), 10),
-			domain, country, city, dev, osn, browser, s1, s2, s3, s4, s5}
+			domain, country, csvSafe(city), dev, osn, browser, csvSafe(s1), csvSafe(s2), csvSafe(s3), csvSafe(s4), csvSafe(s5)}
 		params := map[string]string{}
 		json.Unmarshal([]byte(pj), &params)
 		for _, k := range keys {
@@ -475,7 +475,7 @@ func (db *DB) ConversionsCSV(ctx context.Context, out io.Writer, q Query, keyNam
 	return rows.Err()
 }
 
-// csvSafe neutralises spreadsheet formula injection from third-party postback data.
+// csvSafe neutralises spreadsheet formula injection from visitor and postback data.
 func csvSafe(s string) string {
 	if s != "" && strings.ContainsRune("=+-@\t\r", rune(s[0])) {
 		return "'" + s
@@ -524,9 +524,12 @@ func (db *DB) LastClickByIP(ctx context.Context, ip string, since time.Time, cam
 	return scanClick(rows)
 }
 
-// ConversionExists reports whether a click already has a conversion of this type.
-func (db *DB) ConversionExists(ctx context.Context, clickID, typ string) (bool, error) {
+// ConversionExists reports whether a click already has a conversion of this
+// type. A conversion cannot predate its click, so the table, which is ordered
+// by time, is only read from the click onwards.
+func (db *DB) ConversionExists(ctx context.Context, clickID, typ string, clickAt time.Time) (bool, error) {
 	var n uint64
-	err := db.conn.QueryRow(ctx, "SELECT count() FROM conversions WHERE click_id = ? AND type = ?", clickID, typ).Scan(&n)
+	err := db.conn.QueryRow(ctx, "SELECT count() FROM conversions WHERE ts >= ? AND click_id = ? AND type = ?",
+		clickAt.Add(-time.Minute), clickID, typ).Scan(&n)
 	return n > 0, err
 }

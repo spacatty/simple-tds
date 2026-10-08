@@ -272,11 +272,12 @@ func (e *Engine) duplicate(ctx context.Context, conv *events.Conversion) bool {
 		return false
 	}
 	dk := conv.ClickID + "|" + conv.Type
-	if _, seen := e.convs.Get(dk); seen {
+	// Check and claim in one step: two copies of a postback arriving together
+	// must not both get through.
+	if seen, _ := e.convs.ContainsOrAdd(dk, struct{}{}); seen {
 		return true
 	}
-	dup, err := e.Events.ConversionExists(ctx, conv.ClickID, conv.Type)
-	e.convs.Add(dk, struct{}{})
+	dup, err := e.Events.ConversionExists(ctx, conv.ClickID, conv.Type, conv.ClickTS)
 	return err == nil && dup
 }
 

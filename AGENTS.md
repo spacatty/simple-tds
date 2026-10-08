@@ -16,7 +16,7 @@ cd web && npm install && npm run dev  # panel with hot reload at http://localhos
 |---|---|
 | Panel (built into the binary) | http://127.0.0.1:18080 |
 | Traffic port | http://127.0.0.1:18081 — pick the domain with a `Host:` header |
-| Login | `admin` / `dev-password-123` |
+| Login | `admin` / `dev-password-123` — on a fresh database create it first (setup page, or `POST /api/setup`) |
 | Settings | `dev/env` (shell variables override it) |
 | Data | `.dev/` and the `simple-tds-dev` Docker volumes |
 
@@ -26,7 +26,8 @@ cd web && npm install && npm run dev  # panel with hot reload at http://localhos
 - UI change: check it in the browser at `:5173` against the dev server, not
   against a mock.
 - Before committing: `go build ./... && go vet ./... && go test ./...`, and
-  `npm run build` in `web/` if the UI changed (it type-checks).
+  `npm run build` in `web/` if the UI changed (it type-checks and checks the
+  translations).
 - Build the real image (`docker compose up -d --build`) only when the change
   touches packaging: `Dockerfile`, `docker-compose.yml`, `deploy/`, file
   permissions, or listeners. The production container runs as a non-root user
@@ -51,6 +52,7 @@ cd web && npm install && npm run dev  # panel with hot reload at http://localhos
 | `internal/whitepage` | whitepage storage, static serving, FastCGI client |
 | `internal/web` | listeners, TLS/ACME, public routes, panel API, embedded UI |
 | `web/` | panel sources (React + TypeScript + Vite) → built into `internal/web/ui/dist` |
+| `web/src/i18n` | panel translations: `t()` helpers, `ru.json` (UI text), `ru.server.json` (text sent by the server) |
 | `dev/` | development runner and its compose file |
 | `deploy/` | PHP sandbox image and ClickHouse config |
 
@@ -86,6 +88,43 @@ cd web && npm install && npm run dev  # panel with hot reload at http://localhos
 - **Partial updates:** `PUT` decodes over the stored row (`readPatch`); maps
   and lists present in the body replace the old value.
 - `internal/web/ui/dist` is build output and is not committed.
+
+## Translations
+
+The panel is in English (the default) and Russian; the switch is in the
+sidebar footer and on the login page. English is the source and lives in the
+code — the English text is the dictionary key. **Every change that adds or
+rewords text a user can see must update the Russian dictionaries in the same
+commit**; a feature is not done while part of it is English-only.
+
+- UI text goes through the helpers in `web/src/i18n/index.ts`: `t('Save')`,
+  `t('Delete {name}?', { name })`, `tn(n, '{n} stream', '{n} streams')` for
+  plurals (Russian needs three forms), `tx('Read <a>the docs</a>', {...})` for
+  sentences with markup. The first argument is always a string literal. Keep a
+  sentence in one key; do not glue translated fragments together.
+- Add the translation to `web/src/i18n/ru.json`. `npm run i18n` (also the
+  first step of `npm run build`) fails on a missing or unused key, on a lost
+  `{placeholder}`, and on English written straight into JSX.
+  `node scripts/i18n-check.mjs --fix` adds empty entries for new keys and drops
+  unused ones.
+- Text that reaches the panel from Go — `Label`/`Description`/`Help` of
+  actions, action fields and filters, built-in preset names, messages passed
+  to `bad(...)`/`conflict(...)` and other errors shown to the user, domain
+  check statuses, simulator notes — is displayed through `ts()` and translated
+  in `web/src/i18n/ru.server.json`. Add an entry whenever you add or change
+  such a string; `{1}`, `{2}` stand for the variable parts of a message
+  (`"stage \"{1}\": the name is too long"`). `go test ./internal/web` checks
+  the action, filter and preset texts; error messages are not checked
+  automatically, so grep for the ones you touched.
+- Values shown through `humanize()` (conversion types, bot reasons, click
+  actions) are looked up in `ru.server.json` by their humanized form
+  (`no_stream` → `"No stream"`).
+- Russian wording follows the terms already in the dictionary: кампания,
+  поток, вайтпейдж, клик, конверсия, постбэк, этап, цель, пресет, Антибот.
+  Do not translate names stored by users, values sent to the API, macros, or
+  CSV export headers.
+- To add a language: add it to `LANGS` and the dictionaries map in
+  `web/src/i18n/index.ts` and give it its own pair of JSON files.
 
 ## Conventions
 

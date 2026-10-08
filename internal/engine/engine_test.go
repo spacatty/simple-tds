@@ -107,6 +107,20 @@ func TestMacroExpansion(t *testing.T) {
 	if got != want {
 		t.Errorf("got  %s\nwant %s", got, want)
 	}
+
+	// {query} is a ready-made query string: escaping it again would break it.
+	if got, want := v.expand("https://o.example/?{query}", true), "https://o.example/?sub1=a+b&x=1%262"; got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+
+	// {event:STAGE} exists only for the campaign's browser stages.
+	v.Domain, v.Secure = "t.example", true
+	v.Campaign.Stages = []model.Stage{{Key: "lp_click", Public: true}, {Key: "deposit", Goal: true}}
+	got = v.expand("<a href='{event:lp_click}'>go</a> {event:deposit} {event:none}", false)
+	want = "<a href='https://t.example/_e/lp_click?cid=CID'>go</a> {event:deposit} {event:none}"
+	if got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
 }
 
 func TestSignPostback(t *testing.T) {

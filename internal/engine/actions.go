@@ -89,7 +89,7 @@ func (v *Visit) expand(s string, esc bool) string {
 		switch {
 		case !ok:
 			b.WriteString(s[i : i+j+1]) // not ours: leave untouched
-		case esc:
+		case esc && name != "query": // the query string is encoded already
 			b.WriteString(url.QueryEscape(val))
 		default:
 			b.WriteString(val)
@@ -102,7 +102,10 @@ func (v *Visit) expand(s string, esc bool) string {
 
 // Macros lists the placeholders available in action URLs and content.
 var Macros = []string{"click_id", "campaign_id", "campaign", "stream_id", "domain", "ip", "country", "region", "city", "isp", "asn",
-	"device_type", "os", "browser", "language", "user_agent", "referer", "keyword", "sub1", "sub2", "sub3", "sub4", "sub5", "param:NAME", "query"}
+	"device_type", "os", "browser", "language", "user_agent", "referer", "keyword", "sub1", "sub2", "sub3", "sub4", "sub5", "param:NAME", "query", "event:STAGE"}
+
+// EventPrefix is the path under which a visitor's browser reports funnel stages.
+const EventPrefix = "/_e/"
 
 func (v *Visit) macro(name string) (string, bool) {
 	switch name {
@@ -152,6 +155,17 @@ func (v *Visit) macro(name string) (string, bool) {
 	}
 	if p, ok := strings.CutPrefix(name, "param:"); ok {
 		return v.Query.Get(p), true
+	}
+	// {event:STAGE} is the URL the page requests to report a browser stage of
+	// the campaign funnel for this very click.
+	if key, ok := strings.CutPrefix(name, "event:"); ok && v.Campaign != nil {
+		if st := v.Campaign.Stage(key); st != nil && st.Public {
+			scheme := "http"
+			if v.Secure {
+				scheme = "https"
+			}
+			return scheme + "://" + v.Domain + EventPrefix + st.Key + "?cid=" + url.QueryEscape(v.ClickID), true
+		}
 	}
 	return "", false
 }

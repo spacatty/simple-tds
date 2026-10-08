@@ -14,10 +14,20 @@ with bot filtering, whitepages, conversion postbacks and reports.
 ```bash
 cp .env.example .env      # set the passwords
 docker compose up -d --build
-docker compose logs tds   # first start prints the panel password if you left it empty
 ```
 
 Panel: `http://SERVER-IP:8080`. Traffic: ports 80 and 443.
+
+A fresh installation has no users: the first person to open the panel creates
+the administrator account, so open it right after the first start. Until then
+anyone who can reach port 8080 can claim it — on a public server, either go
+there immediately or publish the panel on loopback first (`PANEL_BIND=127.0.0.1:8080`
+and an SSH tunnel). A lost password is reset with
+`docker compose exec tds tds reset-password USER`.
+
+The panel is available in English and Russian: the `EN` / `RU` button on the
+login page and at the bottom of the sidebar switches the language. The choice
+is kept in the browser.
 
 ## Domains
 
@@ -234,7 +244,10 @@ same click.
 - Stages marked **browser event** need no key — the page reports them with the
   signed click id alone: `https://domain/_e/<stage>?cid=<click id>` (GET or
   beacon, any origin). They carry no revenue, are counted once per click and
-  are accepted for 7 days after it.
+  are accepted for 7 days after it. In a stream's content or URL the macro
+  `{event:<stage>}` expands to that address for the visitor's own click.
+- The Funnel tab and the stream editor build the URL of every stage: choose a
+  conversion key there and copy the postbacks with the key already in place.
 - The Funnel tab shows how many clicks of the period reached each stage,
   whenever the events arrived, in any order or strictly in order. Give keys a
   window long enough for the late stages.
@@ -287,7 +300,7 @@ calls to the dev server.
 | Panel (hot reload) | http://localhost:5173 |
 | Panel (as built into the binary) | http://127.0.0.1:18080 |
 | Traffic | http://127.0.0.1:18081 — send a `Host:` header for the domain |
-| Login | `admin` / `dev-password-123` |
+| Login | created on the setup page the first time the panel opens; use `admin` / `dev-password-123` |
 | Data | `.dev/` and the `simple-tds-dev` Docker volumes |
 
 Campaign links are tested with a host header, no DNS needed:

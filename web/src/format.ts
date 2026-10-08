@@ -1,3 +1,5 @@
+import { t, ts } from './i18n'
+
 const intFmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 })
 const moneyFmt = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -71,12 +73,12 @@ export function fmtDateTime(v: unknown, seconds = true): string {
 
 export function fmtAgo(v: unknown): string {
   const d = parseDate(v)
-  if (!d) return 'never'
+  if (!d) return t('never')
   const s = Math.max(0, Math.round((Date.now() - d.getTime()) / 1000))
-  if (s < 60) return `${s}s ago`
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`
-  return `${Math.floor(s / 86400)}d ago`
+  if (s < 60) return t('{n}s ago', { n: s })
+  if (s < 3600) return t('{n}m ago', { n: Math.floor(s / 60) })
+  if (s < 86400) return t('{n}h ago', { n: Math.floor(s / 3600) })
+  return t('{n}d ago', { n: Math.floor(s / 86400) })
 }
 
 export function ymd(d: Date): string {
@@ -87,10 +89,10 @@ export function ymdh(d: Date): string {
   return `${ymd(d)} ${pad(d.getHours())}:00`
 }
 
-/** snake_case → "Snake case" */
+/** snake_case → "Snake case", translated when the dictionary knows the result */
 export function humanize(s: string): string {
-  const t = s.replace(/_/g, ' ')
-  return t.charAt(0).toUpperCase() + t.slice(1)
+  const h = s.replace(/_/g, ' ')
+  return ts(h.charAt(0).toUpperCase() + h.slice(1))
 }
 
 export function csvEscape(v: unknown): string {

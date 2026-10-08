@@ -152,7 +152,8 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		u := s.sessionUser(r)
 		if u == nil {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "sign in required"})
+			// setup_required sends the panel to the first-run page instead of the login form.
+			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "sign in required", "setup_required": s.needSetup.Load()})
 			return
 		}
 		// Browsers cannot set this header cross-site without a CORS preflight,
@@ -175,7 +176,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	ip := remoteAddr(r).String()
+	ip := panelIP(r).String()
 	if !s.eng.Allow("login|"+ip, 10) {
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts, wait a minute"})
 		return
@@ -200,6 +201,11 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	s.startSession(w, r, u)
+}
+
+// startSession signs the user in on this browser and answers with their profile.
+func (s *Server) startSession(w http.ResponseWriter, r *http.Request, u *model.User) {
 	hours := s.eng.Snap().Settings.SessionHours
 	if hours <= 0 {
 		hours = 72
@@ -213,6 +219,71 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: token, Path: "/", Expires: exp, HttpOnly: true,
 		SameSite: http.SameSiteLaxMode, Secure: isSecure(r, s.eng.Snap())})
 	writeJSON(w, http.StatusOK, u)
+}
+
+// setup creates the first administrator. It works only while there are no
+// users at all: whoever opens a fresh panel first owns it, so the window is
+// closed for good by the first successful call.
+func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
+	if !s.needSetup.Load() {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	// Same CSRF barrier as requireAuth: a page on another site must not be
+	// able to claim a panel its visitor can reach.
+	if r.Header.Get("X-TDS") == "" {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "missing X-TDS header"})
+		return
+	}
+	if !s.eng.Allow("login|"+panelIP(r).String(), 10) {
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts, wait a minute"})
+		return
+	}
+	var in struct {
+		Username, Password string
+	}
+	if err := readJSON(r, &in); err != nil {
+		writeErr(w, err)
+		return
+	}
+	in.Username = strings.TrimSpace(in.Username)
+	if !reUsername.MatchString(in.Username) {
+		writeErr(w, bad("username: 3-32 letters, digits, dot, dash or underscore"))
+		return
+	}
+	hash, err := hashPassword(in.Password)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	ctx := r.Context()
+	// The lock makes "no users yet" and the insert one step for concurrent requests.
+	s.setupMu.Lock()
+	tag, err := s.st.Pool.Exec(ctx, `INSERT INTO users(username, password_hash, role)
+		SELECT $1, $2, 'admin' WHERE NOT EXISTS (SELECT 1 FROM users)`, in.Username, hash)
+	if err == nil {
+		s.needSetup.Store(false)
+	}
+	s.setupMu.Unlock()
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		writeErr(w, conflict("this panel already has an administrator — sign in instead"))
+		return
+	}
+	if err := s.st.AdoptOrphans(ctx); err != nil {
+		writeErr(w, err)
+		return
+	}
+	u, err := s.st.UserByName(ctx, in.Username)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	slog.Info("first administrator created", "user", u.Username, "ip", panelIP(r).String())
+	s.startSession(w, r, u)
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
@@ -347,6 +418,20 @@ func (s *Server) servePreview(w http.ResponseWriter, r *http.Request) {
 
 // ---- panel ------------------------------------------------------------------
 
+// longTransfers lifts the listener's read and write timeouts, which are sized
+// for clicks, off uploads and CSV exports: a whitepage archive or a geo
+// database on a slow line takes minutes, and so does a large export.
+func longTransfers(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") || r.URL.Query().Get("format") == "csv" {
+			rc, until := http.NewResponseController(w), time.Now().Add(30*time.Minute)
+			rc.SetReadDeadline(until)
+			rc.SetWriteDeadline(until)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // panelHandler serves the SPA, its API and whitepage previews. It is mounted
 // at the root of the ip:port listener and under the admin path on domains.
 func (s *Server) panelHandler() http.Handler {
@@ -366,8 +451,10 @@ func (s *Server) panelHandler() http.Handler {
 	r.Route("/api", func(r chi.Router) {
 		r.Post("/login", s.login)
 		r.Post("/logout", s.logout)
+		r.Post("/setup", s.setup)
 		r.Group(func(r chi.Router) {
 			r.Use(s.requireAuth)
+			r.Use(longTransfers)
 			r.Get("/me", handler(func(r *http.Request) (any, error) { return currentUser(r), nil }))
 			r.Post("/me/password", handler(s.changePassword))
 			r.Post("/me/totp/setup", handler(s.totpSetup))

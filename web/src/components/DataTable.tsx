@@ -1,6 +1,7 @@
 import { Fragment, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight } from 'lucide-react'
+import { t } from '../i18n'
 import { Empty } from './ui'
 
 export interface Column<T> {
@@ -70,6 +71,12 @@ export function DataTable<T>({ columns, rows, rowKey, loading, empty, footer, ex
                 style={{ width: c.width, textAlign: c.align }}
                 className={(c.sort ? 'sortable ' : '') + (c.className ?? '')}
                 onClick={() => clickHead(c)}
+                tabIndex={c.sort ? 0 : undefined}
+                onKeyDown={(e) => {
+                  if (!c.sort || (e.key !== 'Enter' && e.key !== ' ')) return
+                  e.preventDefault()
+                  clickHead(c)
+                }}
                 aria-sort={sort && sort.key === c.key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}
               >
                 <span className="th-inner">
@@ -93,7 +100,7 @@ export function DataTable<T>({ columns, rows, rowKey, loading, empty, footer, ex
             ))}
           {!initial && sorted.length === 0 && (
             <tr className="empty-row">
-              <td colSpan={span}>{empty ?? <Empty title="Nothing here yet" />}</td>
+              <td colSpan={span}>{empty ?? <Empty title={t('Nothing here yet')} />}</td>
             </tr>
           )}
           {!initial &&
@@ -101,20 +108,29 @@ export function DataTable<T>({ columns, rows, rowKey, loading, empty, footer, ex
               const k = rowKey(row, i)
               const isOpen = open.has(k)
               const clickable = !!expand || !!onRowClick
+              const activate = () => {
+                if (expand) {
+                  setOpen((s) => {
+                    const n = new Set(s)
+                    if (n.has(k)) n.delete(k)
+                    else n.add(k)
+                    return n
+                  })
+                }
+                onRowClick?.(row)
+              }
               return (
                 <Fragment key={k}>
                   <tr
                     className={(clickable ? 'clickable ' : '') + (isOpen ? 'open ' : '') + (rowClass ? rowClass(row) : '')}
-                    onClick={() => {
-                      if (expand) {
-                        setOpen((s) => {
-                          const n = new Set(s)
-                          if (n.has(k)) n.delete(k)
-                          else n.add(k)
-                          return n
-                        })
-                      }
-                      onRowClick?.(row)
+                    tabIndex={clickable ? 0 : undefined}
+                    aria-expanded={expand ? isOpen : undefined}
+                    onClick={activate}
+                    onKeyDown={(e) => {
+                      // Only for the row itself: keys pressed in a control inside it belong to that control.
+                      if (!clickable || e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return
+                      e.preventDefault()
+                      activate()
                     }}
                   >
                     {expand && <td className="expander">{isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</td>}

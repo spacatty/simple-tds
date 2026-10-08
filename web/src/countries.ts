@@ -1,4 +1,6 @@
-// Static ISO 3166-1 alpha-2 list.
+import { lang, locale } from './i18n'
+
+// Static ISO 3166-1 alpha-2 list. The names are English; other languages take theirs from the browser.
 const RAW =
   'AD:Andorra|AE:United Arab Emirates|AF:Afghanistan|AG:Antigua and Barbuda|AI:Anguilla|AL:Albania|AM:Armenia|AO:Angola|AQ:Antarctica|AR:Argentina|AS:American Samoa|AT:Austria|AU:Australia|AW:Aruba|AX:Åland Islands|AZ:Azerbaijan|' +
   'BA:Bosnia and Herzegovina|BB:Barbados|BD:Bangladesh|BE:Belgium|BF:Burkina Faso|BG:Bulgaria|BH:Bahrain|BI:Burundi|BJ:Benin|BL:Saint Barthélemy|BM:Bermuda|BN:Brunei|BO:Bolivia|BQ:Caribbean Netherlands|BR:Brazil|BS:Bahamas|BT:Bhutan|BV:Bouvet Island|BW:Botswana|BY:Belarus|BZ:Belize|' +
@@ -21,12 +23,32 @@ export interface Country {
   name: string
 }
 
+const regionNames = (() => {
+  if (lang === 'en') return null
+  try {
+    return new Intl.DisplayNames([locale], { type: 'region' })
+  } catch {
+    return null
+  }
+})()
+
+/** The name in the panel language; the built-in English one where the browser does not know the region. */
+function localName(code: string, name: string): string {
+  try {
+    const n = regionNames?.of(code)
+    return n && n !== code ? n : name
+  } catch {
+    return name
+  }
+}
+
 export const COUNTRIES: Country[] = RAW.split('|')
   .map((s) => {
     const i = s.indexOf(':')
-    return { code: s.slice(0, i), name: s.slice(i + 1) }
+    const code = s.slice(0, i)
+    return { code, name: localName(code, s.slice(i + 1)) }
   })
-  .sort((a, b) => a.name.localeCompare(b.name))
+  .sort((a, b) => a.name.localeCompare(b.name, locale))
 
 const byCode = new Map(COUNTRIES.map((c) => [c.code, c.name]))
 

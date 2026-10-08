@@ -5,28 +5,29 @@ import type { Params } from './api'
 import { presetRange } from './components/DateRangePicker'
 import type { DateRange } from './components/DateRangePicker'
 import { browserTZ, humanize } from './format'
+import { t } from './i18n'
 
 export const DIM_LABELS: Record<string, string> = {
-  total: 'Total',
-  day: 'Day',
-  hour: 'Hour',
-  campaign: 'Campaign',
-  stream: 'Stream',
-  domain: 'Domain',
-  country: 'Country',
-  region: 'Region',
-  city: 'City',
-  isp: 'ISP',
-  device_type: 'Device type',
-  os: 'OS',
-  browser: 'Browser',
-  lang: 'Language',
-  ref_domain: 'Referrer domain',
-  keyword: 'Keyword',
-  action: 'Action',
-  bot_reason: 'Bot reason',
-  key: 'Conversion key',
-  type: 'Conversion type',
+  total: t('Total'),
+  day: t('Day'),
+  hour: t('Hour'),
+  campaign: t('Campaign'),
+  stream: t('Stream'),
+  domain: t('Domain'),
+  country: t('Country'),
+  region: t('Region'),
+  city: t('City'),
+  isp: t('ISP'),
+  device_type: t('Device type'),
+  os: t('OS'),
+  browser: t('Browser'),
+  lang: t('Language'),
+  ref_domain: t('Referrer domain'),
+  keyword: t('Keyword'),
+  action: t('Action'),
+  bot_reason: t('Bot reason'),
+  key: t('Conversion key'),
+  type: t('Conversion type'),
 }
 export const dimLabel = (d: string) => DIM_LABELS[d] ?? humanize(d)
 

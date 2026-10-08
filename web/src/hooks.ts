@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
-import type { DependencyList } from 'react'
+import type { DependencyList, Dispatch, SetStateAction } from 'react'
 import type { Meta, User } from './types'
 import { errMsg } from './api'
 
@@ -8,7 +8,7 @@ export interface Loaded<T> {
   loading: boolean
   error: string
   reload: () => Promise<void>
-  setData: (v: T | undefined) => void
+  setData: Dispatch<SetStateAction<T | undefined>>
 }
 
 /** Runs an async loader on mount and whenever deps change; stale responses are ignored. */
@@ -45,15 +45,39 @@ export function useLoad<T>(fn: () => Promise<T>, deps: DependencyList): Loaded<T
   return { data, loading, error, reload, setData }
 }
 
-/** Calls fn every ms while active. */
-export function useInterval(fn: () => void, ms: number, active: boolean) {
+/**
+ * Calls fn every ms while active. A tick is skipped while the tab is hidden or
+ * the previous call is still running, so a slow request is not restarted (and
+ * its answer thrown away) by the next tick.
+ */
+export function useInterval(fn: () => void | Promise<void>, ms: number, active: boolean) {
   const ref = useRef(fn)
   ref.current = fn
   useEffect(() => {
     if (!active) return
-    const t = setInterval(() => ref.current(), ms)
+    let busy = false
+    const t = setInterval(async () => {
+      if (busy || document.hidden) return
+      busy = true
+      try {
+        await ref.current()
+      } finally {
+        busy = false
+      }
+    }, ms)
     return () => clearInterval(t)
   }, [ms, active])
+}
+
+/** Names the browser tab after the open page, so tabs and history entries can be told apart. */
+export function useTitle(title: string | undefined) {
+  useEffect(() => {
+    if (!title) return
+    document.title = title + ' · TDS'
+    return () => {
+      document.title = 'TDS'
+    }
+  }, [title])
 }
 
 export function useDebounced<T>(value: T, ms = 300): T {

@@ -2,6 +2,7 @@ import { get } from './api'
 import type { Params } from './api'
 import type { DateRange } from './components/DateRangePicker'
 import { browserTZ, fmtInt, fmtMoney, fmtPct } from './format'
+import { t } from './i18n'
 import type { ReportRow } from './types'
 
 export function rangeParams(range: DateRange): Params {
@@ -31,24 +32,24 @@ export const emptyRow = (key = ''): ReportRow => ({
 
 /** Totals with the derived ratios recomputed the same way the server does. */
 export function sumRows(rows: ReportRow[]): ReportRow {
-  const t = emptyRow('Total')
+  const sum = emptyRow(t('Total'))
   for (const r of rows) {
-    t.clicks += r.clicks
-    t.uniques += r.uniques
-    t.bots += r.bots
-    t.conversions += r.conversions
-    t.rejected += r.rejected
-    t.revenue += r.revenue
-    t.cost += r.cost
+    sum.clicks += r.clicks
+    sum.uniques += r.uniques
+    sum.bots += r.bots
+    sum.conversions += r.conversions
+    sum.rejected += r.rejected
+    sum.revenue += r.revenue
+    sum.cost += r.cost
   }
-  t.profit = t.revenue - t.cost
-  const real = t.clicks - t.bots
+  sum.profit = sum.revenue - sum.cost
+  const real = sum.clicks - sum.bots
   if (real > 0) {
-    t.cr = (t.conversions / real) * 100
-    t.epc = t.revenue / real
+    sum.cr = (sum.conversions / real) * 100
+    sum.epc = sum.revenue / real
   }
-  if (t.cost > 0) t.roi = (t.profit / t.cost) * 100
-  return t
+  if (sum.cost > 0) sum.roi = (sum.profit / sum.cost) * 100
+  return sum
 }
 
 export type MetricKey = 'clicks' | 'uniques' | 'bots' | 'conversions' | 'rejected' | 'revenue' | 'cost' | 'profit' | 'cr' | 'roi' | 'epc'
@@ -61,15 +62,15 @@ export interface MetricDef {
 }
 
 export const METRICS: MetricDef[] = [
-  { key: 'clicks', label: 'Clicks', fmt: fmtInt },
-  { key: 'uniques', label: 'Uniques', fmt: fmtInt },
-  { key: 'bots', label: 'Bots', fmt: fmtInt },
-  { key: 'conversions', label: 'Conv.', title: 'Conversions (excluding rejected)', fmt: fmtInt },
-  { key: 'rejected', label: 'Rejected', fmt: fmtInt },
-  { key: 'cr', label: 'CR', title: 'Conversions / non-bot clicks', fmt: (v) => fmtPct(v) },
-  { key: 'revenue', label: 'Revenue', fmt: (v) => fmtMoney(v) },
-  { key: 'cost', label: 'Cost', fmt: (v) => fmtMoney(v) },
-  { key: 'profit', label: 'Profit', fmt: (v) => fmtMoney(v) },
-  { key: 'roi', label: 'ROI', title: 'Profit / cost', fmt: (v) => fmtPct(v, 1) },
-  { key: 'epc', label: 'EPC', title: 'Revenue per non-bot click', fmt: (v) => v.toFixed(4) },
+  { key: 'clicks', label: t('Clicks'), fmt: fmtInt },
+  { key: 'uniques', label: t('Uniques'), fmt: fmtInt },
+  { key: 'bots', label: t('Bots'), fmt: fmtInt },
+  { key: 'conversions', label: t('Conv.'), title: t('Conversions (excluding rejected)'), fmt: fmtInt },
+  { key: 'rejected', label: t('Rejected'), fmt: fmtInt },
+  { key: 'cr', label: t('CR'), title: t('Conversions / non-bot clicks'), fmt: (v) => fmtPct(v) },
+  { key: 'revenue', label: t('Revenue'), fmt: (v) => fmtMoney(v) },
+  { key: 'cost', label: t('Cost'), fmt: (v) => fmtMoney(v) },
+  { key: 'profit', label: t('Profit'), fmt: (v) => fmtMoney(v) },
+  { key: 'roi', label: t('ROI'), title: t('Profit / cost'), fmt: (v) => fmtPct(v, 1) },
+  { key: 'epc', label: t('EPC'), title: t('Revenue per non-bot click'), fmt: (v) => v.toFixed(4) },
 ]

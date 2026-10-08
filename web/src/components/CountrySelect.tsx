@@ -1,11 +1,13 @@
 import { useMemo } from 'react'
 import { Globe } from 'lucide-react'
-import { COUNTRIES, countryName, flag } from '../countries'
+import { COUNTRIES, countryName } from '../countries'
+import { t, ts } from '../i18n'
+import { Flag } from './icons'
 import type { GeoPreset } from '../types'
 import { Dropdown, MenuItem, MultiSelect } from './ui'
 import type { MultiOption } from './ui'
 
-const OPTIONS: MultiOption[] = COUNTRIES.map((c) => ({ value: c.code, label: c.name, prefix: flag(c.code), hint: c.code }))
+const OPTIONS: MultiOption[] = COUNTRIES.map((c) => ({ value: c.code, label: c.name, icon: <Flag code={c.code} />, hint: c.code }))
 
 /** Searchable ISO country multi-select; presets add their countries to the selection. */
 export function CountrySelect({ values, onChange, presets }: { values: string[]; onChange: (v: string[]) => void; presets?: GeoPreset[] }) {
@@ -17,10 +19,11 @@ export function CountrySelect({ values, onChange, presets }: { values: string[];
           values={upper}
           onChange={onChange}
           options={OPTIONS}
-          placeholder="Search countries…"
+          placeholder={t('Search countries…')}
           chipLabel={(v) => (
-            <span title={countryName(v)}>
-              {flag(v)} {v}
+            <span className="with-icon" title={countryName(v)}>
+              <Flag code={v} />
+              {v}
             </span>
           )}
         />
@@ -30,7 +33,7 @@ export function CountrySelect({ values, onChange, presets }: { values: string[];
           align="right"
           label={
             <>
-              <Globe size={14} /> Presets
+              <Globe size={14} /> {t('Presets')}
             </>
           }
         >
@@ -46,7 +49,7 @@ export function CountrySelect({ values, onChange, presets }: { values: string[];
                     close()
                   }}
                 >
-                  <span className="grow">{p.name}</span>
+                  <span className="grow">{ts(p.name)}</span>
                   <span className="muted">{p.countries.length}</span>
                 </MenuItem>
               ))}
@@ -58,7 +61,7 @@ export function CountrySelect({ values, onChange, presets }: { values: string[];
                     close()
                   }}
                 >
-                  Clear all
+                  {t('Clear all')}
                 </MenuItem>
               )}
             </div>

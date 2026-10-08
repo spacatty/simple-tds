@@ -9,24 +9,29 @@ import { Badge, Card, Chips, Empty, ErrorBox, Field, Modal, Notice, NumberInput,
 import type { Tone } from '../components/ui'
 import { CountrySelect } from '../components/CountrySelect'
 import { fmtAgo, fmtBytes, fmtDateTime, fmtInt } from '../format'
-import { flag } from '../countries'
+import { Flag } from '../components/icons'
+import { t, tn, ts, tx } from '../i18n'
 
 type Tab = 'detection' | 'lists' | 'integrations' | 'geo' | 'presets'
+
+// Built-in IP lists and geo presets are seeded by the server with English names.
+const displayName = (x: { name: string; builtin?: boolean }) => (x.builtin ? ts(x.name) : x.name)
+const entriesText = (n: number) => tn(n, '{count} entry', '{count} entries', { count: fmtInt(n) })
 
 export default function Antibot() {
   const [tab, setTab] = useState<Tab>('detection')
   return (
     <div className="page">
-      <PageHeader title="Anti-bot" sub="How visitors are classified as bots or datacenter traffic, and where geo data comes from." />
+      <PageHeader title={t('Anti-bot')} sub={t('How visitors are classified as bots or datacenter traffic, and where geo data comes from.')} />
       <Tabs
         value={tab}
         onChange={setTab}
         tabs={[
-          { value: 'detection', label: 'Detection' },
-          { value: 'lists', label: 'IP lists' },
-          { value: 'integrations', label: 'External integrations' },
-          { value: 'geo', label: 'Geo database' },
-          { value: 'presets', label: 'Geo presets' },
+          { value: 'detection', label: t('Detection') },
+          { value: 'lists', label: t('IP lists') },
+          { value: 'integrations', label: t('External integrations') },
+          { value: 'geo', label: t('Geo database') },
+          { value: 'presets', label: t('Geo presets') },
         ]}
       />
       {tab === 'detection' && <Detection />}
@@ -40,7 +45,7 @@ export default function Antibot() {
 
 // ---- detection --------------------------------------------------------------
 
-const asnCheck = (v: string) => (/^(AS)?\d{1,10}$/i.test(v) ? null : `“${v}” is not an AS number`)
+const asnCheck = (v: string) => (/^(AS)?\d{1,10}$/i.test(v) ? null : t('“{v}” is not an AS number', { v }))
 const toASNs = (list: string[]) => list.map((v) => Number(v.replace(/^AS/i, ''))).filter((n) => Number.isFinite(n) && n > 0)
 
 function Detection() {
@@ -100,7 +105,7 @@ function Detection() {
           ja4_block: f.ja4_block,
         })
         res.setData(s)
-        toast.ok('Detection settings saved')
+        toast.ok(t('Detection settings saved'))
       } catch (e) {
         setError(errMsg(e))
       }
@@ -108,47 +113,47 @@ function Detection() {
 
   return (
     <div className="stack">
-      <Card title="Signals">
+      <Card title={t('Signals')}>
         <div className="form-grid">
-          <Field help="Visitors from hosting, VPN and proxy networks (datacenter IP lists and ASNs below) are flagged as bots, not just as “datacenter”. Turn off to only mark them, and route them yourself with the Datacenter filter.">
-            <Toggle checked={f.datacenter_is_bot} onChange={(datacenter_is_bot) => set({ datacenter_is_bot })} label="Treat datacenter / VPN traffic as bots" />
+          <Field help={t('Visitors from hosting, VPN and proxy networks (datacenter IP lists and ASNs below) are flagged as bots, not just as “datacenter”. Turn off to only mark them, and route them yourself with the Datacenter filter.')}>
+            <Toggle checked={f.datacenter_is_bot} onChange={(datacenter_is_bot) => set({ datacenter_is_bot })} label={t('Treat datacenter / VPN traffic as bots')} />
           </Field>
-          <Field help="Compare the request headers with what the claimed browser really sends (missing or inconsistent headers add to the bot score).">
-            <Toggle checked={f.header_checks} onChange={(header_checks) => set({ header_checks })} label="HTTP header consistency checks" />
+          <Field help={t('Compare the request headers with what the claimed browser really sends (missing or inconsistent headers add to the bot score).')}>
+            <Toggle checked={f.header_checks} onChange={(header_checks) => set({ header_checks })} label={t('HTTP header consistency checks')} />
           </Field>
-          <Field help="Compare the TLS fingerprint (JA3 / JA4) with the claimed browser and apply the block lists below. Only available where this server terminates TLS (TLS mode “Auto”).">
-            <Toggle checked={f.tls_checks} onChange={(tls_checks) => set({ tls_checks })} label="TLS fingerprint checks" />
+          <Field help={t('Compare the TLS fingerprint (JA3 / JA4) with the claimed browser and apply the block lists below. Only available where this server terminates TLS (TLS mode “Auto”).')}>
+            <Toggle checked={f.tls_checks} onChange={(tls_checks) => set({ tls_checks })} label={t('TLS fingerprint checks')} />
           </Field>
           <div />
-          <Field label="Bot score threshold" help="Every suspicious signal adds points; a visitor whose score reaches this value is a bot. Lower = stricter. Default 100.">
+          <Field label={t('Bot score threshold')} help={t('Every suspicious signal adds points; a visitor whose score reaches this value is a bot. Lower = stricter. Default 100.')}>
             <NumberInput value={f.bot_threshold} min={1} onChange={(bot_threshold) => set({ bot_threshold })} />
           </Field>
-          <Field label="JS check pass lifetime, hours" help="How long a browser that passed a stream's JS check is remembered (cookie) before it is challenged again.">
+          <Field label={t('JS check pass lifetime, hours')} help={t("How long a browser that passed a stream's JS check is remembered (cookie) before it is challenged again.")}>
             <NumberInput value={f.js_pass_hours} min={1} onChange={(js_pass_hours) => set({ js_pass_hours })} />
           </Field>
         </div>
       </Card>
 
-      <Card title="Networks (ASN)">
+      <Card title={t('Networks (ASN)')}>
         <div className="form-grid">
-          <Field label="Bot ASNs" help="Networks that only ever send crawlers (ad platforms, search engines). Always a bot." className="span-2">
+          <Field label={t('Bot ASNs')} help={t('Networks that only ever send crawlers (ad platforms, search engines). Always a bot.')} className="span-2">
             <Chips mono values={f.bot_asns} onChange={(bot_asns) => set({ bot_asns })} validate={asnCheck} placeholder="15169, AS32934…" />
           </Field>
-          <Field label="Datacenter ASNs" help="Hosting and cloud providers. Marked as datacenter (and as bots when the switch above is on)." className="span-2">
+          <Field label={t('Datacenter ASNs')} help={t('Hosting and cloud providers. Marked as datacenter (and as bots when the switch above is on).')} className="span-2">
             <Chips mono values={f.datacenter_asns} onChange={(datacenter_asns) => set({ datacenter_asns })} validate={asnCheck} placeholder="16509, AS14061…" />
           </Field>
         </div>
       </Card>
 
-      <Card title="Fingerprints">
+      <Card title={t('Fingerprints')}>
         <div className="form-grid">
-          <Field label="Bot User-Agent patterns" help="One per line, in addition to the built-in crawler list. A visitor whose User-Agent matches is a bot. Max 200 characters each." className="span-2">
+          <Field label={t('Bot User-Agent patterns')} help={t('One per line, in addition to the built-in crawler list. A visitor whose User-Agent matches is a bot. Max 200 characters each.')} className="span-2">
             <textarea className="input mono" rows={5} spellCheck={false} value={f.bot_ua_patterns} onChange={(e) => set({ bot_ua_patterns: e.target.value })} placeholder={'HeadlessChrome\npython-requests'} />
           </Field>
-          <Field label="Blocked JA3 fingerprints" help="TLS client fingerprints (MD5 hashes) that are always bots.">
+          <Field label={t('Blocked JA3 fingerprints')} help={t('TLS client fingerprints (MD5 hashes) that are always bots.')}>
             <Chips mono values={f.ja3_block} onChange={(ja3_block) => set({ ja3_block })} placeholder="e7d705a3286e19ea42f587b344ee6865" />
           </Field>
-          <Field label="Blocked JA4 fingerprints" help="JA4 strings that are always bots.">
+          <Field label={t('Blocked JA4 fingerprints')} help={t('JA4 strings that are always bots.')}>
             <Chips mono values={f.ja4_block} onChange={(ja4_block) => set({ ja4_block })} placeholder="t13d1516h2_8daaf6152771_02713d6af862" />
           </Field>
         </div>
@@ -157,7 +162,7 @@ function Detection() {
       {error && <div className="field-error">{error}</div>}
       <div className="form-actions sticky-actions">
         <button className="btn primary" disabled={busy} onClick={save}>
-          {busy ? 'Saving…' : 'Save detection settings'}
+          {busy ? t('Saving…') : t('Save detection settings')}
         </button>
       </div>
     </div>
@@ -167,10 +172,10 @@ function Detection() {
 // ---- IP lists ---------------------------------------------------------------
 
 const LIST_KINDS: { value: string; label: string; tone: Tone; help: string }[] = [
-  { value: 'bot', label: 'Bot', tone: 'err', help: 'Crawlers and ad reviewers: always a bot.' },
-  { value: 'datacenter', label: 'Datacenter', tone: 'warn', help: 'Hosting / VPN ranges: marked as datacenter.' },
-  { value: 'block', label: 'Block', tone: 'err', help: 'Your own blocklist: always a bot.' },
-  { value: 'allow', label: 'Allow', tone: 'ok', help: 'Never a bot — overrides every other signal.' },
+  { value: 'bot', label: t('Bot'), tone: 'err', help: t('Crawlers and ad reviewers: always a bot.') },
+  { value: 'datacenter', label: t('Datacenter'), tone: 'warn', help: t('Hosting / VPN ranges: marked as datacenter.') },
+  { value: 'block', label: t('Block@@list kind'), tone: 'err', help: t('Your own blocklist: always a bot.') },
+  { value: 'allow', label: t('Allow@@list kind'), tone: 'ok', help: t('Never a bot — overrides every other signal.') },
 ]
 
 function Lists() {
@@ -180,10 +185,13 @@ function Lists() {
   const lists = res.data ?? []
 
   const patch = async (l: IPList, body: Partial<IPList>) => {
+    // The switch moves at once and goes back if the server refuses.
+    const swap = (n: IPList) => res.setData((all) => all?.map((x) => (x.id === l.id ? n : x)))
+    swap({ ...l, ...body })
     try {
-      const n = await put<IPList>(`ip-lists/${l.id}`, body)
-      res.setData(lists.map((x) => (x.id === l.id ? n : x)))
+      swap(await put<IPList>(`ip-lists/${l.id}`, body))
     } catch (e) {
+      swap(l)
       toast.err(e)
     }
   }
@@ -192,7 +200,7 @@ function Lists() {
     try {
       const n = await post<IPList>(`ip-lists/${l.id}/refresh`)
       res.setData(lists.map((x) => (x.id === l.id ? n : x)))
-      toast.ok(`${l.name}: ${fmtInt(n.entries)} entries`)
+      toast.ok(`${displayName(l)}: ${entriesText(n.entries)}`)
     } catch (e) {
       toast.err(e)
       res.reload()
@@ -201,10 +209,10 @@ function Lists() {
     }
   }
   const remove = async (l: IPList) => {
-    if (!(await confirmDialog({ title: 'Delete IP list?', message: <>List <b>{l.name}</b> ({fmtInt(l.entries)} entries) will be deleted.</> }))) return
+    if (!(await confirmDialog({ title: t('Delete IP list?'), message: tx('List <b>{name}</b> ({entries}) will be deleted.', { b: (c) => <b>{c}</b>, name: displayName(l), entries: entriesText(l.entries) }) }))) return
     try {
       await del(`ip-lists/${l.id}`)
-      toast.ok('List deleted')
+      toast.ok(t('List deleted'))
       res.reload()
     } catch (e) {
       toast.err(e)
@@ -214,18 +222,18 @@ function Lists() {
   const columns: Column<IPList>[] = [
     {
       key: 'name',
-      title: 'Name',
+      title: t('Name'),
       sort: (l) => l.name.toLowerCase(),
       render: (l) => (
         <span className="row gap-s">
-          <span className="strong">{l.name}</span>
-          {l.builtin && <Badge>built-in</Badge>}
+          <span className="strong">{displayName(l)}</span>
+          {l.builtin && <Badge>{t('built-in')}</Badge>}
         </span>
       ),
     },
     {
       key: 'kind',
-      title: 'Kind',
+      title: t('Kind'),
       sort: (l) => l.kind,
       render: (l) => {
         const k = LIST_KINDS.find((x) => x.value === l.kind)
@@ -238,20 +246,20 @@ function Lists() {
     },
     {
       key: 'url',
-      title: 'Source',
+      title: t('Source'),
       render: (l) =>
         l.url ? (
           <a href={l.url} target="_blank" rel="noreferrer noopener" className="ellipsis mono small" style={{ maxWidth: 340, display: 'inline-block' }} title={l.url}>
             {l.url}
           </a>
         ) : (
-          <span className="muted">manual entries</span>
+          <span className="muted">{t('manual entries')}</span>
         ),
     },
-    { key: 'entries', title: 'Entries', align: 'right', sort: (l) => l.entries, render: (l) => fmtInt(l.entries) },
-    { key: 'updated', title: 'Updated', render: (l) => <span title={fmtDateTime(l.updated_at)}>{fmtAgo(l.updated_at)}{l.url ? <span className="muted"> · every {l.refresh_hours}h</span> : null}</span> },
-    { key: 'error', title: 'Last error', render: (l) => (l.last_error ? <span className="field-error ellipsis" style={{ maxWidth: 260, display: 'inline-block' }} title={l.last_error}>{l.last_error}</span> : <span className="muted">—</span>) },
-    { key: 'enabled', title: 'Enabled', width: 80, render: (l) => <Toggle checked={l.enabled} onChange={(enabled) => patch(l, { enabled })} /> },
+    { key: 'entries', title: t('Entries'), align: 'right', sort: (l) => l.entries, render: (l) => fmtInt(l.entries) },
+    { key: 'updated', title: t('Updated'), render: (l) => <span title={fmtDateTime(l.updated_at)}>{fmtAgo(l.updated_at)}{l.url ? <span className="muted"> · {t('every {n} h', { n: l.refresh_hours })}</span> : null}</span> },
+    { key: 'error', title: t('Last error'), render: (l) => (l.last_error ? <span className="field-error ellipsis" style={{ maxWidth: 260, display: 'inline-block' }} title={ts(l.last_error)}>{ts(l.last_error)}</span> : <span className="muted">—</span>) },
+    { key: 'enabled', title: t('Enabled'), width: 80, render: (l) => <Toggle checked={l.enabled} onChange={(enabled) => patch(l, { enabled })} /> },
     {
       key: 'actions',
       title: '',
@@ -259,13 +267,13 @@ function Lists() {
       width: 120,
       render: (l) => (
         <div className="row-actions">
-          <button className="icon-btn" title="Refresh now" disabled={refreshing === l.id} onClick={() => refresh(l)}>
+          <button className="icon-btn" title={t('Refresh now')} disabled={refreshing === l.id} onClick={() => refresh(l)}>
             <RefreshCw size={15} className={refreshing === l.id ? 'spin' : ''} />
           </button>
-          <button className="icon-btn" title="Edit" onClick={() => setEditing(l)}>
+          <button className="icon-btn" title={t('Edit')} onClick={() => setEditing(l)}>
             <Pencil size={15} />
           </button>
-          <button className="icon-btn danger" title={l.builtin ? 'Built-in lists cannot be deleted; disable instead' : 'Delete'} disabled={l.builtin} onClick={() => remove(l)}>
+          <button className="icon-btn danger" title={l.builtin ? t('Built-in lists cannot be deleted; disable instead') : t('Delete')} disabled={l.builtin} onClick={() => remove(l)}>
             <Trash2 size={15} />
           </button>
         </div>
@@ -276,14 +284,14 @@ function Lists() {
   return (
     <div className="stack">
       <div className="toolbar">
-        <span className="muted grow">IP and CIDR lists checked on every click. “Allow” wins over everything; “Bot” and “Block” always mean bot.</span>
+        <span className="muted grow">{t('IP and CIDR lists checked on every click. “Allow” wins over everything; “Bot” and “Block” always mean bot.')}</span>
         <button className="btn primary" onClick={() => setEditing('new')}>
-          <Plus size={15} /> Add custom list
+          <Plus size={15} /> {t('Add custom list')}
         </button>
       </div>
       <ErrorBox error={res.error} retry={res.reload} />
       <div className="card">
-        <DataTable columns={columns} rows={res.data} rowKey={(l) => l.id} loading={res.loading} rowClass={(l) => (l.enabled ? '' : 'dim')} empty={<Empty title="No IP lists" />} />
+        <DataTable columns={columns} rows={res.data} rowKey={(l) => l.id} loading={res.loading} rowClass={(l) => (l.enabled ? '' : 'dim')} empty={<Empty title={t('No IP lists')} />} />
       </div>
       {editing && (
         <ListEditor
@@ -320,7 +328,7 @@ function ListEditor({ list, onClose, onSaved }: { list: IPList | null; onClose: 
       try {
         if (list) await put(`ip-lists/${list.id}`, body)
         else await post('ip-lists', body)
-        toast.ok(list ? 'List saved' : 'List created')
+        toast.ok(list ? t('List saved') : t('List created'))
         onSaved()
       } catch (e) {
         setError(errMsg(e))
@@ -329,38 +337,38 @@ function ListEditor({ list, onClose, onSaved }: { list: IPList | null; onClose: 
   const lines = f.content.split('\n').filter((l) => l.trim() && !l.trim().startsWith('#')).length
   return (
     <Modal
-      title={list ? `IP list: ${list.name}` : 'New IP list'}
+      title={list ? t('IP list: {name}', { name: displayName(list) }) : t('New IP list')}
       size="lg"
       onClose={onClose}
       footer={
         <>
           {error && <div className="field-error grow">{error}</div>}
           <button className="btn" onClick={onClose}>
-            Cancel
+            {t('Cancel')}
           </button>
           <button className="btn primary" disabled={busy || !f.name.trim()} onClick={save}>
-            {list ? 'Save' : 'Create list'}
+            {list ? t('Save') : t('Create list')}
           </button>
         </>
       }
     >
       <div className="form-grid">
-        <Field label="Name">
+        <Field label={t('Name')}>
           <input className="input" autoFocus={!list} value={f.name} onChange={(e) => set({ name: e.target.value })} />
         </Field>
-        <Field label="Kind" help={LIST_KINDS.find((k) => k.value === f.kind)?.help}>
+        <Field label={t('Kind')} help={LIST_KINDS.find((k) => k.value === f.kind)?.help}>
           <Select value={f.kind} onChange={(kind) => set({ kind })} options={LIST_KINDS} />
         </Field>
-        <Field label="Source URL (optional)" help="A text file with one IP or CIDR per line, downloaded periodically. Leave empty for a purely manual list." className="span-2">
+        <Field label={t('Source URL (optional)')} help={t('A text file with one IP or CIDR per line, downloaded periodically. Leave empty for a purely manual list.')} className="span-2">
           <input className="input mono" value={f.url} onChange={(e) => set({ url: e.target.value })} placeholder="https://example.com/ranges.txt" />
         </Field>
-        <Field label="Refresh every, hours">
+        <Field label={t('Refresh every, hours')}>
           <NumberInput value={f.refresh_hours} min={1} disabled={!f.url.trim()} onChange={(refresh_hours) => set({ refresh_hours })} />
         </Field>
-        <Field label="Status">
-          <Toggle checked={f.enabled} onChange={(enabled) => set({ enabled })} label={f.enabled ? 'Enabled' : 'Disabled'} />
+        <Field label={t('Status')}>
+          <Toggle checked={f.enabled} onChange={(enabled) => set({ enabled })} label={f.enabled ? t('Enabled') : t('Disabled')} />
         </Field>
-        <Field label={`Manual entries${lines ? ` (${fmtInt(lines)})` : ''}`} help="One IP address or CIDR per line. Used in addition to the downloaded source, if any." className="span-2">
+        <Field label={lines ? t('Manual entries ({n})', { n: fmtInt(lines) }) : t('Manual entries')} help={t('One IP address or CIDR per line. Used in addition to the downloaded source, if any.')} className="span-2">
           <textarea className="input mono" rows={10} spellCheck={false} value={f.content} onChange={(e) => set({ content: e.target.value })} placeholder={'203.0.113.0/24\n2001:db8::/32\n198.51.100.7'} />
         </Field>
       </div>
@@ -371,35 +379,36 @@ function ListEditor({ list, onClose, onSaved }: { list: IPList | null; onClose: 
 // ---- external integrations --------------------------------------------------
 
 const GEO_FIELDS: { key: string; label: string; hint: string }[] = [
-  { key: 'country', label: 'Country code *', hint: 'countryCode' },
-  { key: 'region', label: 'Region', hint: 'regionName' },
-  { key: 'city', label: 'City', hint: 'city' },
+  { key: 'country', label: t('Country code *'), hint: 'countryCode' },
+  { key: 'region', label: t('Region'), hint: 'regionName' },
+  { key: 'city', label: t('City'), hint: 'city' },
   { key: 'asn', label: 'ASN', hint: 'asn' },
-  { key: 'isp', label: 'ISP / organisation', hint: 'isp' },
+  { key: 'isp', label: t('ISP / organisation'), hint: 'isp' },
 ]
 const BOT_FIELDS: { key: string; label: string; hint: string }[] = [
-  { key: 'bot', label: 'Bot flag or score *', hint: 'is_bot or fraud_score' },
-  { key: 'threshold', label: 'Score threshold', hint: 'empty for a boolean flag, e.g. 85 for a score' },
+  { key: 'bot', label: t('Bot flag or score *'), hint: t('is_bot or fraud_score') },
+  { key: 'threshold', label: t('Score threshold'), hint: t('empty for a boolean flag, e.g. 85 for a score') },
 ]
 
 function Integrations() {
   const res = useLoad(() => get<Integration[]>('integrations'), [])
   const [editing, setEditing] = useState<Integration | 'new' | null>(null)
-  const items = res.data ?? []
 
   const patch = async (it: Integration, enabled: boolean) => {
+    const swap = (n: Integration) => res.setData((all) => all?.map((x) => (x.id === it.id ? n : x)))
+    swap({ ...it, enabled })
     try {
-      const n = await put<Integration>(`integrations/${it.id}`, { enabled })
-      res.setData(items.map((x) => (x.id === it.id ? n : x)))
+      swap(await put<Integration>(`integrations/${it.id}`, { enabled }))
     } catch (e) {
+      swap(it)
       toast.err(e)
     }
   }
   const remove = async (it: Integration) => {
-    if (!(await confirmDialog({ title: 'Delete integration?', message: <>Integration <b>{it.name}</b> will be removed.</> }))) return
+    if (!(await confirmDialog({ title: t('Delete integration?'), message: tx('Integration <b>{name}</b> will be removed.', { b: (c) => <b>{c}</b>, name: it.name }) }))) return
     try {
       await del(`integrations/${it.id}`)
-      toast.ok('Integration deleted')
+      toast.ok(t('Integration deleted'))
       res.reload()
     } catch (e) {
       toast.err(e)
@@ -407,11 +416,11 @@ function Integrations() {
   }
 
   const columns: Column<Integration>[] = [
-    { key: 'name', title: 'Name', render: (it) => <span className="strong">{it.name}</span> },
-    { key: 'kind', title: 'Kind', render: (it) => <Badge tone={it.kind === 'geo' ? 'info' : 'accent'}>{it.kind === 'geo' ? 'Geo lookup' : 'Bot check'}</Badge> },
+    { key: 'name', title: t('Name'), render: (it) => <span className="strong">{it.name}</span> },
+    { key: 'kind', title: t('Kind'), render: (it) => <Badge tone={it.kind === 'geo' ? 'info' : 'accent'}>{it.kind === 'geo' ? t('Geo lookup') : t('Bot check')}</Badge> },
     { key: 'url', title: 'URL', render: (it) => <span className="mono small ellipsis" style={{ maxWidth: 420, display: 'inline-block' }} title={it.url}>{it.url}</span> },
-    { key: 'timing', title: 'Timeout / cache', render: (it) => `${it.timeout_ms} ms / ${it.cache_minutes} min` },
-    { key: 'enabled', title: 'Enabled', width: 80, render: (it) => <Toggle checked={it.enabled} onChange={(v) => patch(it, v)} /> },
+    { key: 'timing', title: t('Timeout / cache'), render: (it) => t('{ms} ms / {min} min', { ms: it.timeout_ms, min: it.cache_minutes }) },
+    { key: 'enabled', title: t('Enabled'), width: 80, render: (it) => <Toggle checked={it.enabled} onChange={(v) => patch(it, v)} /> },
     {
       key: 'actions',
       title: '',
@@ -419,10 +428,10 @@ function Integrations() {
       width: 90,
       render: (it) => (
         <div className="row-actions">
-          <button className="icon-btn" title="Edit / test" onClick={() => setEditing(it)}>
+          <button className="icon-btn" title={t('Edit / test')} onClick={() => setEditing(it)}>
             <Pencil size={15} />
           </button>
-          <button className="icon-btn danger" title="Delete" onClick={() => remove(it)}>
+          <button className="icon-btn danger" title={t('Delete')} onClick={() => remove(it)}>
             <Trash2 size={15} />
           </button>
         </div>
@@ -433,12 +442,12 @@ function Integrations() {
   return (
     <div className="stack">
       <div className="toolbar">
-        <span className="muted grow">Optional HTTP JSON APIs queried on each click: geo lookups override the local database; bot checks add an external verdict.</span>
+        <span className="muted grow">{t('Optional HTTP JSON APIs queried on each click: geo lookups override the local database; bot checks add an external verdict.')}</span>
         <button className="btn primary" onClick={() => setEditing('new')}>
-          <Plus size={15} /> Add integration
+          <Plus size={15} /> {t('Add integration')}
         </button>
       </div>
-      <Notice tone="warn">An enabled integration is called during the click (results are cached per IP). A slow API slows every uncached visitor by up to its timeout — keep timeouts low.</Notice>
+      <Notice tone="warn">{t('An enabled integration is called during the click (results are cached per IP). A slow API slows every uncached visitor by up to its timeout — keep timeouts low.')}</Notice>
       <ErrorBox error={res.error} retry={res.reload} />
       <div className="card">
         <DataTable
@@ -447,7 +456,7 @@ function Integrations() {
           rowKey={(it) => it.id}
           loading={res.loading}
           rowClass={(it) => (it.enabled ? '' : 'dim')}
-          empty={<Empty title="No external integrations">The built-in detection and the local geo database work without any. Add one to plug in a paid geo or fraud-scoring API.</Empty>}
+          empty={<Empty title={t('No external integrations')}>{t('The built-in detection and the local geo database work without any. Add one to plug in a paid geo or fraud-scoring API.')}</Empty>}
         />
       </div>
       {editing && (
@@ -509,7 +518,7 @@ function IntegrationEditor({ item, onClose, onSaved }: { item: Integration | nul
         // headers and mapping are always sent whole: PUT replaces maps that are present in the body.
         if (item) await put(`integrations/${item.id}`, body)
         else await post('integrations', body)
-        toast.ok(item ? 'Integration saved' : 'Integration created')
+        toast.ok(item ? t('Integration saved') : t('Integration created'))
         onSaved()
       } catch (e) {
         setError(errMsg(e))
@@ -533,116 +542,116 @@ function IntegrationEditor({ item, onClose, onSaved }: { item: Integration | nul
 
   return (
     <Modal
-      title={item ? `Integration: ${item.name}` : 'New integration'}
+      title={item ? t('Integration: {name}', { name: item.name }) : t('New integration')}
       size="xl"
       onClose={onClose}
       footer={
         <>
           {error && <div className="field-error grow">{error}</div>}
           <button className="btn" onClick={onClose}>
-            Cancel
+            {t('Cancel')}
           </button>
           <button className="btn primary" disabled={busy || !f.name.trim() || !f.url.trim()} onClick={save}>
-            {item ? 'Save' : 'Create'}
+            {item ? t('Save') : t('Create')}
           </button>
         </>
       }
     >
       <div className="form-grid">
-        <Field label="Start from a preset" className="span-2" help={preset?.description ?? 'Fills the URL and mapping; replace the placeholder keys afterwards.'}>
-          <Select value="" onChange={applyPreset} placeholder="Choose a preset…" options={meta.integration_presets.map((p) => ({ value: p.name, label: p.name, group: p.kind === 'geo' ? 'Geo lookup' : 'Bot check' }))} />
+        <Field label={t('Start from a preset')} className="span-2" help={preset ? ts(preset.description) : t('Fills the URL and mapping; replace the placeholder keys afterwards.')}>
+          <Select value="" onChange={applyPreset} placeholder={t('Choose a preset…')} options={meta.integration_presets.map((p) => ({ value: p.name, label: ts(p.name), group: p.kind === 'geo' ? t('Geo lookup') : t('Bot check') }))} />
         </Field>
-        <Field label="Name">
+        <Field label={t('Name')}>
           <input className="input" value={f.name} onChange={(e) => set({ name: e.target.value })} />
         </Field>
-        <Field label="Kind">
+        <Field label={t('Kind')}>
           <Select
             value={f.kind}
             onChange={(kind) => set({ kind })}
             options={[
-              { value: 'geo', label: 'Geo lookup — overrides country / city / ISP' },
-              { value: 'antibot', label: 'Bot check — external verdict or score' },
+              { value: 'geo', label: t('Geo lookup — overrides country / city / ISP') },
+              { value: 'antibot', label: t('Bot check — external verdict or score') },
             ]}
           />
         </Field>
-        <Field label="Request URL" className="span-2" help="GET request expected to return JSON. {ip} is required and is replaced by the visitor address; {ua} by the URL-encoded User-Agent.">
+        <Field label={t('Request URL')} className="span-2" help={t('GET request expected to return JSON. {ip} is required and is replaced by the visitor address; {ua} by the URL-encoded User-Agent.')}>
           <input className="input mono" spellCheck={false} value={f.url} onChange={(e) => set({ url: e.target.value })} placeholder="https://api.example.com/v1/{ip}?key=…" />
         </Field>
-        <Field label="Timeout, ms" help="Max 5000. On timeout the click proceeds without this integration.">
+        <Field label={t('Timeout, ms')} help={t('Max 5000. On timeout the click proceeds without this integration.')}>
           <NumberInput value={f.timeout_ms} min={50} max={5000} onChange={(timeout_ms) => set({ timeout_ms })} />
         </Field>
-        <Field label="Cache, minutes" help="Answers are cached per IP for this long.">
+        <Field label={t('Cache, minutes')} help={t('Answers are cached per IP for this long.')}>
           <NumberInput value={f.cache_minutes} min={1} onChange={(cache_minutes) => set({ cache_minutes })} />
         </Field>
         <Field className="span-2">
-          <Toggle checked={f.enabled} onChange={(enabled) => set({ enabled })} label="Enabled" />
+          <Toggle checked={f.enabled} onChange={(enabled) => set({ enabled })} label={t('Enabled')} />
         </Field>
       </div>
 
       <div className="section-head">
-        <h4>Request headers</h4>
-        <span className="muted grow">For API keys sent as headers.</span>
+        <h4>{t('Request headers')}</h4>
+        <span className="muted grow">{t('For API keys sent as headers.')}</span>
         <button className="btn small" onClick={() => setHeaders([...headers, ['', '']])}>
-          <Plus size={14} /> Add header
+          <Plus size={14} /> {t('Add header')}
         </button>
       </div>
-      {headers.length === 0 && <div className="muted small">No extra headers.</div>}
+      {headers.length === 0 && <div className="muted small">{t('No extra headers.')}</div>}
       {headers.map(([k, v], i) => (
         <div className="row gap kv-row" key={i}>
-          <input className="input mono" style={{ width: 240 }} placeholder="Header name" value={k} onChange={(e) => setHeaders(headers.map((h, j) => (j === i ? [e.target.value, h[1]] : h)))} />
-          <input className="input mono grow" placeholder="Value" value={v} onChange={(e) => setHeaders(headers.map((h, j) => (j === i ? [h[0], e.target.value] : h)))} />
-          <button className="icon-btn danger" title="Remove header" onClick={() => setHeaders(headers.filter((_, j) => j !== i))}>
+          <input className="input mono" style={{ width: 240 }} placeholder={t('Header name')} value={k} onChange={(e) => setHeaders(headers.map((h, j) => (j === i ? [e.target.value, h[1]] : h)))} />
+          <input className="input mono grow" placeholder={t('Value')} value={v} onChange={(e) => setHeaders(headers.map((h, j) => (j === i ? [h[0], e.target.value] : h)))} />
+          <button className="icon-btn danger" title={t('Remove header')} onClick={() => setHeaders(headers.filter((_, j) => j !== i))}>
             <Trash2 size={15} />
           </button>
         </div>
       ))}
 
       <div className="section-head">
-        <h4>Response mapping</h4>
+        <h4>{t('Response mapping')}</h4>
         <span className="muted grow">
-          Dot-separated JSON paths into the response, e.g. <code>data.location.country_code</code>.
+          {tx('Dot-separated JSON paths into the response, e.g. <code>data.location.country_code</code>.', { code: (c) => <code>{c}</code> })}
         </span>
       </div>
       <div className="form-grid">
         {fields.map((fl) => (
-          <Field key={fl.key} label={fl.label} help={fl.key === 'threshold' ? 'Leave empty when the path is a true/false flag. With a number, the path is treated as a score and values at or above it mean bot.' : undefined}>
+          <Field key={fl.key} label={fl.label} help={fl.key === 'threshold' ? t('Leave empty when the path is a true/false flag. With a number, the path is treated as a score and values at or above it mean bot.') : undefined}>
             <input className="input mono" spellCheck={false} placeholder={fl.hint} value={mapping[fl.key] ?? ''} onChange={(e) => setMapping({ ...mapping, [fl.key]: e.target.value })} />
           </Field>
         ))}
       </div>
 
       <div className="section-head">
-        <h4>Test</h4>
-        <span className="muted grow">Sends one real request with the settings above (unsaved changes included).</span>
+        <h4>{t('Test')}</h4>
+        <span className="muted grow">{t('Sends one real request with the settings above (unsaved changes included).')}</span>
       </div>
       <div className="row gap">
-        <input className="input mono" style={{ width: 220 }} value={testIP} onChange={(e) => setTestIP(e.target.value)} placeholder="IP to look up" />
+        <input className="input mono" style={{ width: 220 }} value={testIP} onChange={(e) => setTestIP(e.target.value)} placeholder={t('IP to look up')} />
         <button className="btn" disabled={testing || !f.url.trim()} onClick={runTest}>
-          <FlaskConical size={14} /> {testing ? 'Testing…' : 'Test request'}
+          <FlaskConical size={14} /> {testing ? t('Testing…') : t('Test request')}
         </button>
       </div>
       {testErr && <div className="field-error">{testErr}</div>}
       {test && (
         <div className="test-result">
           <div>
-            <div className="field-label">Mapped values</div>
+            <div className="field-label">{t('Mapped values')}</div>
             <dl className="kv">
               {Object.entries(test.mapped ?? {}).map(([k, v]) => (
                 <span key={k} style={{ display: 'contents' }}>
                   <dt>{k}</dt>
-                  <dd className="mono">{v === null || v === undefined ? <span className="field-error">not found in the response</span> : JSON.stringify(v)}</dd>
+                  <dd className="mono">{v === null || v === undefined ? <span className="field-error">{t('not found in the response')}</span> : JSON.stringify(v)}</dd>
                 </span>
               ))}
               {test.is_bot !== undefined && (
                 <>
-                  <dt>Verdict</dt>
-                  <dd>{test.is_bot ? <Badge tone="err">bot</Badge> : <Badge tone="ok">not a bot</Badge>}</dd>
+                  <dt>{t('Verdict')}</dt>
+                  <dd>{test.is_bot ? <Badge tone="err">{t('bot')}</Badge> : <Badge tone="ok">{t('not a bot')}</Badge>}</dd>
                 </>
               )}
             </dl>
           </div>
           <div>
-            <div className="field-label">Raw response</div>
+            <div className="field-label">{t('Raw response')}</div>
             <pre className="params-json">{JSON.stringify(test.response, null, 2)}</pre>
           </div>
         </div>
@@ -673,7 +682,7 @@ function GeoDB() {
     setRefreshing(true)
     try {
       status.setData(await post<GeoStatus>('geo/refresh'))
-      toast.ok('Geo databases refreshed')
+      toast.ok(t('Geo databases refreshed'))
     } catch (e) {
       toast.err(e)
       status.reload()
@@ -691,7 +700,7 @@ function GeoDB() {
       status.setData(await upload<GeoStatus>('geo/upload', fd))
       setFile(null)
       if (fileRef.current) fileRef.current.value = ''
-      toast.ok(`${kind === 'city' ? 'City' : 'ASN'} database installed`)
+      toast.ok(kind === 'city' ? t('City database installed') : t('ASN database installed'))
     })
   const save = () =>
     run(async () => {
@@ -699,7 +708,7 @@ function GeoDB() {
       setError('')
       try {
         settings.setData(await put<Settings>('settings', { ...f, geo_city_url: f.geo_city_url.trim(), geo_asn_url: f.geo_asn_url.trim(), maxmind_key: f.maxmind_key.trim(), geo_refresh_days: f.geo_refresh_days === '' ? 7 : f.geo_refresh_days }))
-        toast.ok('Geo settings saved — changed sources are downloaded in the background')
+        toast.ok(t('Geo settings saved — changed sources are downloaded in the background'))
         setTimeout(() => status.reload(), 4000)
       } catch (e) {
         setError(errMsg(e))
@@ -716,13 +725,13 @@ function GeoDB() {
       </div>
       {s?.loaded ? (
         <div className="right">
-          <Badge tone="ok">loaded</Badge>
+          <Badge tone="ok">{t('loaded')}</Badge>
           <div className="muted small">
-            {fmtBytes(s.size)} · updated {fmtDateTime(s.updated, false)}
+            {fmtBytes(s.size)} · {t('updated {date}', { date: fmtDateTime(s.updated, false) })}
           </div>
         </div>
       ) : (
-        <Badge tone="err">not loaded</Badge>
+        <Badge tone="err">{t('not loaded')}</Badge>
       )}
     </div>
   )
@@ -730,10 +739,10 @@ function GeoDB() {
   return (
     <div className="stack">
       <Card
-        title="Database status"
+        title={t('Database status')}
         actions={
           <button className="btn small" disabled={refreshing} onClick={refresh}>
-            <RefreshCw size={14} className={refreshing ? 'spin' : ''} /> {refreshing ? 'Downloading…' : 'Refresh now'}
+            <RefreshCw size={14} className={refreshing ? 'spin' : ''} /> {refreshing ? t('Downloading…') : t('Refresh now')}
           </button>
         }
       >
@@ -742,55 +751,55 @@ function GeoDB() {
           <Skeleton rows={3} />
         ) : (
           <>
-            {dbRow('City database', st?.city, 'Country, region and city of the visitor.')}
-            {dbRow('ASN database', st?.asn, 'Network number and ISP — needed for the ASN lists and ISP filters.')}
-            {st?.last_error && <Notice tone="err" title="Last download error">{st.last_error}</Notice>}
-            {st && (!st.city.loaded || !st.asn.loaded) && <Notice tone="warn">Without the geo databases country filters match nobody and ASN-based bot detection is off. Refresh, or upload .mmdb files below.</Notice>}
+            {dbRow(t('City database'), st?.city, t('Country, region and city of the visitor.'))}
+            {dbRow(t('ASN database'), st?.asn, t('Network number and ISP — needed for the ASN lists and ISP filters.'))}
+            {st?.last_error && <Notice tone="err" title={t('Last download error')}>{ts(st.last_error)}</Notice>}
+            {st && (!st.city.loaded || !st.asn.loaded) && <Notice tone="warn">{t('Without the geo databases country filters match nobody and ASN-based bot detection is off. Refresh, or upload .mmdb files below.')}</Notice>}
           </>
         )}
       </Card>
 
-      <Card title="Manual upload">
-        <p className="muted">Upload a MaxMind-format <code>.mmdb</code> file (GeoLite2, DB-IP, IPinfo…) when the server cannot download one itself.</p>
+      <Card title={t('Manual upload')}>
+        <p className="muted">{tx('Upload a MaxMind-format <code>.mmdb</code> file (GeoLite2, DB-IP, IPinfo…) when the server cannot download one itself.', { code: (c) => <code>{c}</code> })}</p>
         <div className="row gap wrap">
           <Select
             value={kind}
             onChange={setKind}
             options={[
-              { value: 'city', label: 'City database' },
-              { value: 'asn', label: 'ASN database' },
+              { value: 'city', label: t('City database') },
+              { value: 'asn', label: t('ASN database') },
             ]}
           />
           <input ref={fileRef} type="file" className="input file" accept=".mmdb" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
           <button className="btn" disabled={busy || !file} onClick={doUpload}>
-            <Upload size={14} /> {busy ? 'Uploading…' : 'Install'}
+            <Upload size={14} /> {busy ? t('Uploading…') : t('Install')}
           </button>
         </div>
       </Card>
 
-      <Card title="Automatic download">
+      <Card title={t('Automatic download')}>
         {!f ? (
           settings.error ? <ErrorBox error={settings.error} retry={settings.reload} /> : <Skeleton rows={4} />
         ) : (
           <>
             <div className="form-grid">
-              <Field label="City database URL" className="span-2" help="{YYYY} and {MM} are replaced by the current year and month (the previous month is tried as a fallback). .gz is unpacked automatically.">
+              <Field label={t('City database URL')} className="span-2" help={t('{YYYY} and {MM} are replaced by the current year and month (the previous month is tried as a fallback). .gz is unpacked automatically.')}>
                 <input className="input mono" spellCheck={false} value={f.geo_city_url} disabled={!!f.maxmind_key.trim()} onChange={(e) => setF({ ...f, geo_city_url: e.target.value })} />
               </Field>
-              <Field label="ASN database URL" className="span-2">
+              <Field label={t('ASN database URL')} className="span-2">
                 <input className="input mono" spellCheck={false} value={f.geo_asn_url} disabled={!!f.maxmind_key.trim()} onChange={(e) => setF({ ...f, geo_asn_url: e.target.value })} />
               </Field>
-              <Field label="MaxMind license key (optional)" help="When set, GeoLite2-City and GeoLite2-ASN are downloaded from MaxMind with this key and the two URLs above are ignored.">
+              <Field label={t('MaxMind license key (optional)')} help={t('When set, GeoLite2-City and GeoLite2-ASN are downloaded from MaxMind with this key and the two URLs above are ignored.')}>
                 <input className="input mono" spellCheck={false} autoComplete="off" value={f.maxmind_key} onChange={(e) => setF({ ...f, maxmind_key: e.target.value })} />
               </Field>
-              <Field label="Refresh every, days">
+              <Field label={t('Refresh every, days')}>
                 <NumberInput value={f.geo_refresh_days} min={1} onChange={(geo_refresh_days) => setF({ ...f, geo_refresh_days })} />
               </Field>
             </div>
             {error && <div className="field-error">{error}</div>}
             <div className="form-actions">
               <button className="btn primary" disabled={busy} onClick={save}>
-                Save geo settings
+                {t('Save geo settings')}
               </button>
             </div>
           </>
@@ -807,10 +816,10 @@ function Presets() {
   const [editing, setEditing] = useState<GeoPreset | 'new' | null>(null)
 
   const remove = async (p: GeoPreset) => {
-    if (!(await confirmDialog({ title: 'Delete preset?', message: <>Preset <b>{p.name}</b> will be deleted. Streams that already used it keep their countries.</> }))) return
+    if (!(await confirmDialog({ title: t('Delete preset?'), message: tx('Preset <b>{name}</b> will be deleted. Streams that already used it keep their countries.', { b: (c) => <b>{c}</b>, name: displayName(p) }) }))) return
     try {
       await del(`geo-presets/${p.id}`)
-      toast.ok('Preset deleted')
+      toast.ok(t('Preset deleted'))
       res.reload()
     } catch (e) {
       toast.err(e)
@@ -820,24 +829,25 @@ function Presets() {
   const columns: Column<GeoPreset>[] = [
     {
       key: 'name',
-      title: 'Name',
+      title: t('Name'),
       sort: (p) => p.name.toLowerCase(),
       render: (p) => (
         <span className="row gap-s">
-          <span className="strong">{p.name}</span>
-          {p.builtin && <Badge>built-in</Badge>}
+          <span className="strong">{displayName(p)}</span>
+          {p.builtin && <Badge>{t('built-in')}</Badge>}
         </span>
       ),
     },
-    { key: 'count', title: 'Countries', align: 'right', width: 100, sort: (p) => p.countries.length, render: (p) => p.countries.length },
+    { key: 'count', title: t('Countries'), align: 'right', width: 100, sort: (p) => p.countries.length, render: (p) => p.countries.length },
     {
       key: 'countries',
       title: '',
       render: (p) => (
         <span className="preset-countries" title={p.countries.join(', ')}>
           {p.countries.slice(0, 24).map((c) => (
-            <span key={c} className="cc">
-              {flag(c)} {c}
+            <span key={c} className="cc with-icon">
+              <Flag code={c} />
+              {c}
             </span>
           ))}
           {p.countries.length > 24 && <span className="muted">+{p.countries.length - 24}</span>}
@@ -851,10 +861,10 @@ function Presets() {
       width: 90,
       render: (p) => (
         <div className="row-actions">
-          <button className="icon-btn" title="Edit" onClick={() => setEditing(p)}>
+          <button className="icon-btn" title={t('Edit')} onClick={() => setEditing(p)}>
             <Pencil size={15} />
           </button>
-          <button className="icon-btn danger" title="Delete" onClick={() => remove(p)}>
+          <button className="icon-btn danger" title={t('Delete')} onClick={() => remove(p)}>
             <Trash2 size={15} />
           </button>
         </div>
@@ -865,14 +875,14 @@ function Presets() {
   return (
     <div className="stack">
       <div className="toolbar">
-        <span className="muted grow">Named country sets. In a stream's Country filter, “Presets” adds all countries of a preset at once.</span>
+        <span className="muted grow">{t("Named country sets. In a stream's Country filter, “Presets” adds all countries of a preset at once.")}</span>
         <button className="btn primary" onClick={() => setEditing('new')}>
-          <Plus size={15} /> New preset
+          <Plus size={15} /> {t('New preset')}
         </button>
       </div>
       <ErrorBox error={res.error} retry={res.reload} />
       <div className="card">
-        <DataTable columns={columns} rows={res.data} rowKey={(p) => p.id} loading={res.loading} empty={<Empty title="No geo presets">Create sets such as “Tier 1” or “EU” to fill country filters with one click.</Empty>} />
+        <DataTable columns={columns} rows={res.data} rowKey={(p) => p.id} loading={res.loading} empty={<Empty title={t('No geo presets')}>{t('Create sets such as “Tier 1” or “EU” to fill country filters with one click.')}</Empty>} />
       </div>
       {editing && (
         <PresetEditor
@@ -899,7 +909,7 @@ function PresetEditor({ preset, onClose, onSaved }: { preset: GeoPreset | null; 
       try {
         if (preset) await put(`geo-presets/${preset.id}`, { name, countries })
         else await post('geo-presets', { name, countries })
-        toast.ok(preset ? 'Preset saved' : 'Preset created')
+        toast.ok(preset ? t('Preset saved') : t('Preset created'))
         onSaved()
       } catch (e) {
         setError(errMsg(e))
@@ -907,25 +917,25 @@ function PresetEditor({ preset, onClose, onSaved }: { preset: GeoPreset | null; 
     })
   return (
     <Modal
-      title={preset ? `Preset: ${preset.name}` : 'New geo preset'}
+      title={preset ? t('Preset: {name}', { name: displayName(preset) }) : t('New geo preset')}
       size="lg"
       onClose={onClose}
       footer={
         <>
           {error && <div className="field-error grow">{error}</div>}
           <button className="btn" onClick={onClose}>
-            Cancel
+            {t('Cancel')}
           </button>
           <button className="btn primary" disabled={busy || !name.trim() || countries.length === 0} onClick={save}>
-            {preset ? 'Save' : 'Create preset'}
+            {preset ? t('Save') : t('Create preset')}
           </button>
         </>
       }
     >
-      <Field label="Name">
-        <input className="input" autoFocus={!preset} value={name} onChange={(e) => setName(e.target.value)} placeholder="Tier 1" />
+      <Field label={t('Name')}>
+        <input className="input" autoFocus={!preset} value={name} onChange={(e) => setName(e.target.value)} placeholder="Tier 1" /* i18n-ignore: sample name */ />
       </Field>
-      <Field label={`Countries (${countries.length})`} help="Type a name or a two-letter code and press Enter.">
+      <Field label={t('Countries ({n})', { n: countries.length })} help={t('Type a name or a two-letter code and press Enter.')}>
         <CountrySelect values={countries} onChange={setCountries} />
       </Field>
       <div style={{ height: 220 }} />

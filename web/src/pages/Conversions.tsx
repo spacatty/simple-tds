@@ -12,7 +12,8 @@ import { Badge, Dropdown, Empty, ErrorBox, PageHeader, Pagination, Select, Tabs 
 import type { Tone } from '../components/ui'
 import { rangeParams } from '../reports'
 import { fmtDateTime, fmtMoney, humanize } from '../format'
-import { countryLabel } from '../countries'
+import { Browser, Country, Device, Os } from '../components/icons'
+import { t, ts } from '../i18n'
 import ConvKeys from './ConvKeys'
 
 type Tab = 'log' | 'keys'
@@ -23,13 +24,13 @@ export default function Conversions() {
   const tab: Tab = params.tab === 'keys' ? 'keys' : 'log'
   return (
     <div className="page">
-      <PageHeader title="Conversions" sub="Postbacks received from affiliate networks, apps and installers." />
+      <PageHeader title={t('Conversions')} sub={t('Postbacks received from affiliate networks, apps and installers.')} />
       <Tabs
         value={tab}
-        onChange={(t) => nav(t === 'log' ? '/conversions' : '/conversions/keys', { replace: true })}
+        onChange={(v) => nav(v === 'log' ? '/conversions' : '/conversions/keys', { replace: true })}
         tabs={[
-          { value: 'log', label: 'Log' },
-          { value: 'keys', label: 'Keys & postback URLs' },
+          { value: 'log', label: t('Log') },
+          { value: 'keys', label: t('Keys & postback URLs') },
         ]}
       />
       {tab === 'log' ? <ConvLog /> : <ConvKeys />}
@@ -46,28 +47,28 @@ interface ConvResp {
 export const TYPE_TONE: Record<string, Tone> = { sale: 'ok', deposit: 'ok', lead: 'info', install: 'accent', registration: 'info', action: 'neutral', rejected: 'err' }
 
 const FIXED: { key: string; label: string; def: boolean }[] = [
-  { key: 'ts', label: 'Time', def: true },
-  { key: 'type', label: 'Type', def: true },
-  { key: 'key_id', label: 'Key', def: true },
-  { key: 'campaign_id', label: 'Campaign', def: true },
-  { key: 'click_id', label: 'Click ID', def: true },
-  { key: 'revenue', label: 'Revenue', def: true },
-  { key: 'cost', label: 'Cost', def: false },
-  { key: 'currency', label: 'Currency', def: true },
-  { key: 'sender_ip', label: 'Sender IP', def: true },
-  { key: 'country', label: 'Country', def: true },
-  { key: 'city', label: 'City', def: false },
-  { key: 'device_type', label: 'Device', def: false },
-  { key: 'os', label: 'OS', def: false },
-  { key: 'browser', label: 'Browser', def: false },
-  { key: 'domain', label: 'Domain', def: false },
-  { key: 'stream_id', label: 'Stream ID', def: false },
+  { key: 'ts', label: t('Time'), def: true },
+  { key: 'type', label: t('Type'), def: true },
+  { key: 'key_id', label: t('Key'), def: true },
+  { key: 'campaign_id', label: t('Campaign'), def: true },
+  { key: 'click_id', label: t('Click ID'), def: true },
+  { key: 'revenue', label: t('Revenue'), def: true },
+  { key: 'cost', label: t('Cost'), def: false },
+  { key: 'currency', label: t('Currency'), def: true },
+  { key: 'sender_ip', label: t('Sender IP'), def: true },
+  { key: 'country', label: t('Country'), def: true },
+  { key: 'city', label: t('City'), def: false },
+  { key: 'device_type', label: t('Device'), def: false },
+  { key: 'os', label: t('OS'), def: false },
+  { key: 'browser', label: t('Browser'), def: false },
+  { key: 'domain', label: t('Domain'), def: false },
+  { key: 'stream_id', label: t('Stream ID'), def: false },
   { key: 'sub1', label: 'Sub1', def: false },
   { key: 'sub2', label: 'Sub2', def: false },
   { key: 'sub3', label: 'Sub3', def: false },
   { key: 'sub4', label: 'Sub4', def: false },
   { key: 'sub5', label: 'Sub5', def: false },
-  { key: 'conv_id', label: 'Conversion ID', def: false },
+  { key: 'conv_id', label: t('Conversion ID'), def: false },
 ]
 
 const LS_COLS = 'tds_conv_cols'
@@ -92,16 +93,18 @@ function ConvLog() {
   const [offset, setOffset] = useState(0)
   const [cols, setCols] = useState<Record<string, boolean>>(loadCols)
   const [newP, setNewP] = useState({ key: '', value: '' })
-  const text = useDebounced({ click_id: f.click_id.trim(), ip: f.ip.trim() }, 400)
+  // Debounced one by one: an object would be new on every render and keep the timer running forever.
+  const clickId = useDebounced(f.click_id.trim(), 400)
+  const ip = useDebounced(f.ip.trim(), 400)
 
   const keys = useLoad(() => get<ConvKey[]>('conversion-keys'), [])
   const camps = useLoad(() => get<Campaign[]>('campaigns'), [])
 
   const query: Params = useMemo(() => {
-    const p: Params = { ...rangeParams(range), key_id: f.key_id, campaign_id: f.campaign_id, type: f.type, click_id: text.click_id, ip: text.ip }
+    const p: Params = { ...rangeParams(range), key_id: f.key_id, campaign_id: f.campaign_id, type: f.type, click_id: clickId, ip }
     for (const [k, v] of Object.entries(pf)) p['p.' + k] = v
     return p
-  }, [range, f.key_id, f.campaign_id, f.type, text, pf])
+  }, [range, f.key_id, f.campaign_id, f.type, clickId, ip, pf])
   const queryKey = JSON.stringify(query)
 
   useEffect(() => setOffset(0), [queryKey])
@@ -128,7 +131,7 @@ function ConvLog() {
   const typeOptions = useMemo(() => {
     const stages = (camps.data ?? []).filter((c) => !f.campaign_id || String(c.id) === f.campaign_id).flatMap((c) => c.stages ?? [])
     const extra = new Map(stages.filter((s) => !meta.conversion_types.includes(s.key)).map((s) => [s.key, s.key]))
-    return [...meta.conversion_types.map((t) => ({ value: t, label: humanize(t) })), ...[...extra.keys()].sort().map((k) => ({ value: k, label: k }))]
+    return [...meta.conversion_types.map((ty) => ({ value: ty, label: ts(humanize(ty)) })), ...[...extra.keys()].sort().map((k) => ({ value: k, label: k }))]
   }, [camps.data, f.campaign_id, meta.conversion_types])
   const campName = (id: unknown) => camps.data?.find((c) => c.id === Number(id))?.name ?? (Number(id) ? `#${id}` : '—')
 
@@ -138,18 +141,18 @@ function ConvLog() {
       case 'ts':
         return <span className="nowrap">{fmtDateTime(v)}</span>
       case 'type':
-        return <Badge tone={TYPE_TONE[String(v)] ?? 'neutral'}>{String(v)}</Badge>
+        return <Badge tone={TYPE_TONE[String(v)] ?? 'neutral'}>{ts(String(v))}</Badge>
       case 'key_id':
         return keyName(v)
       case 'campaign_id':
         return campName(v)
       case 'click_id':
         return v ? (
-          <button className="link mono" title="Filter by this click" onClick={() => setF((x) => ({ ...x, click_id: String(v) }))}>
+          <button className="link mono" title={t('Filter by this click')} onClick={() => setF((x) => ({ ...x, click_id: String(v) }))}>
             {String(v)}
           </button>
         ) : (
-          <span className="muted" title="Not attributed to a click">
+          <span className="muted" title={t('Not attributed to a click')}>
             —
           </span>
         )
@@ -158,12 +161,18 @@ function ConvLog() {
         return fmtMoney(v)
       case 'sender_ip':
         return (
-          <button className="link mono" title="Filter by this sender" onClick={() => setF((x) => ({ ...x, ip: String(v) }))}>
+          <button className="link mono" title={t('Filter by this sender')} onClick={() => setF((x) => ({ ...x, ip: String(v) }))}>
             {String(v)}
           </button>
         )
       case 'country':
-        return v ? countryLabel(String(v)) : <span className="muted">—</span>
+        return <Country code={String(v ?? '')} />
+      case 'device_type':
+        return <Device type={String(v ?? '')} />
+      case 'os':
+        return <Os os={String(v ?? '')} />
+      case 'browser':
+        return <Browser browser={String(v ?? '')} />
       case 'conv_id':
         return <span className="mono">{String(v)}</span>
       default:
@@ -181,12 +190,12 @@ function ConvLog() {
         (k): Column<ConvRow> => ({
           key: 'p.' + k,
           title: <span className="param-col">{k}</span>,
-          headTitle: `Postback parameter “${k}”`,
+          headTitle: t('Postback parameter “{name}”', { name: k }),
           render: (r) => {
             const v = r.params?.[k]
             if (v === undefined || v === '') return <span className="muted">—</span>
             return (
-              <button className="link ellipsis" style={{ maxWidth: 220 }} title={`${v}\nClick to filter by ${k}=${v}`} onClick={() => addParam(k, v)}>
+              <button className="link ellipsis" style={{ maxWidth: 220 }} title={v + '\n' + t('Click to filter by {param}', { param: `${k}=${v}` })} onClick={() => addParam(k, v)}>
                 {v}
               </button>
             )
@@ -203,26 +212,26 @@ function ConvLog() {
       <div className="toolbar wrap">
         <DateRangePicker value={range} onChange={setRange} />
         <span className="grow" />
-        <button className="btn" onClick={() => res.reload()} title="Refresh">
+        <button className="btn" onClick={() => res.reload()} title={t('Refresh')} aria-label={t('Refresh')}>
           <RefreshCw size={14} className={res.loading ? 'spin' : ''} />
         </button>
         <Dropdown
           align="right"
           label={
             <>
-              <Columns3 size={14} /> Columns
+              <Columns3 size={14} /> {t('Columns')}
             </>
           }
         >
           {() => (
             <div className="menu menu-scroll">
-              <div className="menu-title">Fixed</div>
+              <div className="menu-title">{t('Fixed')}</div>
               {FIXED.map((c) => (
                 <label className="menu-item" key={c.key}>
                   <input type="checkbox" checked={visible(c.key, c.def)} onChange={() => toggleCol(c.key, c.def)} /> {c.label}
                 </label>
               ))}
-              {paramKeys.length > 0 && <div className="menu-title">Postback parameters</div>}
+              {paramKeys.length > 0 && <div className="menu-title">{t('Postback parameters')}</div>}
               {paramKeys.map((k) => (
                 <label className="menu-item" key={k}>
                   <input type="checkbox" checked={visible('p.' + k, true)} onChange={() => toggleCol('p.' + k, true)} /> {k}
@@ -231,17 +240,17 @@ function ConvLog() {
             </div>
           )}
         </Dropdown>
-        <a className="btn" href={csvHref} download title="Download every matching row (not just this page) as CSV">
-          <Download size={14} /> Download CSV
+        <a className="btn" href={csvHref} download title={t('Download every matching row (not just this page) as CSV')}>
+          <Download size={14} /> {t('Download CSV')}
         </a>
       </div>
 
       <div className="toolbar wrap">
-        <Select value={f.key_id} onChange={(key_id) => setF({ ...f, key_id })} placeholder="All keys" options={(keys.data ?? []).map((k) => ({ value: String(k.id), label: k.name }))} />
-        <Select value={f.campaign_id} onChange={(campaign_id) => setF({ ...f, campaign_id })} placeholder="All campaigns" options={(camps.data ?? []).map((c) => ({ value: String(c.id), label: c.name }))} />
-        <Select value={f.type} onChange={(type) => setF({ ...f, type })} placeholder="All types" options={typeOptions} />
-        <input className="input mono" style={{ width: 220 }} placeholder="Click ID" value={f.click_id} onChange={(e) => setF({ ...f, click_id: e.target.value })} />
-        <input className="input mono" style={{ width: 150 }} placeholder="Sender IP" value={f.ip} onChange={(e) => setF({ ...f, ip: e.target.value })} />
+        <Select value={f.key_id} onChange={(key_id) => setF({ ...f, key_id })} placeholder={t('All keys')} options={(keys.data ?? []).map((k) => ({ value: String(k.id), label: k.name }))} />
+        <Select value={f.campaign_id} onChange={(campaign_id) => setF({ ...f, campaign_id })} placeholder={t('All campaigns')} options={(camps.data ?? []).map((c) => ({ value: String(c.id), label: c.name }))} />
+        <Select value={f.type} onChange={(type) => setF({ ...f, type })} placeholder={t('All types')} options={typeOptions} />
+        <input className="input mono" style={{ width: 220 }} placeholder={t('Click ID')} value={f.click_id} onChange={(e) => setF({ ...f, click_id: e.target.value })} />
+        <input className="input mono" style={{ width: 150 }} placeholder={t('Sender IP')} value={f.ip} onChange={(e) => setF({ ...f, ip: e.target.value })} />
         <form
           className="param-filter"
           onSubmit={(e) => {
@@ -253,16 +262,16 @@ function ConvLog() {
           }}
         >
           <FilterIcon size={14} />
-          <input className="input mono" list="conv-param-keys" placeholder="param" value={newP.key} onChange={(e) => setNewP({ ...newP, key: e.target.value })} style={{ width: 110 }} />
+          <input className="input mono" list="conv-param-keys" placeholder={t('param')} value={newP.key} onChange={(e) => setNewP({ ...newP, key: e.target.value })} style={{ width: 110 }} />
           <datalist id="conv-param-keys">
             {paramKeys.map((k) => (
               <option key={k} value={k} />
             ))}
           </datalist>
           <span className="muted">=</span>
-          <input className="input mono" placeholder="value" value={newP.value} onChange={(e) => setNewP({ ...newP, value: e.target.value })} style={{ width: 120 }} />
+          <input className="input mono" placeholder={t('value')} value={newP.value} onChange={(e) => setNewP({ ...newP, value: e.target.value })} style={{ width: 120 }} />
           <button className="btn small" disabled={!newP.key.trim() || newP.value === ''}>
-            Add
+            {t('Add')}
           </button>
         </form>
       </div>
@@ -272,7 +281,7 @@ function ConvLog() {
           {f.click_id && (
             <span className="chip">
               click_id = {f.click_id}
-              <button onClick={() => setF({ ...f, click_id: '' })} aria-label="Remove filter">
+              <button onClick={() => setF({ ...f, click_id: '' })} aria-label={t('Remove filter')}>
                 <X size={12} />
               </button>
             </span>
@@ -280,7 +289,7 @@ function ConvLog() {
           {f.ip && (
             <span className="chip">
               sender_ip = {f.ip}
-              <button onClick={() => setF({ ...f, ip: '' })} aria-label="Remove filter">
+              <button onClick={() => setF({ ...f, ip: '' })} aria-label={t('Remove filter')}>
                 <X size={12} />
               </button>
             </span>
@@ -289,7 +298,7 @@ function ConvLog() {
             <span className="chip accent" key={k}>
               p.{k} = {v}
               <button
-                aria-label="Remove filter"
+                aria-label={t('Remove filter')}
                 onClick={() =>
                   setPf((x) => {
                     const n = { ...x }
@@ -309,7 +318,7 @@ function ConvLog() {
               setF({ ...f, click_id: '', ip: '' })
             }}
           >
-            Clear
+            {t('Clear')}
           </button>
         </div>
       )}
@@ -322,7 +331,7 @@ function ConvLog() {
           rowKey={(r, i) => String(r.conv_id ?? i)}
           loading={res.loading}
           maxHeight="calc(100vh - 330px)"
-          empty={<Empty title="No conversions for this selection">Check the date range and filters, or look at rejected postbacks on the Keys tab.</Empty>}
+          empty={<Empty title={t('No conversions for this selection')}>{t('Check the date range and filters, or look at rejected postbacks on the Keys tab.')}</Empty>}
         />
         <Pagination total={res.data?.total ?? 0} limit={LIMIT} offset={offset} onChange={setOffset} />
       </div>

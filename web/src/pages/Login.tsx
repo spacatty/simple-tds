@@ -5,6 +5,8 @@ import { ApiError, api, errMsg } from '../api'
 import type { User } from '../types'
 import type { Theme } from '../hooks'
 import { Field } from '../components/ui'
+import { LangSwitch } from '../components/LangSwitch'
+import { t } from '../i18n'
 
 export default function Login({ onLogin, notice, theme, toggleTheme }: { onLogin: (u: User) => void; notice?: string; theme: Theme; toggleTheme: () => void }) {
   const [username, setUsername] = useState('')
@@ -36,7 +38,8 @@ export default function Login({ onLogin, notice, theme, toggleTheme }: { onLogin
 
   return (
     <div className="login-wrap">
-      <button className="icon-btn login-theme" onClick={toggleTheme} title="Switch theme" aria-label="Switch theme">
+      <LangSwitch className="login-lang" />
+      <button className="icon-btn login-theme" onClick={toggleTheme} title={t('Switch theme')} aria-label={t('Switch theme')}>
         {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
       </button>
       <form className="login card" onSubmit={submit}>
@@ -46,22 +49,22 @@ export default function Login({ onLogin, notice, theme, toggleTheme }: { onLogin
           </span>
           <span>TDS</span>
         </div>
-        <h1>Sign in</h1>
+        <h1>{t('Sign in@@title')}</h1>
         {notice && <div className="field-error">{notice}</div>}
-        <Field label="Username">
+        <Field label={t('Username')}>
           <input className="input" autoFocus autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} disabled={needCode} />
         </Field>
-        <Field label="Password">
+        <Field label={t('Password')}>
           <input className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} disabled={needCode} />
         </Field>
         {needCode && (
-          <Field label="Authenticator code" help="Enter the 6-digit code from your authenticator app.">
+          <Field label={t('Authenticator code')} help={t('Enter the 6-digit code from your authenticator app.')}>
             <input className="input mono" autoFocus inputMode="numeric" autoComplete="one-time-code" maxLength={8} value={code} onChange={(e) => setCode(e.target.value.replace(/\s/g, ''))} />
           </Field>
         )}
         {error && <div className="field-error">{error}</div>}
         <button className="btn primary block" disabled={busy || !username || !password || (needCode && !code)}>
-          {busy ? 'Signing in…' : needCode ? 'Verify' : 'Sign in'}
+          {busy ? t('Signing in…') : needCode ? t('Verify') : t('Sign in')}
         </button>
         {needCode && (
           <button
@@ -73,7 +76,7 @@ export default function Login({ onLogin, notice, theme, toggleTheme }: { onLogin
               setError('')
             }}
           >
-            Use a different account
+            {t('Use a different account')}
           </button>
         )}
       </form>

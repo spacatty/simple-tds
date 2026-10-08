@@ -862,6 +862,13 @@ func (s *Server) domainsBulkUpdate(r *http.Request) (any, error) {
 	}
 	patch := mustMarshal(in.Set)
 	updated := 0
+	// Domains before the one that fails are already saved: publish them too.
+	fail := func(err error) (any, error) {
+		if updated > 0 {
+			s.reload(r.Context())
+		}
+		return nil, err
+	}
 	for _, id := range in.IDs {
 		old, err := ownedGet[model.Domain](r.Context(), s, "domains", id)
 		if err != nil {
@@ -869,13 +876,13 @@ func (s *Server) domainsBulkUpdate(r *http.Request) (any, error) {
 		}
 		d := *old
 		if err := unmarshal(patch, &d); err != nil {
-			return nil, bad(err.Error())
+			return fail(bad(err.Error()))
 		}
 		if err := s.validateDomain(r.Context(), &d, old); err != nil {
-			return nil, fmt.Errorf("%s: %w", old.Name, err)
+			return fail(fmt.Errorf("%s: %w", old.Name, err))
 		}
 		if err := store.Update(r.Context(), s.st, "domains", id, &d); err != nil {
-			return nil, err
+			return fail(err)
 		}
 		updated++
 	}

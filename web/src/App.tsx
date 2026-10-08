@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Navigate, Route, Routes, useLocation, useNavigationType } from 'react-router-dom'
 import { ApiError, api, errMsg, get, onUnauthorized, post } from './api'
 import { AppContext, useTheme } from './hooks'
+import { t } from './i18n'
 import type { Meta, User } from './types'
-import { ConfirmHost, ErrorBox, ToastHost } from './components/ui'
+import { ConfirmHost, ErrorBoundary, ErrorBox, ToastHost } from './components/ui'
 import { Sidebar } from './components/Sidebar'
 import Login from './pages/Login'
+import Setup from './pages/Setup'
 import Dashboard from './pages/Dashboard'
 import Campaigns from './pages/Campaigns'
 import CampaignEditor from './pages/CampaignEditor'
@@ -22,18 +24,39 @@ export default function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
   const [meta, setMeta] = useState<Meta | null>(null)
   const [bootError, setBootError] = useState('')
+  // True while the installation has no users: the first visitor creates the administrator.
+  const [setup, setSetup] = useState(false)
+  // Set when the server ends a session that was in use, so the login form can say why it appeared.
+  const [expired, setExpired] = useState(false)
   const [theme, toggleTheme] = useTheme()
+
+  // A newly opened page starts at its top; Back and Forward keep whatever the browser restores.
+  const main = useRef<HTMLElement>(null)
+  const loc = useLocation()
+  const navType = useNavigationType()
+  useEffect(() => {
+    if (navType !== 'POP') main.current?.scrollTo(0, 0)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loc.pathname])
+
+  const login = useCallback((u: User) => {
+    setExpired(false)
+    setUser(u)
+  }, [])
 
   useEffect(() => {
     onUnauthorized(() => {
+      setExpired(true)
       setUser(null)
       setMeta(null)
     })
     api<User>('me', { quiet401: true })
       .then(setUser)
       .catch((e) => {
-        if (e instanceof ApiError && e.status === 401) setUser(null)
-        else {
+        if (e instanceof ApiError && e.status === 401) {
+          setSetup(e.data.setup_required === true)
+          setUser(null)
+        } else {
           setBootError(errMsg(e))
           setUser(null)
         }
@@ -55,6 +78,7 @@ export default function App() {
     post('logout')
       .catch(() => undefined)
       .finally(() => {
+        setExpired(false)
         setUser(null)
         setMeta(null)
       })
@@ -62,12 +86,16 @@ export default function App() {
 
   const ctx = useMemo(() => (user && meta ? { user, setUser, meta, logout } : null), [user, meta, logout])
 
-  if (user === undefined) return <div className="boot">Loading…</div>
+  if (user === undefined) return <div className="boot">{t('Loading…')}</div>
 
   if (!user) {
     return (
       <>
-        <Login onLogin={setUser} notice={bootError} theme={theme} toggleTheme={toggleTheme} />
+        {setup ? (
+          <Setup onDone={login} onTaken={() => setSetup(false)} theme={theme} toggleTheme={toggleTheme} />
+        ) : (
+          <Login onLogin={login} notice={bootError || (expired ? t('Your session has ended. Sign in again to pick up where you left off.') : '')} theme={theme} toggleTheme={toggleTheme} />
+        )}
         <ToastHost />
       </>
     )
@@ -76,7 +104,7 @@ export default function App() {
   if (!ctx) {
     return (
       <div className="boot">
-        {bootError ? <ErrorBox error={bootError} retry={loadMeta} /> : 'Loading…'}
+        {bootError ? <ErrorBox error={bootError} retry={loadMeta} /> : t('Loading…')}
         <ToastHost />
       </div>
     )
@@ -86,8 +114,9 @@ export default function App() {
     <AppContext.Provider value={ctx}>
       <div className="app">
         <Sidebar user={user} theme={theme} toggleTheme={toggleTheme} logout={logout} />
-        <main className="main">
-          <Routes>
+        <main className="main" ref={main}>
+          <ErrorBoundary key={loc.pathname}>
+            <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/campaigns" element={<Campaigns />} />
             <Route path="/campaigns/:id" element={<CampaignEditor />} />
@@ -102,7 +131,8 @@ export default function App() {
             {user.role === 'admin' && <Route path="/users" element={<UsersPage />} />}
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+            </Routes>
+          </ErrorBoundary>
         </main>
       </div>
       <ToastHost />

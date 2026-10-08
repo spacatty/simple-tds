@@ -7,9 +7,11 @@ import { DataTable } from '../components/DataTable'
 import type { Column } from '../components/DataTable'
 import { Badge, Empty, ErrorBox, Field, Modal, Notice, PageHeader, Select, Toggle, confirmDialog, toast, useBusy } from '../components/ui'
 import { fmtBytes, fmtDateTime, fmtInt } from '../format'
+import { t, tn, tx } from '../i18n'
 
-const BASE_HELP =
-  'Inserts <base href="…"> into the page so that relative links to images, styles and scripts keep working when the whitepage is shown on a campaign URL such as /alias. Turn it off only if the page already uses absolute URLs or sets its own <base>.'
+const BASE_HELP = t(
+  'Inserts <base href="…"> into the page so that relative links to images, styles and scripts keep working when the whitepage is shown on a campaign URL such as /alias. Turn it off only if the page already uses absolute URLs or sets its own <base>.',
+)
 
 async function previewURL(id: number): Promise<string> {
   const r = await get<{ url: string }>(`whitepages/${id}/preview-url`)
@@ -31,10 +33,10 @@ export default function Whitepages() {
     }
   }
   const remove = async (w: Whitepage) => {
-    if (!(await confirmDialog({ title: 'Delete whitepage?', message: <><b>{w.name}</b> and its {w.file_count} files will be deleted from the server.</> }))) return
+    if (!(await confirmDialog({ title: t('Delete whitepage?'), message: tx('<b>{name}</b> and its {files} will be deleted from the server.', { b: (c) => <b>{c}</b>, name: w.name, files: tn(w.file_count, '{n} file', '{n} files') }) }))) return
     try {
       await del(`whitepages/${w.id}`)
-      toast.ok('Whitepage deleted')
+      toast.ok(t('Whitepage deleted'))
       list.reload()
     } catch (e) {
       toast.err(e)
@@ -47,7 +49,7 @@ export default function Whitepages() {
   const columns: Column<Whitepage>[] = [
     {
       key: 'name',
-      title: 'Name',
+      title: t('Name'),
       sort: (w) => w.name.toLowerCase(),
       render: (w) => (
         <div>
@@ -60,19 +62,19 @@ export default function Whitepages() {
     },
     {
       key: 'kind',
-      title: 'Kind',
+      title: t('Kind@@whitepage'),
       sort: (w) => w.kind,
       render: (w) => (
-        <Badge tone={w.kind === 'php' ? (phpOff ? 'warn' : 'accent') : 'neutral'} title={w.kind === 'php' && phpOff ? 'PHP is not configured on this server: this page will not execute' : undefined}>
+        <Badge tone={w.kind === 'php' ? (phpOff ? 'warn' : 'accent') : 'neutral'} title={w.kind === 'php' && phpOff ? t('PHP is not configured on this server: this page will not execute') : undefined}>
           {w.kind.toUpperCase()}
         </Badge>
       ),
     },
-    { key: 'entry', title: 'Entry file', render: (w) => <code>{w.entry}</code> },
-    { key: 'files', title: 'Files', align: 'right', sort: (w) => w.file_count, render: (w) => fmtInt(w.file_count) },
-    { key: 'size', title: 'Size', align: 'right', sort: (w) => w.size, render: (w) => fmtBytes(w.size) },
-    { key: 'base', title: '<base>', headTitle: 'Inject <base> so relative assets resolve', render: (w) => (w.inject_base ? 'on' : <span className="muted">off</span>) },
-    { key: 'created', title: 'Uploaded', sort: (w) => w.created_at, render: (w) => fmtDateTime(w.created_at, false) },
+    { key: 'entry', title: t('Entry file'), render: (w) => <code>{w.entry}</code> },
+    { key: 'files', title: t('Files'), align: 'right', sort: (w) => w.file_count, render: (w) => fmtInt(w.file_count) },
+    { key: 'size', title: t('Size'), align: 'right', sort: (w) => w.size, render: (w) => fmtBytes(w.size) },
+    { key: 'base', title: '<base>', headTitle: t('Inject <base> so relative assets resolve'), render: (w) => (w.inject_base ? t('on') : <span className="muted">{t('off')}</span>) },
+    { key: 'created', title: t('Uploaded@@whitepage'), sort: (w) => w.created_at, render: (w) => fmtDateTime(w.created_at, false) },
     {
       key: 'actions',
       title: '',
@@ -80,13 +82,13 @@ export default function Whitepages() {
       width: 120,
       render: (w) => (
         <div className="row-actions">
-          <button className="icon-btn" title="Preview" onClick={() => openPreview(w)}>
+          <button className="icon-btn" title={t('Preview')} onClick={() => openPreview(w)}>
             <Eye size={15} />
           </button>
-          <button className="icon-btn" title="Edit / replace files" onClick={() => setEditing(w)}>
+          <button className="icon-btn" title={t('Edit / replace files')} onClick={() => setEditing(w)}>
             <Pencil size={15} />
           </button>
-          <button className="icon-btn danger" title="Delete" onClick={() => remove(w)}>
+          <button className="icon-btn danger" title={t('Delete')} onClick={() => remove(w)}>
             <Trash2 size={15} />
           </button>
         </div>
@@ -96,14 +98,16 @@ export default function Whitepages() {
 
   return (
     <div className="page">
-      <PageHeader title="Whitepages" sub="Safe pages served by the “Whitepage” stream action, typically to bots and moderators.">
+      <PageHeader title={t('Whitepages')} sub={t('Safe pages served by the “Whitepage” stream action, typically to bots and moderators.')}>
         <button className="btn primary" onClick={() => setUploading(true)}>
-          <Upload size={15} /> Upload whitepage
+          <Upload size={15} /> {t('Upload whitepage')}
         </button>
       </PageHeader>
       {phpOff && (
-        <Notice tone="warn" title="PHP is not enabled on this server">
-          PHP whitepages will not execute{hasPHP ? ' — the PHP pages listed below are affected' : ''}. Start the bundled PHP-FPM service (or configure its address) to run them; HTML whitepages work as usual.
+        <Notice tone="warn" title={t('PHP is not enabled on this server')}>
+          {hasPHP
+            ? t('PHP whitepages will not execute — the PHP pages listed below are affected. Start the bundled PHP-FPM service (or configure its address) to run them; HTML whitepages work as usual.')
+            : t('PHP whitepages will not execute. Start the bundled PHP-FPM service (or configure its address) to run them; HTML whitepages work as usual.')}
         </Notice>
       )}
       <ErrorBox error={list.error} retry={list.reload} />
@@ -114,8 +118,8 @@ export default function Whitepages() {
           rowKey={(w) => w.id}
           loading={list.loading}
           empty={
-            <Empty title="No whitepages yet" action={<button className="btn primary" onClick={() => setUploading(true)}><Upload size={15} /> Upload the first one</button>}>
-              Upload a .zip with a whole site, or a single .html / .php file.
+            <Empty title={t('No whitepages yet')} action={<button className="btn primary" onClick={() => setUploading(true)}><Upload size={15} /> {t('Upload the first one')}</button>}>
+              {t('Upload a .zip with a whole site, or a single .html / .php file.')}
             </Empty>
           }
         />
@@ -146,16 +150,16 @@ export default function Whitepages() {
           size="xl"
           title={
             <>
-              Preview: {preview.wp.name}{' '}
+              {t('Preview: {name}', { name: preview.wp.name })}{' '}
               <a href={preview.url} target="_blank" rel="noreferrer noopener" className="small">
-                <ExternalLink size={13} /> open in a new tab
+                <ExternalLink size={13} /> {t('open in a new tab')}
               </a>
             </>
           }
           onClose={() => setPreview(null)}
         >
-          <iframe className="preview-frame" title="Whitepage preview" src={preview.url} sandbox="allow-scripts allow-forms allow-popups" />
-          <div className="field-help">The preview is sandboxed and the link expires in two hours. Macros and visitor data are empty in preview.</div>
+          <iframe className="preview-frame" title={t('Whitepage preview')} src={preview.url} sandbox="allow-scripts allow-forms allow-popups" />
+          <div className="field-help">{t('The preview is sandboxed and the link expires in two hours. Macros and visitor data are empty in preview.')}</div>
         </Modal>
       )}
     </div>
@@ -188,8 +192,8 @@ function FileInput({ file, onChange }: { file: File | null; onChange: (f: File |
         </div>
       ) : (
         <div>
-          <b>Choose a file</b> or drop it here
-          <div className="muted small">.zip archive of a site, or a single .html / .php file (up to 256 MB)</div>
+          {tx('<b>Choose a file</b> or drop it here', { b: (c) => <b>{c}</b> })}
+          <div className="muted small">{t('.zip archive of a site, or a single .html / .php file (up to 256 MB)')}</div>
         </div>
       )}
     </div>
@@ -214,7 +218,7 @@ function UploadModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
       fd.append('inject_base', injectBase ? 'true' : 'false')
       try {
         const w = await upload<Whitepage>('whitepages', fd)
-        toast.ok(`Uploaded “${w.name}”: ${w.file_count} files, entry ${w.entry}`)
+        toast.ok(tn(w.file_count, 'Uploaded “{name}”: {n} file, entry {entry}', 'Uploaded “{name}”: {n} files, entry {entry}', { name: w.name, entry: w.entry }))
         onDone()
       } catch (e) {
         setError(errMsg(e))
@@ -222,29 +226,29 @@ function UploadModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
     })
   return (
     <Modal
-      title="Upload whitepage"
+      title={t('Upload whitepage')}
       onClose={onClose}
       footer={
         <>
           {error && <div className="field-error grow">{error}</div>}
           <button className="btn" onClick={onClose}>
-            Cancel
+            {t('Cancel')}
           </button>
           <button className="btn primary" disabled={busy || !file} onClick={submit}>
-            {busy ? 'Uploading…' : 'Upload'}
+            {busy ? t('Uploading…') : t('Upload')}
           </button>
         </>
       }
     >
       <FileInput file={file} onChange={setFile} />
-      <Field label="Name" help="Defaults to the file name.">
+      <Field label={t('Name')} help={t('Defaults to the file name.')}>
         <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder={file ? file.name.replace(/\.zip$/i, '') : ''} />
       </Field>
-      <Field label="Note">
+      <Field label={t('Note')}>
         <input className="input" value={note} onChange={(e) => setNote(e.target.value)} />
       </Field>
       <Field help={BASE_HELP}>
-        <Toggle checked={injectBase} onChange={setInjectBase} label="Inject <base> tag" />
+        <Toggle checked={injectBase} onChange={setInjectBase} label={t('Inject <base> tag')} />
       </Field>
     </Modal>
   )
@@ -268,7 +272,7 @@ function EditModal({ wp: initial, phpOff, onClose, onPreview }: { wp: Whitepage;
       try {
         const n = await put<Whitepage>(`whitepages/${wp.id}`, { name, note, entry, inject_base: injectBase })
         setWp(n)
-        toast.ok('Whitepage saved')
+        toast.ok(t('Whitepage saved'))
         onClose()
       } catch (e) {
         setError(errMsg(e))
@@ -277,7 +281,7 @@ function EditModal({ wp: initial, phpOff, onClose, onPreview }: { wp: Whitepage;
   const replace = () =>
     run(async () => {
       if (!file) return
-      if (!(await confirmDialog({ title: 'Replace all files?', danger: true, confirmLabel: 'Replace', message: <>Every file of <b>{wp.name}</b> is replaced by the contents of <b>{file.name}</b>. Streams using this whitepage switch to the new version immediately.</> }))) return
+      if (!(await confirmDialog({ title: t('Replace all files?'), danger: true, confirmLabel: t('Replace'), message: tx('Every file of <b>{name}</b> is replaced by the contents of <b>{file}</b>. Streams using this whitepage switch to the new version immediately.', { b: (c) => <b>{c}</b>, name: wp.name, file: file.name }) }))) return
       setError('')
       const fd = new FormData()
       fd.append('file', file)
@@ -287,7 +291,7 @@ function EditModal({ wp: initial, phpOff, onClose, onPreview }: { wp: Whitepage;
         setEntry(n.entry)
         setFile(null)
         await files.reload()
-        toast.ok(`Files replaced: ${n.file_count} files, entry ${n.entry}`)
+        toast.ok(tn(n.file_count, 'Files replaced: {n} file, entry {entry}', 'Files replaced: {n} files, entry {entry}', { entry: n.entry }))
       } catch (e) {
         setError(errMsg(e))
       }
@@ -295,44 +299,44 @@ function EditModal({ wp: initial, phpOff, onClose, onPreview }: { wp: Whitepage;
 
   return (
     <Modal
-      title={`Whitepage: ${wp.name}`}
+      title={t('Whitepage: {name}', { name: wp.name })}
       size="lg"
       onClose={onClose}
       footer={
         <>
           {error && <div className="field-error grow">{error}</div>}
           <button className="btn" onClick={() => onPreview(wp)}>
-            <Eye size={14} /> Preview
+            <Eye size={14} /> {t('Preview')}
           </button>
           <button className="btn" onClick={onClose}>
-            Close
+            {t('Close')}
           </button>
           <button className="btn primary" disabled={busy || !name.trim()} onClick={save}>
-            Save
+            {t('Save')}
           </button>
         </>
       }
     >
-      {wp.kind === 'php' && phpOff && <Notice tone="warn">PHP is not enabled on this server, so this page will not execute.</Notice>}
+      {wp.kind === 'php' && phpOff && <Notice tone="warn">{t('PHP is not enabled on this server, so this page will not execute.')}</Notice>}
       <div className="form-grid">
-        <Field label="Name">
+        <Field label={t('Name')}>
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
         </Field>
-        <Field label="Entry file" help="The file served on the campaign URL.">
+        <Field label={t('Entry file')} help={t('The file served on the campaign URL.')}>
           <Select value={entry} onChange={setEntry} options={entryFiles.map((f) => ({ value: f.name, label: `${f.name} (${fmtBytes(f.size)})` }))} />
         </Field>
-        <Field label="Note" className="span-2">
+        <Field label={t('Note')} className="span-2">
           <input className="input" value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>
         <Field className="span-2" help={BASE_HELP}>
-          <Toggle checked={injectBase} onChange={setInjectBase} label="Inject <base> tag" />
+          <Toggle checked={injectBase} onChange={setInjectBase} label={t('Inject <base> tag')} />
         </Field>
       </div>
 
       <div className="section-head">
-        <h4>Files</h4>
+        <h4>{t('Files')}</h4>
         <span className="muted grow">
-          {fmtInt(wp.file_count)} files · {fmtBytes(wp.size)} · {wp.kind.toUpperCase()}
+          {tn(wp.file_count, '{n} file', '{n} files', { n: fmtInt(wp.file_count) })} · {fmtBytes(wp.size)} · {wp.kind.toUpperCase()}
         </span>
       </div>
       <ErrorBox error={files.error} />
@@ -343,19 +347,19 @@ function EditModal({ wp: initial, phpOff, onClose, onPreview }: { wp: Whitepage;
             <span className="muted">{fmtBytes(f.size)}</span>
           </div>
         ))}
-        {files.data && files.data.length > 500 && <div className="muted">… and {files.data.length - 500} more</div>}
-        {files.data && files.data.length === 0 && <div className="muted">No files on disk.</div>}
+        {files.data && files.data.length > 500 && <div className="muted">{t('… and {n} more', { n: files.data.length - 500 })}</div>}
+        {files.data && files.data.length === 0 && <div className="muted">{t('No files on disk.')}</div>}
       </div>
 
       <div className="section-head">
-        <h4>Replace files</h4>
-        <span className="muted grow">Upload a new .zip / .html / .php; the whitepage keeps its id, so streams need no changes.</span>
+        <h4>{t('Replace files')}</h4>
+        <span className="muted grow">{t('Upload a new .zip / .html / .php; the whitepage keeps its id, so streams need no changes.')}</span>
       </div>
       <FileInput file={file} onChange={setFile} />
       {file && (
         <div className="form-actions">
           <button className="btn" disabled={busy} onClick={replace}>
-            <Upload size={14} /> Replace files with {file.name}
+            <Upload size={14} /> {t('Replace files with {name}', { name: file.name })}
           </button>
         </div>
       )}

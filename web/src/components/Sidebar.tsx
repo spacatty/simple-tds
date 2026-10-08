@@ -4,6 +4,8 @@ import { BarChart3, ChevronDown, FileCode2, Globe, LayoutDashboard, LogOut, Menu
 import type { LucideIcon } from 'lucide-react'
 import type { User } from '../types'
 import type { Theme } from '../hooks'
+import { t } from '../i18n'
+import { LangSwitch } from './LangSwitch'
 
 interface Item {
   to: string
@@ -14,32 +16,32 @@ interface Item {
 }
 
 const GROUPS: { id: string; label: string; items: Item[] }[] = [
-  { id: 'overview', label: 'Overview', items: [{ to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true }] },
+  { id: 'overview', label: t('Overview'), items: [{ to: '/', label: t('Dashboard'), icon: LayoutDashboard, end: true }] },
   {
     id: 'traffic',
-    label: 'Traffic',
+    label: t('Traffic'),
     items: [
-      { to: '/campaigns', label: 'Campaigns', icon: Split },
-      { to: '/domains', label: 'Domains', icon: Globe },
-      { to: '/whitepages', label: 'Whitepages', icon: FileCode2 },
+      { to: '/campaigns', label: t('Campaigns'), icon: Split },
+      { to: '/domains', label: t('Domains'), icon: Globe },
+      { to: '/whitepages', label: t('Whitepages'), icon: FileCode2 },
     ],
   },
   {
     id: 'tracking',
-    label: 'Tracking',
+    label: t('Tracking'),
     items: [
-      { to: '/conversions', label: 'Conversions', icon: Target },
-      { to: '/reports', label: 'Reports', icon: BarChart3 },
-      { to: '/clicks', label: 'Clicks', icon: MousePointerClick },
+      { to: '/conversions', label: t('Conversions'), icon: Target },
+      { to: '/reports', label: t('Reports'), icon: BarChart3 },
+      { to: '/clicks', label: t('Clicks'), icon: MousePointerClick },
     ],
   },
-  { id: 'protection', label: 'Protection', items: [{ to: '/antibot', label: 'Anti-bot', icon: ShieldCheck, admin: true }] },
+  { id: 'protection', label: t('Protection'), items: [{ to: '/antibot', label: t('Anti-bot'), icon: ShieldCheck, admin: true }] },
   {
     id: 'system',
-    label: 'System',
+    label: t('System'),
     items: [
-      { to: '/users', label: 'Users', icon: UsersIcon, admin: true },
-      { to: '/settings', label: 'Settings', icon: SettingsIcon },
+      { to: '/users', label: t('Users'), icon: UsersIcon, admin: true },
+      { to: '/settings', label: t('Settings'), icon: SettingsIcon },
     ],
   },
 ]
@@ -69,6 +71,15 @@ export function Sidebar({ user, theme, toggleTheme, logout }: { user: User; them
 
   // Navigating closes the overlay drawer on narrow screens.
   useEffect(() => setMobileOpen(false), [loc.pathname])
+  // So does Escape.
+  useEffect(() => {
+    if (!mobileOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobileOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [mobileOpen])
 
   const toggleRail = () => {
     setRail((r) => {
@@ -76,6 +87,17 @@ export function Sidebar({ user, theme, toggleTheme, logout }: { user: User; them
       return !r
     })
   }
+  // Ctrl+B (⌘B) folds the sidebar; on narrow screens it opens and closes the drawer instead.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.code !== 'KeyB') return
+      e.preventDefault()
+      if (window.matchMedia('(max-width: 900px)').matches) setMobileOpen((o) => !o)
+      else toggleRail()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
   const toggleGroup = (id: string) => {
     setFolded((f) => {
       const next = f.includes(id) ? f.filter((x) => x !== id) : [...f, id]
@@ -92,7 +114,7 @@ export function Sidebar({ user, theme, toggleTheme, logout }: { user: User; them
   return (
     <>
       <header className="topbar">
-        <button className="icon-btn" onClick={() => setMobileOpen(true)} aria-label="Open navigation">
+        <button className="icon-btn" onClick={() => setMobileOpen(true)} aria-label={t('Open navigation')}>
           <Menu size={20} />
         </button>
         <span className="brand-mark">
@@ -107,12 +129,12 @@ export function Sidebar({ user, theme, toggleTheme, logout }: { user: User; them
             <Split size={16} />
           </span>
           <span className="brand-name">TDS</span>
-          <button className="icon-btn rail-toggle" onClick={toggleRail} title={rail ? 'Expand sidebar' : 'Collapse sidebar'} aria-label={rail ? 'Expand sidebar' : 'Collapse sidebar'}>
+          <button className="icon-btn rail-toggle" onClick={toggleRail} title={(rail ? t('Expand sidebar') : t('Collapse sidebar')) + ' (Ctrl+B)'} aria-label={rail ? t('Expand sidebar') : t('Collapse sidebar')}>
             {rail ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
           </button>
         </div>
 
-        <nav className="sidebar-nav">
+        <nav className="sidebar-nav" aria-label={t('Main navigation')}>
           {groups.map((g) => {
             const isFolded = !compact && folded.includes(g.id)
             // A folded group still shows its active page, so the current location is never hidden.
@@ -135,18 +157,19 @@ export function Sidebar({ user, theme, toggleTheme, logout }: { user: User; them
         </nav>
 
         <div className="sidebar-foot">
-          <div className="whoami" data-tip={`${user.username} · ${admin ? 'administrator' : 'user'}`}>
+          <div className="whoami" data-tip={`${user.username} · ${admin ? t('administrator') : t('user')}`}>
             <span className="avatar">{user.username.slice(0, 1).toUpperCase()}</span>
             <span className="who-text">
               <b className="ellipsis">{user.username}</b>
-              <small>{admin ? 'Administrator' : 'User'}</small>
+              <small>{admin ? t('Administrator') : t('User')}</small>
             </span>
           </div>
           <div className="foot-actions">
-            <button className="icon-btn" onClick={toggleTheme} data-tip={theme === 'dark' ? 'Light theme' : 'Dark theme'} aria-label="Switch theme">
+            <LangSwitch tip />
+            <button className="icon-btn" onClick={toggleTheme} data-tip={theme === 'dark' ? t('Light theme') : t('Dark theme')} aria-label={t('Switch theme')}>
               {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
             </button>
-            <button className="icon-btn" onClick={logout} data-tip="Sign out" aria-label="Sign out">
+            <button className="icon-btn" onClick={logout} data-tip={t('Sign out')} aria-label={t('Sign out')}>
               <LogOut size={16} />
             </button>
           </div>

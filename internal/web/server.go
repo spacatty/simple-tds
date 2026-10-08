@@ -59,6 +59,10 @@ type Server struct {
 	sessMu   sync.Mutex
 	sessions map[string]sessionEntry
 
+	// needSetup is true until the first administrator exists; see setup.
+	needSetup atomic.Bool
+	setupMu   sync.Mutex
+
 	publicIP atomic.Value // string; this server's public address, for DNS hints
 
 	checkMu sync.Mutex
@@ -72,6 +76,14 @@ func New(cfg Config, st *store.Store, ev *events.DB, eng *engine.Engine, g *geo.
 		return nil, err
 	}
 	s.selfTS = cert
+	var users int
+	if err := st.Pool.QueryRow(context.Background(), "SELECT count(*) FROM users").Scan(&users); err != nil {
+		return nil, err
+	}
+	if users == 0 {
+		s.needSetup.Store(true)
+		slog.Info("no users yet: open the panel to create the administrator")
+	}
 	s.panel = s.panelHandler()
 	s.certs = newCertManager(cfg.DataDir, s.certEvent)
 	return s, nil
@@ -114,7 +126,12 @@ func (l fpListener) Accept() (net.Conn, error) {
 
 type ctxKey int
 
-const tlsInfoKey ctxKey = 1
+const (
+	tlsInfoKey ctxKey = 1
+	// clientIPKey carries the visitor address of a panel request that came
+	// through a domain, where the socket address may be a proxy's.
+	clientIPKey ctxKey = 2
+)
 
 func (s *Server) tlsConfig() *tls.Config {
 	cfg := &tls.Config{NextProtos: []string{"h2", "http/1.1", acmez.ACMETLS1Protocol}, MinVersion: tls.VersionTLS12}

@@ -14,7 +14,9 @@ import { Badge, CopyButton, Empty, ErrorBox, PageHeader, Pagination, Segmented, 
 import { COUNTRY_SELECT_OPTIONS } from '../components/CountrySelect'
 import { buildSearch, dimLabel, filterParams, parseFilters, rangeApiParams, rangeFromSearch, writeRange } from '../filters'
 import { fmtDateTime, num } from '../format'
-import { countryLabel, countryName, flag } from '../countries'
+import { countryName } from '../countries'
+import { Browser, BrowserIcon, Country, Device, DeviceIcon, Flag, Os, OsIcon } from '../components/icons'
+import { t, ts } from '../i18n'
 
 const LIMIT = 100
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v))
@@ -82,20 +84,20 @@ export default function Clicks() {
   const streamId = crumb('stream') ?? ''
   const streamOptions = (streams.data ?? []).filter((s) => !campaignId || String(s.campaign_id) === campaignId).map((s) => ({ value: String(s.id), label: campaignId ? s.name : `${s.name} · ${campName(s.campaign_id)}` }))
 
-  const crumbText = (dim: string, v: string) => (dim === 'campaign' ? campName(v) : dim === 'stream' ? streamName(v) : dim === 'country' ? (v ? `${countryName(v)} (${v})` : '(unknown)') : v === '' ? '(empty)' : v)
+  const crumbText = (dim: string, v: string) => (dim === 'campaign' ? campName(v) : dim === 'stream' ? streamName(v) : dim === 'country' ? (v ? `${countryName(v)} (${v})` : t('(unknown)')) : v === '' ? t('(empty)') : dim === 'action' ? ts(v) : v)
   const anyFilter = filters.crumbs.length > 0 || !!filters.bots || !!urlIP || !!urlClick
 
   const columns: Column<Row>[] = [
-    { key: 'ts', title: 'Time', render: (r) => <span className="nowrap">{fmtDateTime(r.ts)}</span> },
-    { key: 'campaign', title: 'Campaign', render: (r) => <span className="ellipsis cell-w">{campName(r.campaign_id)}</span> },
-    { key: 'stream', title: 'Stream', render: (r) => <span className="ellipsis cell-w">{streamName(r.stream_id)}</span> },
+    { key: 'ts', title: t('Time'), render: (r) => <span className="nowrap">{fmtDateTime(r.ts)}</span> },
+    { key: 'campaign', title: t('Campaign'), render: (r) => <span className="ellipsis cell-w">{campName(r.campaign_id)}</span> },
+    { key: 'stream', title: t('Stream'), render: (r) => <span className="ellipsis cell-w">{streamName(r.stream_id)}</span> },
     {
       key: 'ip',
       title: 'IP',
       render: (r) => (
         <button
           className="link mono"
-          title="Filter by this IP"
+          title={t('Filter by this IP')}
           onClick={(e) => {
             e.stopPropagation()
             setParam('ip', str(r.ip))
@@ -105,25 +107,38 @@ export default function Clicks() {
         </button>
       ),
     },
-    { key: 'country', title: 'Geo', render: (r) => (r.country ? <span title={countryLabel(str(r.country))}>{flag(str(r.country))} {str(r.country)}{r.city ? ` · ${str(r.city)}` : ''}</span> : <span className="muted">—</span>) },
-    { key: 'device', title: 'Device', render: (r) => [str(r.device_type), str(r.os), str(r.browser)].filter(Boolean).join(' · ') || <span className="muted">—</span> },
+    { key: 'country', title: t('Geo'), render: (r) => (r.country ? <span className="with-icon" title={`${countryName(str(r.country))} (${str(r.country)})`}><Flag code={str(r.country)} />{str(r.country)}{r.city ? ` · ${str(r.city)}` : ''}</span> : <span className="muted">—</span>) },
+    { key: 'device', title: t('Device'), render: (r) =>
+        str(r.device_type) || str(r.os) || str(r.browser) ? (
+          <span className="with-icon" title={[str(r.device_type), [str(r.os), str(r.os_version)].filter(Boolean).join(' '), [str(r.browser), str(r.browser_version)].filter(Boolean).join(' ')].filter(Boolean).join(' · ')}>
+            {str(r.device_type) && <DeviceIcon type={str(r.device_type)} />}
+            {str(r.os) && <OsIcon os={str(r.os)} />}
+            {str(r.os)}
+            {str(r.browser) && <BrowserIcon browser={str(r.browser)} />}
+            {str(r.browser)}
+            {!r.os && !r.browser && str(r.device_type)}
+          </span>
+        ) : (
+          <span className="muted">—</span>
+        ),
+    },
     {
       key: 'flags',
-      title: 'Flags',
+      title: t('Flags'),
       render: (r) => (
         <span className="row gap-s">
           {truthy(r.is_bot) && (
             <Badge tone="err" title={str(r.bot_reason)}>
-              <Bot size={12} /> bot
+              <Bot size={12} /> {t('bot')}
             </Badge>
           )}
-          {truthy(r.is_dc) && <Badge tone="warn">DC</Badge>}
-          {truthy(r.is_unique) && <Badge tone="ok">unique</Badge>}
+          {truthy(r.is_dc) && <Badge tone="warn">{t('DC')}</Badge>}
+          {truthy(r.is_unique) && <Badge tone="ok">{t('unique')}</Badge>}
         </span>
       ),
     },
-    { key: 'action', title: 'Action', render: (r) => <Badge tone={r.action === 'error' || r.action === 'no_stream' ? 'err' : 'neutral'}>{str(r.action)}</Badge> },
-    { key: 'ref', title: 'Referrer', render: (r) => (r.ref_domain ? <span className="ellipsis cell-w">{str(r.ref_domain)}</span> : <span className="muted">—</span>) },
+    { key: 'action', title: t('Action'), render: (r) => <Badge tone={r.action === 'error' || r.action === 'no_stream' ? 'err' : 'neutral'}>{ts(str(r.action))}</Badge> },
+    { key: 'ref', title: t('Referrer'), render: (r) => (r.ref_domain ? <span className="ellipsis cell-w">{str(r.ref_domain)}</span> : <span className="muted">—</span>) },
   ]
 
   const reportFilters: Record<string, string> = {}
@@ -131,9 +146,9 @@ export default function Clicks() {
 
   return (
     <div className="page">
-      <PageHeader title="Clicks" sub="Raw click log, newest first. Click a row to see every recorded field.">
+      <PageHeader title={t('Clicks')} sub={t('Raw click log, newest first. Click a row to see every recorded field.')}>
         <DateRangePicker value={range} onChange={setRange} />
-        <button className="btn" onClick={() => res.reload()} title="Refresh">
+        <button className="btn" onClick={() => res.reload()} title={t('Refresh')} aria-label={t('Refresh')}>
           <RefreshCw size={14} className={res.loading ? 'spin' : ''} />
         </button>
       </PageHeader>
@@ -148,44 +163,44 @@ export default function Clicks() {
               if (v) n.set('campaign_id', v)
             })
           }
-          placeholder="All campaigns"
+          placeholder={t('All campaigns')}
           options={(camps.data ?? []).map((c) => ({ value: String(c.id), label: c.name }))}
         />
-        <Select value={streamId} onChange={(v) => setParam('stream_id', v)} placeholder="All streams" options={streamOptions} />
-        <Select value={crumb('country') ?? ''} onChange={(v) => setParam('f.country', v)} placeholder="All countries" options={COUNTRY_SELECT_OPTIONS} />
-        <input className="input mono" style={{ width: 160 }} placeholder="IP address (exact)" value={text.ip} onChange={(e) => setText({ ...text, ip: e.target.value })} />
-        <input className="input mono" style={{ width: 220 }} placeholder="Click ID" value={text.click_id} onChange={(e) => setText({ ...text, click_id: e.target.value })} />
+        <Select value={streamId} onChange={(v) => setParam('stream_id', v)} placeholder={t('All streams')} options={streamOptions} />
+        <Select value={crumb('country') ?? ''} onChange={(v) => setParam('f.country', v)} placeholder={t('All countries')} options={COUNTRY_SELECT_OPTIONS} />
+        <input className="input mono" style={{ width: 160 }} placeholder={t('IP address (exact)')} value={text.ip} onChange={(e) => setText({ ...text, ip: e.target.value })} />
+        <input className="input mono" style={{ width: 220 }} placeholder={t('Click ID')} value={text.click_id} onChange={(e) => setText({ ...text, click_id: e.target.value })} />
         <Segmented
           small
           value={filters.bots}
           onChange={(v) => setParam('bots', v)}
           options={[
-            { value: '', label: 'All' },
-            { value: 'exclude', label: 'Humans' },
-            { value: 'only', label: 'Bots' },
+            { value: '', label: t('All') },
+            { value: 'exclude', label: t('Humans') },
+            { value: 'only', label: t('Bots') },
           ]}
         />
         <span className="grow" />
-        <Link className="btn" to={'/reports' + buildSearch({ range, filters: reportFilters, bots: filters.bots })} title="Open Reports with the same filters">
-          <BarChart3 size={14} /> Report
+        <Link className="btn" to={'/reports' + buildSearch({ range, filters: reportFilters, bots: filters.bots })} title={t('Open Reports with the same filters')}>
+          <BarChart3 size={14} /> {t('Report')}
         </Link>
       </div>
 
       {anyFilter && (
-        <nav className="crumbs" aria-label="Active filters">
-          <span className="muted">Filtered by</span>
+        <nav className="crumbs" aria-label={t('Active filters')}>
+          <span className="muted">{t('Filtered by')}</span>
           {filters.crumbs.map((c) => (
             <span className="crumb" key={c.param}>
               <span className="muted">{dimLabel(c.dim)}:</span> <b>{crumbText(c.dim, c.value)}</b>
-              <button aria-label={`Remove filter ${dimLabel(c.dim)}`} onClick={() => update((n) => n.delete(c.param))}>
+              <button aria-label={t('Remove filter {name}', { name: dimLabel(c.dim) })} onClick={() => update((n) => n.delete(c.param))}>
                 <X size={12} />
               </button>
             </span>
           ))}
           {filters.bots && (
             <span className="crumb">
-              <b>{filters.bots === 'only' ? 'Bots only' : 'No bots'}</b>
-              <button aria-label="Remove bots filter" onClick={() => setParam('bots', '')}>
+              <b>{filters.bots === 'only' ? t('Bots only') : t('No bots')}</b>
+              <button aria-label={t('Remove bots filter')} onClick={() => setParam('bots', '')}>
                 <X size={12} />
               </button>
             </span>
@@ -193,15 +208,15 @@ export default function Clicks() {
           {urlIP && (
             <span className="crumb">
               <span className="muted">IP:</span> <b className="mono">{urlIP}</b>
-              <button aria-label="Remove IP filter" onClick={() => setParam('ip', '')}>
+              <button aria-label={t('Remove IP filter')} onClick={() => setParam('ip', '')}>
                 <X size={12} />
               </button>
             </span>
           )}
           {urlClick && (
             <span className="crumb">
-              <span className="muted">Click ID:</span> <b className="mono">{urlClick}</b>
-              <button aria-label="Remove click id filter" onClick={() => setParam('click_id', '')}>
+              <span className="muted">{t('Click ID')}:</span> <b className="mono">{urlClick}</b>
+              <button aria-label={t('Remove click id filter')} onClick={() => setParam('click_id', '')}>
                 <X size={12} />
               </button>
             </span>
@@ -217,7 +232,7 @@ export default function Clicks() {
               })
             }
           >
-            Clear all
+            {t('Clear all')}
           </button>
         </nav>
       )}
@@ -231,7 +246,7 @@ export default function Clicks() {
           loading={res.loading}
           maxHeight="calc(100vh - 250px)"
           expand={(r) => <ClickDetail r={r} campaign={campName(r.campaign_id)} stream={streamName(r.stream_id)} canSimulate={canRead(campById(r.campaign_id))} />}
-          empty={<Empty title="No clicks for this selection">Clicks appear here a few seconds after they happen.</Empty>}
+          empty={<Empty title={t('No clicks for this selection')}>{t('Clicks appear here a few seconds after they happen.')}</Empty>}
         />
         <Pagination total={res.data?.total ?? 0} limit={LIMIT} offset={offset} onChange={setOffset} />
       </div>
@@ -252,7 +267,7 @@ function ClickDetail({ r, campaign, stream, canSimulate }: { r: Row; campaign: s
     /* show the raw string */
   }
   const subs = [1, 2, 3, 4, 5].map((n) => [`sub${n}`, str(r[`sub${n}`])] as const).filter(([, v]) => v)
-  const yes = (v: unknown) => (truthy(v) ? 'yes' : 'no')
+  const yes = (v: unknown) => (truthy(v) ? t('yes') : t('no'))
   const item = (label: string, value: ReactNode, mono?: boolean) => (
     <>
       <dt>{label}</dt>
@@ -274,57 +289,57 @@ function ClickDetail({ r, campaign, stream, canSimulate }: { r: Row; campaign: s
     <div className="detail">
       <div className="detail-actions">
         {canSimulate && Number(r.campaign_id) > 0 && (
-          <Link className="btn small" to={`/campaigns/${str(r.campaign_id)}?tab=simulator&${sim.toString()}`} title="Open the campaign's simulator prefilled with this click's IP, User-Agent, language, referrer and query">
-            <FlaskConical size={13} /> Simulate this visitor
+          <Link className="btn small" to={`/campaigns/${str(r.campaign_id)}?tab=simulator&${sim.toString()}`} title={t("Open the campaign's simulator prefilled with this click's IP, User-Agent, language, referrer and query")}>
+            <FlaskConical size={13} /> {t('Simulate this visitor')}
           </Link>
         )}
-        <Link className="btn small" to={'/conversions?' + new URLSearchParams({ click_id: str(r.click_id) }).toString()} title="Conversions attributed to this click">
-          Conversions of this click
+        <Link className="btn small" to={'/conversions?' + new URLSearchParams({ click_id: str(r.click_id) }).toString()} title={t('Conversions attributed to this click')}>
+          {t('Conversions of this click')}
         </Link>
       </div>
       <div className="detail-cols">
         <dl className="kv">
-          {item('Click ID', <span className="row gap-s">{str(r.click_id)} <CopyButton text={str(r.click_id)} className="icon-btn" /></span>, true)}
-          {item('Time', fmtDateTime(r.ts))}
-          {item('Campaign', `${campaign} (#${str(r.campaign_id)})`)}
-          {item('Stream', `${stream} (#${str(r.stream_id)})`)}
-          {item('Action', str(r.action))}
-          {item('Integration', str(r.integration))}
-          {item('Domain', str(r.domain), true)}
-          {item('Cost', num(r.cost) ? num(r.cost).toFixed(4) : '')}
-          {item('Unique', yes(r.is_unique))}
+          {item(t('Click ID'), <span className="row gap-s">{str(r.click_id)} <CopyButton text={str(r.click_id)} className="icon-btn" /></span>, true)}
+          {item(t('Time'), fmtDateTime(r.ts))}
+          {item(t('Campaign'), `${campaign} (#${str(r.campaign_id)})`)}
+          {item(t('Stream'), `${stream} (#${str(r.stream_id)})`)}
+          {item(t('Action'), ts(str(r.action)))}
+          {item(t('Integration'), str(r.integration))}
+          {item(t('Domain'), str(r.domain), true)}
+          {item(t('Cost'), num(r.cost) ? num(r.cost).toFixed(4) : '')}
+          {item(t('Unique'), yes(r.is_unique))}
         </dl>
         <dl className="kv">
           {item('IP', str(r.ip), true)}
-          {item('Country', r.country ? countryLabel(str(r.country)) : '')}
-          {item('Region', str(r.region))}
-          {item('City', str(r.city))}
+          {item(t('Country'), r.country ? <Country code={str(r.country)} show="both" /> : '')}
+          {item(t('Region'), str(r.region))}
+          {item(t('City'), str(r.city))}
           {item('ASN', num(r.asn) ? `AS${num(r.asn)}` : '', true)}
           {item('ISP', str(r.isp))}
-          {item('Bot', truthy(r.is_bot) ? <Badge tone="err">yes</Badge> : 'no')}
-          {item('Bot reason', str(r.bot_reason), true)}
-          {item('Datacenter', yes(r.is_dc))}
+          {item(t('Bot'), truthy(r.is_bot) ? <Badge tone="err">{t('yes')}</Badge> : t('no'))}
+          {item(t('Bot reason'), str(r.bot_reason), true)}
+          {item(t('Datacenter'), yes(r.is_dc))}
         </dl>
         <dl className="kv">
-          {item('Device', str(r.device_type))}
-          {item('OS', [str(r.os), str(r.os_version)].filter(Boolean).join(' '))}
-          {item('Browser', [str(r.browser), str(r.browser_version)].filter(Boolean).join(' '))}
-          {item('Language', str(r.lang))}
+          {item(t('Device'), r.device_type ? <Device type={str(r.device_type)} /> : '')}
+          {item(t('OS'), r.os ? <Os os={str(r.os)} version={str(r.os_version)} /> : '')}
+          {item(t('Browser'), r.browser ? <Browser browser={str(r.browser)} version={str(r.browser_version)} /> : '')}
+          {item(t('Language'), str(r.lang))}
           {item('JA3', str(r.ja3), true)}
           {item('JA4', str(r.ja4), true)}
-          {item('Keyword', str(r.keyword))}
+          {item(t('Keyword'), str(r.keyword))}
           {subs.map(([k, v]) => (
             <span key={k} style={{ display: 'contents' }}>
               {item(k, v, true)}
             </span>
           ))}
-          {subs.length === 0 && item('Subs', '')}
+          {subs.length === 0 && item(t('Subs'), '')}
         </dl>
         <dl className="kv wide">
           {item('User-Agent', str(r.ua), true)}
-          {item('Referrer', str(r.referer), true)}
-          {item('Referrer domain', str(r.ref_domain), true)}
-          {item('Params', Object.keys(params).length ? <pre className="params-json">{paramsRaw}</pre> : '')}
+          {item(t('Referrer'), str(r.referer), true)}
+          {item(t('Referrer domain'), str(r.ref_domain), true)}
+          {item(t('Params'), Object.keys(params).length ? <pre className="params-json">{paramsRaw}</pre> : '')}
         </dl>
       </div>
     </div>

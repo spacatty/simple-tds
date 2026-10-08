@@ -1,6 +1,8 @@
 // Thin fetch wrapper. All URLs are relative ("api/...") because the panel is
 // mounted at "/" on ip:port and under "/<admin-path>/" on domains.
 
+import { t, ts } from './i18n'
+
 export class ApiError extends Error {
   status: number
   data: Record<string, unknown>
@@ -55,7 +57,7 @@ export async function api<T>(path: string, opts: Options = {}): Promise<T> {
   try {
     res = await fetch('api/' + path.replace(/^\/+/, ''), { method, headers, body, credentials: 'same-origin' })
   } catch {
-    throw new ApiError(0, 'Network error: the server is unreachable', {})
+    throw new ApiError(0, t('Network error: the server is unreachable'), {})
   }
   const text = await res.text()
   let data: unknown = null
@@ -68,7 +70,7 @@ export async function api<T>(path: string, opts: Options = {}): Promise<T> {
   }
   if (!res.ok) {
     const obj = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>
-    const msg = typeof obj.error === 'string' ? obj.error : `Request failed (${res.status})`
+    const msg = typeof obj.error === 'string' ? ts(obj.error) : t('Request failed ({status})', { status: res.status })
     if (res.status === 401 && !opts.quiet401) unauthorizedHandler()
     throw new ApiError(res.status, msg, obj)
   }

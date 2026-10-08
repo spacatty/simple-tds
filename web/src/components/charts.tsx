@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { fmtCompact, fmtInt } from '../format'
+import { t } from '../i18n'
 
 export interface Series {
   key: string
@@ -137,7 +138,7 @@ export interface BarItem {
 }
 
 /** Ranked horizontal bars in plain HTML: label, bar, value. */
-export function BarList({ items, fmt = fmtInt, color = 'var(--series-1)', empty = 'No data for this period' }: { items: BarItem[]; fmt?: (v: number) => string; color?: string; empty?: string }) {
+export function BarList({ items, fmt = fmtInt, color = 'var(--series-1)', empty = t('No data for this period') }: { items: BarItem[]; fmt?: (v: number) => string; color?: string; empty?: string }) {
   const max = Math.max(1, ...items.map((i) => i.value))
   if (!items.length) return <div className="muted pad">{empty}</div>
   return (

@@ -12,6 +12,7 @@ import (
 	"net/netip"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -85,6 +86,10 @@ type Engine struct {
 
 	secret []byte
 	snap   atomic.Pointer[Snapshot]
+	// reloadMu keeps concurrent reloads from publishing an older read of the
+	// database over a newer one.
+	reloadMu sync.Mutex
+
 	uniq   *uniqStore
 	recent *lru.Cache[string, *events.Click]
 	convs  *lru.Cache[string, struct{}]
@@ -107,6 +112,8 @@ func (e *Engine) Snap() *Snapshot { return e.snap.Load() }
 
 // Reload rebuilds the snapshot from the database. Call it after any change.
 func (e *Engine) Reload(ctx context.Context) error {
+	e.reloadMu.Lock()
+	defer e.reloadMu.Unlock()
 	st, err := e.Store.Settings(ctx)
 	if err != nil {
 		return err
@@ -221,7 +228,7 @@ func (e *Engine) Reload(ctx context.Context) error {
 	}
 	for _, in := range integrations {
 		if in.Enabled && in.Kind == "geo" {
-			s.geoProviders = append(s.geoProviders, extapi.New(in))
+			s.geoProviders = append(s.geoProviders, extapi.Shared(in))
 		}
 	}
 	e.Detector.Configure(st, integrations)

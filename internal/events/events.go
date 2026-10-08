@@ -130,6 +130,7 @@ type Config struct {
 type DB struct {
 	conn    driver.Conn
 	clicks  chan *Click
+	quit    chan struct{} // closed by Close; clicks itself never is, so a late AddClick cannot panic
 	done    chan struct{}
 	Dropped atomic.Int64
 	Written atomic.Int64
@@ -167,7 +168,7 @@ func Open(ctx context.Context, c Config) (*DB, error) {
 			return nil, fmt.Errorf("clickhouse schema: %w", err)
 		}
 	}
-	db := &DB{conn: conn, clicks: make(chan *Click, queueSize), done: make(chan struct{})}
+	db := &DB{conn: conn, clicks: make(chan *Click, queueSize), quit: make(chan struct{}), done: make(chan struct{})}
 	go db.writer()
 	return db, nil
 }
@@ -225,17 +226,27 @@ func (db *DB) writer() {
 	}
 	for {
 		select {
-		case c, ok := <-db.clicks:
-			if !ok {
-				flush()
-				return
-			}
+		case c := <-db.clicks:
 			buf = append(buf, c)
 			if len(buf) >= batchSize {
 				flush()
 			}
 		case <-tick.C:
 			flush()
+		case <-db.quit:
+			// Write out whatever is still queued, then stop.
+			for {
+				select {
+				case c := <-db.clicks:
+					if buf = append(buf, c); len(buf) >= batchSize {
+						flush()
+					}
+					continue
+				default:
+				}
+				flush()
+				return
+			}
 		}
 	}
 }
@@ -291,7 +302,7 @@ func (db *DB) AddConversion(ctx context.Context, c *Conversion) error {
 
 // Close flushes queued clicks.
 func (db *DB) Close() {
-	close(db.clicks)
+	close(db.quit)
 	select {
 	case <-db.done:
 	case <-time.After(20 * time.Second):

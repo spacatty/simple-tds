@@ -8,19 +8,23 @@ import type { Column } from '../components/DataTable'
 import { Badge, CopyButton, Dropdown, Empty, ErrorBox, Field, MenuItem, Modal, Notice, PageHeader, SearchInput, Select, Toggle, confirmDialog, toast, useBusy } from '../components/ui'
 import type { Tone } from '../components/ui'
 import { fmtAgo, fmtDateTime } from '../format'
+import { t, tn, ts, tx } from '../i18n'
 
 export const TLS_MODES = [
-  { value: 'auto', label: 'Auto (Let’s Encrypt)', help: 'The app terminates TLS and issues a Let’s Encrypt certificate itself. Point the domain straight at this server.' },
-  { value: 'proxy', label: 'Proxy / CDN', help: 'TLS is terminated by Cloudflare or another proxy in front of this server; no certificate is issued here.' },
+  { value: 'auto', label: t('Auto (Let’s Encrypt)'), help: t('The app terminates TLS and issues a Let’s Encrypt certificate itself. Point the domain straight at this server.') },
+  { value: 'proxy', label: t('Proxy / CDN'), help: t('TLS is terminated by Cloudflare or another proxy in front of this server; no certificate is issued here.') },
 ]
 export const IP_SOURCES = [
-  { value: 'direct', label: 'Direct connection', help: 'Use the address of the TCP connection (PROXY-protocol aware).' },
-  { value: 'cf', label: 'CF-Connecting-IP', help: 'Cloudflare: take the visitor IP from the CF-Connecting-IP header.' },
-  { value: 'xff', label: 'X-Forwarded-For', help: 'Take the left-most address of X-Forwarded-For.' },
-  { value: 'x_real_ip', label: 'X-Real-IP', help: 'Take the address from the X-Real-IP header (nginx).' },
+  { value: 'direct', label: t('Direct connection'), help: t('Use the address of the TCP connection (PROXY-protocol aware).') },
+  { value: 'cf', label: 'CF-Connecting-IP', help: t('Cloudflare: take the visitor IP from the CF-Connecting-IP header.') },
+  { value: 'xff', label: 'X-Forwarded-For', help: t('Take the left-most address of X-Forwarded-For.') },
+  { value: 'x_real_ip', label: 'X-Real-IP', help: t('Take the address from the X-Real-IP header (nginx).') },
 ]
 const label = (list: { value: string; label: string }[], v: string) => list.find((x) => x.value === v)?.label ?? v
 const STATUS_TONE: Record<string, Tone> = { ok: 'ok', pending: 'warn', error: 'err' }
+const STATUS_LABEL: Record<string, string> = { ok: t('ok@@domain'), pending: t('pending@@domain'), error: t('error@@domain') }
+/** Visible name of a domain check status. */
+export const domainStatus = (s: string) => STATUS_LABEL[s] ?? s
 
 export default function Domains() {
   const list = useLoad(() => get<Domain[]>('domains'), [])
@@ -59,17 +63,20 @@ export default function Domains() {
   const allChecked = rows.length > 0 && selected.length === rows.length
 
   const patch = async (d: Domain, body: Partial<Domain>) => {
+    // The switch moves at once and goes back if the server refuses; see setEnabled in Campaigns.tsx.
+    const swap = (n: Domain) => list.setData((all) => all?.map((x) => (x.id === d.id ? n : x)))
+    swap({ ...d, ...body })
     try {
-      const n = await put<Domain>(`domains/${d.id}`, body)
-      list.setData(domains.map((x) => (x.id === d.id ? n : x)))
+      swap(await put<Domain>(`domains/${d.id}`, body))
     } catch (e) {
+      swap(d)
       toast.err(e)
     }
   }
   const bulkSet = async (set: Record<string, unknown>, what: string) => {
     try {
       const r = await post<{ updated: number }>('domains/bulk-update', { ids, set })
-      toast.ok(`${what}: ${r.updated} domain${r.updated === 1 ? '' : 's'} updated`)
+      toast.ok(tn(r.updated, '{what}: {n} domain updated', '{what}: {n} domains updated', { what }))
     } catch (e) {
       toast.err(e)
     }
@@ -80,26 +87,25 @@ export default function Domains() {
       await post('domains/check', { ids: which })
       // The check runs in the background; show it as pending until the poll picks the result up.
       list.setData(domains.map((d) => (which.includes(d.id) ? { ...d, status: 'pending', status_msg: '' } : d)))
-      toast.info(`Re-checking ${which.length} domain${which.length === 1 ? '' : 's'}…`)
+      toast.info(tn(which.length, 'Re-checking {n} domain…', 'Re-checking {n} domains…'))
     } catch (e) {
       toast.err(e)
     }
   }
   const remove = async (which: Domain[]) => {
     const ok = await confirmDialog({
-      title: which.length === 1 ? 'Delete domain?' : `Delete ${which.length} domains?`,
-      message: (
-        <>
-          {which.length === 1 ? <b>{which[0].name}</b> : `${which.length} selected domains`} will stop serving campaigns immediately. Statistics are kept.
-        </>
-      ),
+      title: which.length === 1 ? t('Delete domain?') : tn(which.length, 'Delete {n} domain?', 'Delete {n} domains?'),
+      message:
+        which.length === 1
+          ? tx('<b>{name}</b> will stop serving campaigns immediately. Statistics are kept.', { b: (c) => <b>{c}</b>, name: which[0].name })
+          : tn(which.length, '{n} selected domain will stop serving campaigns immediately. Statistics are kept.', '{n} selected domains will stop serving campaigns immediately. Statistics are kept.'),
     })
     if (!ok) return
     try {
       if (which.length === 1) await del(`domains/${which[0].id}`)
       else {
         const r = await post<{ deleted: number }>('domains/bulk-delete', { ids: which.map((d) => d.id) })
-        toast.ok(`${r.deleted} domains deleted`)
+        toast.ok(tn(r.deleted, '{n} domain deleted', '{n} domains deleted'))
       }
       setSel(new Set())
     } catch (e) {
@@ -112,11 +118,11 @@ export default function Domains() {
     {
       key: 'sel',
       width: 32,
-      title: <input type="checkbox" aria-label="Select all" checked={allChecked} onChange={(e) => setSel(e.target.checked ? new Set(rows.map((d) => d.id)) : new Set())} />,
+      title: <input type="checkbox" aria-label={t('Select all')} checked={allChecked} onChange={(e) => setSel(e.target.checked ? new Set(rows.map((d) => d.id)) : new Set())} />,
       render: (d) => (
         <input
           type="checkbox"
-          aria-label={'Select ' + d.name}
+          aria-label={t('Select {name}', { name: d.name })}
           checked={sel.has(d.id)}
           onChange={(e) => {
             const n = new Set(sel)
@@ -129,7 +135,7 @@ export default function Domains() {
     },
     {
       key: 'name',
-      title: 'Domain',
+      title: t('Domain'),
       sort: (d) => d.name,
       render: (d) => (
         <div>
@@ -140,26 +146,26 @@ export default function Domains() {
         </div>
       ),
     },
-    { key: 'group', title: 'Group', sort: (d) => groupName(d.group_id), render: (d) => (d.group_id === null ? <span className="muted">—</span> : <Badge>{groupName(d.group_id)}</Badge>) },
+    { key: 'group', title: t('Group'), sort: (d) => groupName(d.group_id), render: (d) => (d.group_id === null ? <span className="muted">—</span> : <Badge>{groupName(d.group_id)}</Badge>) },
     {
       key: 'status',
-      title: 'Status',
+      title: t('Status'),
       sort: (d) => d.status,
       render: (d) => (
-        <span title={(d.status_msg ? d.status_msg + '\n' : '') + (d.checked_at ? 'Checked ' + fmtDateTime(d.checked_at) : 'Not checked yet')}>
-          <Badge tone={STATUS_TONE[d.status] ?? 'neutral'}>{d.status === 'pending' ? 'pending…' : d.status}</Badge>
-          {d.status === 'error' && d.status_msg && <span className="status-msg ellipsis">{d.status_msg}</span>}
+        <span title={(d.status_msg ? ts(d.status_msg) + '\n' : '') + (d.checked_at ? t('Checked {time}', { time: fmtDateTime(d.checked_at) }) : t('Not checked yet'))}>
+          <Badge tone={STATUS_TONE[d.status] ?? 'neutral'}>{d.status === 'pending' ? t('pending…@@domain') : domainStatus(d.status)}</Badge>
+          {d.status === 'error' && d.status_msg && <span className="status-msg ellipsis">{ts(d.status_msg)}</span>}
           <span className="muted small"> {d.checked_at ? fmtAgo(d.checked_at) : ''}</span>
         </span>
       ),
     },
-    { key: 'tls', title: 'TLS', sort: (d) => d.tls_mode, render: (d) => <span title={TLS_MODES.find((m) => m.value === d.tls_mode)?.help}>{d.tls_mode === 'auto' ? 'Auto' : 'Proxy'}</span> },
-    { key: 'ip', title: 'Real IP', sort: (d) => d.ip_source, render: (d) => <span title={IP_SOURCES.find((m) => m.value === d.ip_source)?.help}>{label(IP_SOURCES, d.ip_source)}</span> },
-    { key: 'campaign', title: 'Default campaign', sort: (d) => campName(d.campaign_id), render: (d) => (d.campaign_id === null ? <span className="muted">— (404 on “/”)</span> : campName(d.campaign_id)) },
+    { key: 'tls', title: 'TLS', sort: (d) => d.tls_mode, render: (d) => <span title={TLS_MODES.find((m) => m.value === d.tls_mode)?.help}>{d.tls_mode === 'auto' ? t('Auto') : t('Proxy')}</span> },
+    { key: 'ip', title: t('Real IP'), sort: (d) => d.ip_source, render: (d) => <span title={IP_SOURCES.find((m) => m.value === d.ip_source)?.help}>{label(IP_SOURCES, d.ip_source)}</span> },
+    { key: 'campaign', title: t('Default campaign'), sort: (d) => campName(d.campaign_id), render: (d) => (d.campaign_id === null ? <span className="muted">{t('— (404 on “/”)')}</span> : campName(d.campaign_id)) },
     ...(isAdmin
-      ? [{ key: 'admin', title: 'Panel', headTitle: 'Serve the admin panel on this domain under the admin path', width: 70, render: (d: Domain) => <Toggle checked={d.admin_enabled} onChange={(v) => patch(d, { admin_enabled: v })} title="Panel access on this domain" /> } as Column<Domain>]
+      ? [{ key: 'admin', title: t('Panel'), headTitle: t('Serve the admin panel on this domain under the admin path'), width: 70, render: (d: Domain) => <Toggle checked={d.admin_enabled} onChange={(v) => patch(d, { admin_enabled: v })} title={t('Panel access on this domain')} /> } as Column<Domain>]
       : []),
-    { key: 'enabled', title: 'Enabled', width: 70, render: (d) => <Toggle checked={d.enabled} onChange={(v) => patch(d, { enabled: v })} /> },
+    { key: 'enabled', title: t('Enabled@@domain'), width: 70, render: (d) => <Toggle checked={d.enabled} onChange={(v) => patch(d, { enabled: v })} /> },
     {
       key: 'actions',
       title: '',
@@ -167,13 +173,13 @@ export default function Domains() {
       width: 110,
       render: (d) => (
         <div className="row-actions">
-          <button className="icon-btn" title="Re-check now" onClick={() => recheck([d.id])}>
+          <button className="icon-btn" title={t('Re-check now')} onClick={() => recheck([d.id])}>
             <RefreshCw size={15} />
           </button>
-          <button className="icon-btn" title="Edit" onClick={() => setEditing(d)}>
+          <button className="icon-btn" title={t('Edit')} onClick={() => setEditing(d)}>
             <Pencil size={15} />
           </button>
-          <button className="icon-btn danger" title="Delete" onClick={() => remove([d])}>
+          <button className="icon-btn danger" title={t('Delete')} onClick={() => remove([d])}>
             <Trash2 size={15} />
           </button>
         </div>
@@ -181,108 +187,111 @@ export default function Domains() {
     },
   ]
 
-  const groupOptions = [{ value: 'none', label: 'Without group' }, ...(groups.data ?? []).map((g) => ({ value: String(g.id), label: g.name }))]
+  const groupOptions = [{ value: 'none', label: t('Without group') }, ...(groups.data ?? []).map((g) => ({ value: String(g.id), label: g.name }))]
   const serverIP = sys.data?.server_ip ?? ''
 
   return (
     <div className="page">
-      <PageHeader title="Domains" sub="Domains that serve campaigns, postbacks and (optionally) this panel.">
+      <PageHeader title={t('Domains')} sub={t('Domains that serve campaigns, postbacks and (optionally) this panel.')}>
         <button className="btn" onClick={() => setManaging(true)}>
-          <FolderCog size={15} /> Groups
+          <FolderCog size={15} /> {t('Groups')}
         </button>
         <button className="btn primary" onClick={() => setAdding(true)}>
-          <Plus size={15} /> Add domains
+          <Plus size={15} /> {t('Add domains')}
         </button>
       </PageHeader>
 
       <Notice>
-        Point an <b>A record</b> of each domain at {serverIP ? <><code>{serverIP}</code> <CopyButton text={serverIP} className="icon-btn" title="Copy the server IP" /></> : 'this server'}. The domain is checked automatically and its status turns <Badge tone="ok">ok</Badge> once it is verified
-        {' '}— in Auto TLS mode that includes issuing the certificate, which can take a minute. Behind Cloudflare choose TLS “Proxy / CDN” and real IP “CF-Connecting-IP”.
+        {tx('Point an <b>A record</b> of each domain at {server}. The domain is checked automatically and its status turns {ok} once it is verified — in Auto TLS mode that includes issuing the certificate, which can take a minute. Behind Cloudflare choose TLS “Proxy / CDN” and real IP “CF-Connecting-IP”.', {
+          b: (c) => <b>{c}</b>,
+          server: serverIP ? <><code>{serverIP}</code> <CopyButton text={serverIP} className="icon-btn" title={t('Copy the server IP')} /></> : t('this server'),
+          ok: <Badge tone="ok">{domainStatus('ok')}</Badge>,
+        })}
       </Notice>
       <ErrorBox error={list.error} retry={list.reload} />
 
       <div className="toolbar">
-        <SearchInput value={q} onChange={setQ} placeholder="Search domains…" />
-        <Select value={group} onChange={setGroup} placeholder="All groups" options={groupOptions} />
+        <SearchInput value={q} onChange={setQ} placeholder={t('Search domains…')} />
+        <Select value={group} onChange={setGroup} placeholder={t('All groups')} options={groupOptions} />
         <Select
           value={status}
           onChange={setStatus}
-          placeholder="Any status"
+          placeholder={t('Any status')}
           options={[
             { value: 'ok', label: 'OK' },
-            { value: 'pending', label: 'Pending' },
-            { value: 'error', label: 'Error' },
+            { value: 'pending', label: t('Pending@@domain') },
+            { value: 'error', label: t('Error@@domain') },
           ]}
         />
         <span className="muted">
-          {rows.length} of {domains.length}
+          {t('{shown} of {total}', { shown: rows.length, total: domains.length })}
         </span>
       </div>
 
       {selected.length > 0 && (
         <div className="bulkbar">
-          <b>{selected.length} selected</b>
-          <Dropdown className="btn small" label="Set group">
+          <b>{t('{n} selected', { n: selected.length })}</b>
+          <Dropdown className="btn small" label={t('Set group')}>
             {(close) => (
               <div className="menu">
-                <MenuItem onClick={() => (close(), bulkSet({ group_id: null }, 'Group removed'))}>No group</MenuItem>
+                <MenuItem onClick={() => (close(), bulkSet({ group_id: null }, t('Group removed')))}>{t('No group')}</MenuItem>
                 {(groups.data ?? []).map((g) => (
-                  <MenuItem key={g.id} onClick={() => (close(), bulkSet({ group_id: g.id }, 'Group set'))}>
+                  <MenuItem key={g.id} onClick={() => (close(), bulkSet({ group_id: g.id }, t('Group set')))}>
                     {g.name}
                   </MenuItem>
                 ))}
               </div>
             )}
           </Dropdown>
-          <Dropdown className="btn small" label="Set campaign">
+          <Dropdown className="btn small" label={t('Set campaign')}>
             {(close) => (
               <div className="menu">
-                <MenuItem onClick={() => (close(), bulkSet({ campaign_id: null }, 'Default campaign removed'))}>No default campaign</MenuItem>
+                <MenuItem onClick={() => (close(), bulkSet({ campaign_id: null }, t('Default campaign removed')))}>{t('No default campaign')}</MenuItem>
                 {usable.map((c) => (
-                  <MenuItem key={c.id} onClick={() => (close(), bulkSet({ campaign_id: c.id }, 'Default campaign set'))}>
+                  <MenuItem key={c.id} onClick={() => (close(), bulkSet({ campaign_id: c.id }, t('Default campaign set')))}>
                     {c.name}
                   </MenuItem>
                 ))}
               </div>
             )}
           </Dropdown>
-          <Dropdown className="btn small" label="TLS mode">
+          <Dropdown className="btn small" label={t('TLS mode')}>
             {(close) => (
               <div className="menu">
                 {TLS_MODES.map((m) => (
-                  <MenuItem key={m.value} onClick={() => (close(), bulkSet({ tls_mode: m.value }, 'TLS mode set'))}>
+                  <MenuItem key={m.value} onClick={() => (close(), bulkSet({ tls_mode: m.value }, t('TLS mode set')))}>
                     {m.label}
                   </MenuItem>
                 ))}
               </div>
             )}
           </Dropdown>
-          <Dropdown className="btn small" label="IP source">
+          <Dropdown className="btn small" label={t('IP source')}>
             {(close) => (
               <div className="menu">
                 {IP_SOURCES.map((m) => (
-                  <MenuItem key={m.value} onClick={() => (close(), bulkSet({ ip_source: m.value }, 'IP source set'))}>
+                  <MenuItem key={m.value} onClick={() => (close(), bulkSet({ ip_source: m.value }, t('IP source set')))}>
                     {m.label}
                   </MenuItem>
                 ))}
               </div>
             )}
           </Dropdown>
-          <button className="btn small" onClick={() => bulkSet({ enabled: true }, 'Enabled')}>
-            <Check size={14} /> Enable
+          <button className="btn small" onClick={() => bulkSet({ enabled: true }, t('Enabled@@bulk'))}>
+            <Check size={14} /> {t('Enable')}
           </button>
-          <button className="btn small" onClick={() => bulkSet({ enabled: false }, 'Disabled')}>
-            <X size={14} /> Disable
+          <button className="btn small" onClick={() => bulkSet({ enabled: false }, t('Disabled@@bulk'))}>
+            <X size={14} /> {t('Disable')}
           </button>
           <button className="btn small" onClick={() => recheck(ids)}>
-            <RefreshCw size={14} /> Re-check
+            <RefreshCw size={14} /> {t('Re-check')}
           </button>
           <button className="btn small danger-outline" onClick={() => remove(selected)}>
-            <Trash2 size={14} /> Delete
+            <Trash2 size={14} /> {t('Delete')}
           </button>
           <span className="grow" />
           <button className="btn small ghost" onClick={() => setSel(new Set())}>
-            Clear selection
+            {t('Clear selection')}
           </button>
         </div>
       )}
@@ -295,8 +304,8 @@ export default function Domains() {
           loading={list.loading}
           rowClass={(d) => (sel.has(d.id) ? 'selected' : d.enabled ? '' : 'dim')}
           empty={
-            <Empty title={domains.length ? 'No domains match the filters' : 'No domains yet'} action={!domains.length && <button className="btn primary" onClick={() => setAdding(true)}><Plus size={15} /> Add domains</button>}>
-              {!domains.length && 'Add one or many domains at once, then point their DNS at this server.'}
+            <Empty title={domains.length ? t('No domains match the filters') : t('No domains yet')} action={!domains.length && <button className="btn primary" onClick={() => setAdding(true)}><Plus size={15} /> {t('Add domains')}</button>}>
+              {!domains.length && t('Add one or many domains at once, then point their DNS at this server.')}
             </Empty>
           }
         />
@@ -355,21 +364,21 @@ function DomainOptions({
 }) {
   return (
     <div className="form-grid">
-      <Field label="Group">
-        <Select value={v.group_id} onChange={(group_id) => set({ group_id })} placeholder="No group" options={groups.map((g) => ({ value: String(g.id), label: g.name }))} />
+      <Field label={t('Group')}>
+        <Select value={v.group_id} onChange={(group_id) => set({ group_id })} placeholder={t('No group')} options={groups.map((g) => ({ value: String(g.id), label: g.name }))} />
       </Field>
-      <Field label="Default campaign" help="Served on the root URL “/” of the domain. Other campaigns stay reachable by /alias.">
-        <Select value={v.campaign_id} onChange={(campaign_id) => set({ campaign_id })} placeholder="None (404 on “/”)" options={campaigns.map((c) => ({ value: String(c.id), label: c.name }))} />
+      <Field label={t('Default campaign')} help={t('Served on the root URL “/” of the domain. Other campaigns stay reachable by /alias.')}>
+        <Select value={v.campaign_id} onChange={(campaign_id) => set({ campaign_id })} placeholder={t('None (404 on “/”)')} options={campaigns.map((c) => ({ value: String(c.id), label: c.name }))} />
       </Field>
-      <Field label="TLS mode" help={TLS_MODES.find((m) => m.value === v.tls_mode)?.help}>
+      <Field label={t('TLS mode')} help={TLS_MODES.find((m) => m.value === v.tls_mode)?.help}>
         <Select value={v.tls_mode} onChange={(tls_mode) => set({ tls_mode })} options={TLS_MODES} />
       </Field>
-      <Field label="Real visitor IP from" help={IP_SOURCES.find((m) => m.value === v.ip_source)?.help}>
+      <Field label={t('Real visitor IP from')} help={IP_SOURCES.find((m) => m.value === v.ip_source)?.help}>
         <Select value={v.ip_source} onChange={(ip_source) => set({ ip_source })} options={IP_SOURCES} />
       </Field>
       {v.ip_source !== 'direct' && (
         <div className="span-2">
-          <Notice tone="warn">Forwarding headers are only trusted from the addresses listed under Settings → Network → Trusted proxies. From any other address the socket IP is used.</Notice>
+          <Notice tone="warn">{t('Forwarding headers are only trusted from the addresses listed under Settings → Network → Trusted proxies. From any other address the socket IP is used.')}</Notice>
         </div>
       )}
     </div>
@@ -402,23 +411,25 @@ function AddDomains({ isAdmin, groups, campaigns, onClose, onAdded }: { isAdmin:
   if (result) {
     const failed = result.results.filter((r) => !r.ok)
     return (
-      <Modal title="Domains added" onClose={onClose} footer={<><button className="btn" onClick={() => { setResult(null); setNames(failed.map((f) => f.name).join('\n')) }}>Add more</button><button className="btn primary" onClick={onClose}>Done</button></>}>
+      <Modal title={t('Domains added')} onClose={onClose} footer={<><button className="btn" onClick={() => { setResult(null); setNames(failed.map((f) => f.name).join('\n')) }}>{t('Add more')}</button><button className="btn primary" onClick={onClose}>{t('Done')}</button></>}>
         <Notice tone={failed.length ? 'warn' : 'ok'}>
-          {result.added} added{failed.length > 0 && `, ${failed.length} refused`}. New domains are checked in the background; watch the Status column.
+          {failed.length > 0
+            ? t('{added} added, {refused} refused. New domains are checked in the background; watch the Status column.', { added: result.added, refused: failed.length })
+            : t('{added} added. New domains are checked in the background; watch the Status column.', { added: result.added })}
         </Notice>
         <div className="table-wrap" style={{ maxHeight: 340 }}>
           <table className="table">
             <thead>
               <tr>
-                <th>Domain</th>
-                <th>Result</th>
+                <th>{t('Domain')}</th>
+                <th>{t('Result')}</th>
               </tr>
             </thead>
             <tbody>
               {result.results.map((r, i) => (
                 <tr key={i}>
                   <td className="mono">{r.name}</td>
-                  <td>{r.ok ? <Badge tone="ok">added</Badge> : <span className="field-error">{r.error}</span>}</td>
+                  <td>{r.ok ? <Badge tone="ok">{t('added@@domain')}</Badge> : <span className="field-error">{ts(r.error)}</span>}</td>
                 </tr>
               ))}
             </tbody>
@@ -430,31 +441,31 @@ function AddDomains({ isAdmin, groups, campaigns, onClose, onAdded }: { isAdmin:
 
   return (
     <Modal
-      title="Add domains"
+      title={t('Add domains')}
       size="lg"
       onClose={onClose}
       footer={
         <>
           {error && <div className="field-error grow">{error}</div>}
           <button className="btn" onClick={onClose}>
-            Cancel
+            {t('Cancel')}
           </button>
           <button className="btn primary" disabled={busy || count === 0} onClick={submit}>
-            {busy ? 'Adding…' : `Add ${count || ''} domain${count === 1 ? '' : 's'}`}
+            {busy ? t('Adding…') : count ? tn(count, 'Add {n} domain', 'Add {n} domains') : t('Add domains')}
           </button>
         </>
       }
     >
-      <Field label="Domain names" help="One per line, or separated by commas or spaces. URLs and upper case are fine — they are normalised.">
+      <Field label={t('Domain names')} help={t('One per line, or separated by commas or spaces. URLs and upper case are fine — they are normalised.')}>
         <textarea className="input mono" rows={7} autoFocus value={names} onChange={(e) => setNames(e.target.value)} placeholder={'example.com\npromo.example.net, go.example.org'} />
       </Field>
       <DomainOptions v={v} set={(p) => setV((x) => ({ ...x, ...p }))} groups={groups} campaigns={campaigns} />
       {isAdmin && (
-        <Field help="The panel becomes reachable at https://domain/<admin-path>/ once the domain is verified.">
-          <Toggle checked={admin} onChange={setAdmin} label="Also serve the admin panel on these domains" />
+        <Field help={t('The panel becomes reachable at https://domain/<admin-path>/ once the domain is verified.')}>
+          <Toggle checked={admin} onChange={setAdmin} label={t('Also serve the admin panel on these domains')} />
         </Field>
       )}
-      <Notice>Point an A record of every domain at this server before or right after adding it; the status turns OK when the check passes.</Notice>
+      <Notice>{t('Point an A record of every domain at this server before or right after adding it; the status turns OK when the check passes.')}</Notice>
     </Modal>
   )
 }
@@ -472,7 +483,7 @@ function EditDomain({ domain, isAdmin, groups, campaigns, onClose, onSaved }: { 
       setError('')
       try {
         await put(`domains/${domain.id}`, { name, note, group_id: idOrNull(v.group_id), campaign_id: idOrNull(v.campaign_id), tls_mode: v.tls_mode, ip_source: v.ip_source, enabled, ...(isAdmin ? { admin_enabled: admin } : {}) })
-        toast.ok('Domain saved')
+        toast.ok(t('Domain saved'))
         onSaved()
       } catch (e) {
         setError(errMsg(e))
@@ -480,43 +491,43 @@ function EditDomain({ domain, isAdmin, groups, campaigns, onClose, onSaved }: { 
     })
   return (
     <Modal
-      title={`Edit ${domain.name}`}
+      title={t('Edit {name}', { name: domain.name })}
       size="lg"
       onClose={onClose}
       footer={
         <>
           {error && <div className="field-error grow">{error}</div>}
           <button className="btn" onClick={onClose}>
-            Cancel
+            {t('Cancel')}
           </button>
           <button className="btn primary" disabled={busy || !name.trim()} onClick={save}>
-            Save
+            {t('Save')}
           </button>
         </>
       }
     >
       {domain.status !== 'ok' && (
-        <Notice tone={domain.status === 'error' ? 'err' : 'warn'} title={`Status: ${domain.status}`}>
-          {domain.status_msg || 'Waiting for the check to finish.'} {domain.checked_at && <span className="muted">(checked {fmtDateTime(domain.checked_at)})</span>}
+        <Notice tone={domain.status === 'error' ? 'err' : 'warn'} title={t('Status: {status}', { status: domainStatus(domain.status) })}>
+          {domain.status_msg ? ts(domain.status_msg) : t('Waiting for the check to finish.')} {domain.checked_at && <span className="muted">{t('(checked {time})', { time: fmtDateTime(domain.checked_at) })}</span>}
         </Notice>
       )}
       <div className="form-grid">
-        <Field label="Domain name" help="Renaming or changing the TLS mode triggers a new check.">
+        <Field label={t('Domain name')} help={t('Renaming or changing the TLS mode triggers a new check.')}>
           <input className="input mono" value={name} onChange={(e) => setName(e.target.value)} />
         </Field>
-        <Field label="Note">
+        <Field label={t('Note')}>
           <input className="input" value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>
       </div>
       <DomainOptions v={v} set={(p) => setV((x) => ({ ...x, ...p }))} groups={groups} campaigns={campaigns} />
       <div className="form-grid">
         {isAdmin && (
-          <Field help="Serve the admin panel at https://domain/<admin-path>/.">
-            <Toggle checked={admin} onChange={setAdmin} label="Panel access" />
+          <Field help={t('Serve the admin panel at https://domain/<admin-path>/.')}>
+            <Toggle checked={admin} onChange={setAdmin} label={t('Panel access')} />
           </Field>
         )}
-        <Field help="A disabled domain answers nothing.">
-          <Toggle checked={enabled} onChange={setEnabled} label="Enabled" />
+        <Field help={t('A disabled domain answers nothing.')}>
+          <Toggle checked={enabled} onChange={setEnabled} label={t('Enabled@@domain')} />
         </Field>
       </div>
     </Modal>
@@ -544,7 +555,7 @@ function GroupsModal({ groups, domains, reload, onClose }: { groups: DomainGroup
     })
   const remove = async (g: DomainGroup) => {
     const n = count(g.id)
-    if (!(await confirmDialog({ title: 'Delete group?', message: <>Group <b>{g.name}</b> will be deleted.{n > 0 && ` Its ${n} domain${n === 1 ? '' : 's'} are kept and become ungrouped.`}</> }))) return
+    if (!(await confirmDialog({ title: t('Delete group?'), message: <>{tx('Group <b>{name}</b> will be deleted.', { b: (c) => <b>{c}</b>, name: g.name })}{n > 0 && ' ' + tn(n, 'Its {n} domain is kept and becomes ungrouped.', 'Its {n} domains are kept and become ungrouped.')}</> }))) return
     run(async () => {
       await del(`domain-groups/${g.id}`)
       await reload()
@@ -552,7 +563,7 @@ function GroupsModal({ groups, domains, reload, onClose }: { groups: DomainGroup
   }
 
   return (
-    <Modal title="Domain groups" onClose={onClose} footer={<button className="btn primary" onClick={onClose}>Done</button>}>
+    <Modal title={t('Domain groups')} onClose={onClose} footer={<button className="btn primary" onClick={onClose}>{t('Done')}</button>}>
       <form
         className="row gap"
         onSubmit={(e) => {
@@ -560,13 +571,13 @@ function GroupsModal({ groups, domains, reload, onClose }: { groups: DomainGroup
           if (name.trim()) create()
         }}
       >
-        <input className="input grow" placeholder="New group name" value={name} onChange={(e) => setName(e.target.value)} />
+        <input className="input grow" placeholder={t('New group name')} value={name} onChange={(e) => setName(e.target.value)} />
         <button className="btn primary" disabled={busy || !name.trim()}>
-          <Plus size={14} /> Create
+          <Plus size={14} /> {t('Create')}
         </button>
       </form>
       <div className="list">
-        {groups.length === 0 && <div className="muted pad">No groups yet. Groups are labels for filtering and bulk actions.</div>}
+        {groups.length === 0 && <div className="muted pad">{t('No groups yet. Groups are labels for filtering and bulk actions.')}</div>}
         {groups.map((g) => (
           <div className="list-row" key={g.id}>
             {edit && edit.id === g.id ? (
@@ -579,20 +590,20 @@ function GroupsModal({ groups, domains, reload, onClose }: { groups: DomainGroup
               >
                 <input className="input grow" autoFocus value={edit.name} onChange={(e) => setEdit({ id: g.id, name: e.target.value })} />
                 <button className="btn small primary" disabled={busy || !edit.name.trim()}>
-                  Save
+                  {t('Save')}
                 </button>
                 <button type="button" className="btn small" onClick={() => setEdit(null)}>
-                  Cancel
+                  {t('Cancel')}
                 </button>
               </form>
             ) : (
               <>
                 <span className="grow strong">{g.name}</span>
-                <span className="muted">{count(g.id)} domains</span>
-                <button className="icon-btn" title="Rename" onClick={() => setEdit({ id: g.id, name: g.name })}>
+                <span className="muted">{tn(count(g.id), '{n} domain', '{n} domains')}</span>
+                <button className="icon-btn" title={t('Rename')} onClick={() => setEdit({ id: g.id, name: g.name })}>
                   <Pencil size={15} />
                 </button>
-                <button className="icon-btn danger" title="Delete" onClick={() => remove(g)}>
+                <button className="icon-btn danger" title={t('Delete')} onClick={() => remove(g)}>
                   <Trash2 size={15} />
                 </button>
               </>
