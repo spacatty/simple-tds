@@ -75,6 +75,39 @@ Forgot the password:
 docker compose exec tds tds reset-password admin
 ```
 
+### Behind an existing web server (nginx, OpenResty, 1Panel)
+
+If something else already owns ports 80 and 443, publish the tracker on
+loopback and let that server proxy to it:
+
+```
+HTTP_BIND=127.0.0.1:8081
+HTTPS_BIND=127.0.0.1:8443
+```
+
+In the front server, proxy each tracker domain to `http://127.0.0.1:8081`,
+passing the original host and client address:
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:8081;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+Then in the panel:
+
+- Settings → Network → Trusted proxies: the address the front server connects
+  from. With Docker port publishing that is the bridge gateway, so
+  `172.16.0.0/12` (plus `127.0.0.1` if you run with host networking).
+- Each domain: TLS `proxy`, Real IP `X-Forwarded-For`.
+
+The front server issues the certificates in this setup, so each domain has to
+be added there as well, and TLS-fingerprint bot checks are unavailable.
+
 ## Users and sharing
 
 - **Admins** manage users (and can make other users admins), global settings,

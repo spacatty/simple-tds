@@ -17,9 +17,9 @@ services:
       TDS_FORCE_PANEL_IP: ${TDS_FORCE_PANEL_IP:-}
       TDS_PUBLIC_IP: ${TDS_PUBLIC_IP:-}
     ports:
-      - "80:80"
-      - "443:443"
-      - "${PANEL_PORT:-8080}:8080"
+      - "${HTTP_BIND:-80}:80"
+      - "${HTTPS_BIND:-443}:443"
+      - "${PANEL_BIND:-8080}:8080"
     # Lets the unprivileged process bind 80/443.
     sysctls:
       net.ipv4.ip_unprivileged_port_start: 0
