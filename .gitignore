@@ -3,3 +3,4 @@ web/node_modules/
 internal/web/ui/dist/
 /tds
 /tds.exe
+.dev/

@@ -1,0 +1,11 @@
+# Environment for running the server on the host against dev/docker-compose.yml.
+TDS_DATA_DIR=.dev/data
+TDS_POSTGRES_DSN=postgres://tds:tds@127.0.0.1:15432/tds
+TDS_CLICKHOUSE_ADDR=127.0.0.1:19000
+TDS_PHP_FCGI=127.0.0.1:19100
+TDS_PHP_ROOT=/data/whitepages
+TDS_HTTP_ADDR=127.0.0.1:18081
+TDS_HTTPS_ADDR=127.0.0.1:18443
+TDS_PANEL_ADDR=127.0.0.1:18080
+TDS_ADMIN_USER=admin
+TDS_ADMIN_PASSWORD=dev-password-123

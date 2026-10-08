@@ -11,10 +11,13 @@ export default defineConfig({
     emptyOutDir: true,
     chunkSizeWarningLimit: 1200,
   },
+  // `npm run dev` serves the panel with hot reload and forwards API calls to
+  // the server started by dev/run.sh (see dev/env for its ports).
   server: {
+    port: 5173,
     proxy: {
-      '/api': 'http://localhost:8080',
-      '/preview': 'http://localhost:8080',
+      '/api': process.env.TDS_DEV_PANEL || 'http://127.0.0.1:18080',
+      '/preview': process.env.TDS_DEV_PANEL || 'http://127.0.0.1:18080',
     },
   },
 })

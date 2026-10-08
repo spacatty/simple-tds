@@ -1,0 +1,32 @@
+# Development dependencies only: the server and the panel run on your machine
+# (see README → Development). Data lives in ../.dev and in dev-only volumes.
+name: simple-tds-dev
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment: { POSTGRES_USER: tds, POSTGRES_PASSWORD: tds, POSTGRES_DB: tds }
+    ports: ["127.0.0.1:15432:5432"]
+    volumes: [postgres:/var/lib/postgresql/data]
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8-alpine
+    environment:
+      CLICKHOUSE_DB: tds
+      CLICKHOUSE_USER: tds
+      CLICKHOUSE_PASSWORD: tds
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    ports: ["127.0.0.1:19000:9000"]
+    volumes:
+      - clickhouse:/var/lib/clickhouse
+      - ../deploy/clickhouse/tds.xml:/etc/clickhouse-server/config.d/tds.xml:ro
+
+  php:
+    build: ../deploy/php
+    ports: ["127.0.0.1:19100:9000"]
+    volumes:
+      - ../.dev/data/whitepages:/data/whitepages:ro
+
+volumes:
+  postgres:
+  clickhouse:

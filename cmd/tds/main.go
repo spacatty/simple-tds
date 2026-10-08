@@ -36,6 +36,14 @@ func env(key, def string) string {
 	return def
 }
 
+// addr reads a listen address; "off" disables that listener.
+func addr(key, def string) string {
+	if v := env(key, def); v != "off" {
+		return v
+	}
+	return ""
+}
+
 func randomString(n int) string {
 	b := make([]byte, n)
 	rand.Read(b)
@@ -136,14 +144,14 @@ func run() error {
 	g := geo.New(filepath.Join(dataDir, "geo"))
 	lists := antibot.NewLists(st, filepath.Join(dataDir, "lists"))
 	eng := engine.New(st, ev, g, antibot.NewDetector(lists), secret)
-	pages := whitepage.New(env("TDS_WHITEPAGE_DIR", filepath.Join(dataDir, "whitepages")), os.Getenv("TDS_PHP_FCGI"))
+	pages := whitepage.New(env("TDS_WHITEPAGE_DIR", filepath.Join(dataDir, "whitepages")), os.Getenv("TDS_PHP_FCGI"), os.Getenv("TDS_PHP_ROOT"))
 	eng.Pages = pages
 	if err := eng.Reload(ctx); err != nil {
 		return err
 	}
 
 	srv, err := web.New(web.Config{
-		HTTPAddr: env("TDS_HTTP_ADDR", ":80"), HTTPSAddr: env("TDS_HTTPS_ADDR", ":443"), PanelAddr: env("TDS_PANEL_ADDR", ":8080"),
+		HTTPAddr: addr("TDS_HTTP_ADDR", ":80"), HTTPSAddr: addr("TDS_HTTPS_ADDR", ":443"), PanelAddr: addr("TDS_PANEL_ADDR", ":8080"),
 		DataDir: dataDir, Secret: secret, ForcePanelIP: os.Getenv("TDS_FORCE_PANEL_IP") == "1",
 	}, st, ev, eng, g, lists, pages)
 	if err != nil {

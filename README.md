@@ -260,3 +260,41 @@ in `docker-compose.yml`.
   through something that NATs (Docker Desktop, some IPv6 setups), run the
   `tds` service with `network_mode: host` or put a PROXY-protocol balancer in
   front.
+
+## Development
+
+No image rebuilds while working on the code. Only the databases and the PHP
+sandbox run in Docker; the server and the panel run from source.
+
+```bash
+go run ./dev
+```
+
+starts the dependencies ([dev/docker-compose.yml](dev/docker-compose.yml)),
+builds and runs the server, and rebuilds and restarts it in about a second
+whenever a `.go` file changes. Settings are in [dev/env](dev/env); a variable
+set in your shell overrides the file for that run.
+
+```bash
+cd web && npm install && npm run dev
+```
+
+serves the panel at http://localhost:5173 with hot reload, forwarding API
+calls to the dev server.
+
+| | |
+|---|---|
+| Panel (hot reload) | http://localhost:5173 |
+| Panel (as built into the binary) | http://127.0.0.1:18080 |
+| Traffic | http://127.0.0.1:18081 — send a `Host:` header for the domain |
+| Login | `admin` / `dev-password-123` |
+| Data | `.dev/` and the `simple-tds-dev` Docker volumes |
+
+Campaign links are tested with a host header, no DNS needed:
+
+```bash
+curl -i -H "Host: test.local" http://127.0.0.1:18081/<alias>
+```
+
+Run `go test ./...` for the unit tests. Build the real image
+(`docker compose up -d --build`) only to check packaging.

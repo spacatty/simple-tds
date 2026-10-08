@@ -3,3 +3,5 @@
 web/node_modules
 internal/web/ui/dist
 *.md
+.dev
+dev

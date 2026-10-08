@@ -32,13 +32,20 @@ const (
 )
 
 type Manager struct {
-	Dir      string // whitepage root; must be the same path inside the PHP container
+	Dir      string // whitepage root on this machine
 	FCGIAddr string // php-fpm address, empty when PHP is not available
+	// PHPDir is the path of Dir as the PHP runtime sees it. It equals Dir in
+	// the container deployment and differs when the server runs on the host
+	// with PHP in a container.
+	PHPDir string
 }
 
-func New(dir, fcgiAddr string) *Manager {
+func New(dir, fcgiAddr, phpDir string) *Manager {
 	os.MkdirAll(dir, 0o755)
-	return &Manager{Dir: dir, FCGIAddr: fcgiAddr}
+	if phpDir == "" {
+		phpDir = filepath.ToSlash(dir)
+	}
+	return &Manager{Dir: dir, FCGIAddr: fcgiAddr, PHPDir: strings.TrimRight(phpDir, "/")}
 }
 
 func (m *Manager) root(id int64) string { return filepath.Join(m.Dir, strconv.FormatInt(id, 10)) }
@@ -243,8 +250,13 @@ func (m *Manager) runPHP(ctx context.Context, wp *model.Whitepage, file string, 
 		// Never fall through to serving PHP source as a static file.
 		return 0, nil, nil, errNotFound
 	}
-	root := filepath.ToSlash(m.root(wp.ID))
-	script := filepath.ToSlash(file)
+	// Translate local paths into the PHP runtime's view of the same files.
+	rel, err := filepath.Rel(m.root(wp.ID), file)
+	if err != nil {
+		return 0, nil, nil, errNotFound
+	}
+	root := m.PHPDir + "/" + strconv.FormatInt(wp.ID, 10)
+	script := root + "/" + filepath.ToSlash(rel)
 	https := ""
 	scheme := "http"
 	if req.Secure {
