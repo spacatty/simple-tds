@@ -28,6 +28,9 @@ type Query struct {
 	ClickID    string
 	Bots       string            // "" | only | exclude
 	Params     map[string]string // conversion postback params, exact match
+	// Dims narrows to exact values of report dimensions ("os" → "Android"),
+	// which is what drilling into a report row does.
+	Dims map[string]string
 	// Scoped limits results to Campaigns (and, for conversions, to events
 	// received through Keys). Unset means unrestricted.
 	Scoped    bool
@@ -42,6 +45,10 @@ type dim struct {
 	clicks, convs bool
 	timeline      bool
 }
+
+// filterable reports whether rows can be narrowed to one value of the
+// dimension (drill-down): true for dimensions that are a plain column.
+func (d dim) filterable() bool { return !d.timeline && !strings.ContainsAny(d.expr, "('") }
 
 var dims = map[string]dim{
 	"total":       {"'total'", true, true, false},
@@ -69,6 +76,18 @@ var dims = map[string]dim{
 	"bot_reason":  {"bot_reason", true, false, false},
 	"key":         {"toString(key_id)", false, true, false},
 	"type":        {"type", false, true, false},
+}
+
+// FilterableDimensions lists the dimensions that accept an f.<name> filter.
+func FilterableDimensions() []string {
+	out := []string{}
+	for k, d := range dims {
+		if d.filterable() {
+			out = append(out, k)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Dimensions lists the report groupings, for the panel.
@@ -148,8 +167,26 @@ func idList(ids []uint32) string {
 	return strings.Join(parts, ",")
 }
 
+// drill applies the dimension filters. A dimension the table does not have
+// cannot match anything there: filtering clicks by conversion type must not
+// leave the click totals unfiltered next to it.
+func (q *Query) drill(w *where, clicks bool) {
+	for name, val := range q.Dims {
+		d, ok := dims[name]
+		if !ok || !d.filterable() {
+			continue
+		}
+		if (clicks && !d.clicks) || (!clicks && !d.convs) {
+			w.add("0")
+			continue
+		}
+		w.add(d.expr+" = ?", val)
+	}
+}
+
 func (q *Query) clickWhere() *where {
 	w := q.base()
+	q.drill(w, true)
 	if q.Scoped {
 		w.add("campaign_id IN (" + idList(q.Campaigns) + ")")
 	}
@@ -167,6 +204,7 @@ func (q *Query) clickWhere() *where {
 
 func (q *Query) convWhere() *where {
 	w := q.base()
+	q.drill(w, false)
 	if q.Scoped {
 		w.add("(campaign_id IN (" + idList(q.Campaigns) + ") OR key_id IN (" + idList(q.Keys) + "))")
 	}

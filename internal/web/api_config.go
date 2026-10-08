@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -15,6 +16,7 @@ import (
 	"golang.org/x/net/idna"
 
 	"simpletds/internal/antibot"
+	"simpletds/internal/engine"
 	"simpletds/internal/model"
 	"simpletds/internal/store"
 )
@@ -32,6 +34,8 @@ type resource[T any] struct {
 	canDelete func(ctx context.Context, old *T) error
 	// changed runs after any successful change.
 	changed func(ctx context.Context, id int64, deleted bool)
+	// created runs once after a row is inserted, before the reload.
+	created func(ctx context.Context, v *T)
 	// adminOnly: admins only, even for reading. adminWrite: anyone reads
 	// (see public), admins change.
 	adminOnly, adminWrite bool
@@ -109,6 +113,9 @@ func mount[T any](s *Server, r chi.Router, path string, res resource[T]) {
 		}
 		if err := store.Insert(ctx, s.st, res.table, &v); err != nil {
 			return nil, err
+		}
+		if res.created != nil {
+			res.created(ctx, &v)
 		}
 		return &v, after(ctx, idOf(&v), false)
 	}))
@@ -190,6 +197,8 @@ func idOf(v any) int64 {
 		return t.ID
 	case *model.ConvKey:
 		return t.ID
+	case *model.StreamPreset:
+		return t.ID
 	case *model.GeoPreset:
 		return t.ID
 	case *model.IPList:
@@ -210,8 +219,7 @@ func oneOf(v string, allowed ...string) bool {
 }
 
 var (
-	reHost  = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$`)
-	reAlias = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+	reHost = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$`)
 )
 
 // normalizeDomain accepts what people paste: URLs, upper case, IDN, trailing dots.
@@ -228,6 +236,109 @@ func normalizeDomain(raw string) (string, error) {
 		return "", fmt.Errorf("%q is not a valid domain name", strings.TrimSpace(raw))
 	}
 	return ascii, nil
+}
+
+// newAlias returns a 33-character random campaign alias that starts with a
+// letter or digit.
+func newAlias() string {
+	for {
+		a := randToken(25)[:33]
+		if c := a[0]; c != '-' && c != '_' {
+			return a
+		}
+	}
+}
+
+// Filters of the stream every new campaign starts with: anything that looks
+// automated, repeated or off-target is stopped before the real streams.
+var junkFilters = []model.Filter{
+	{Type: "bot", Mode: "is", Values: []string{}},
+	{Type: "unique", Mode: "is_not", Values: []string{}},
+	{Type: "empty_referer", Mode: "is", Values: []string{}},
+	{Type: "datacenter", Mode: "is", Values: []string{}},
+	{Type: "empty_language", Mode: "is", Values: []string{}},
+	{Type: "device_type", Mode: "is_not", Values: []string{"desktop"}},
+}
+
+var stop404 = json.RawMessage(`{"code":404}`)
+
+// builtinPresets are offered next to the user's own presets.
+var builtinPresets = []model.StreamPreset{
+	{Name: "Strict traffic filter", Kind: "filters", Builtin: true,
+		Data: mustMarshal(map[string]any{"filter_op": "or", "filters": junkFilters})},
+	{Name: "Bots and datacenters only", Kind: "filters", Builtin: true,
+		Data: mustMarshal(map[string]any{"filter_op": "or", "filters": []model.Filter{junkFilters[0], junkFilters[3]}})},
+	{Name: "Stop (404)", Kind: "action", Builtin: true,
+		Data: mustMarshal(map[string]any{"action_type": "status", "action_config": stop404})},
+}
+
+// seedStreams gives a new campaign a working funnel to edit: a forced filter
+// stream and a fallback, both answering 404 until pointed at a whitepage.
+func (s *Server) seedStreams(ctx context.Context, c *model.Campaign) {
+	for i, st := range []model.Stream{
+		{Name: "Traffic filter", Kind: model.StreamForced, FilterOp: "or", Filters: junkFilters},
+		{Name: "Fallback", Kind: model.StreamDefault, FilterOp: "and", Filters: []model.Filter{}},
+	} {
+		st.CampaignID, st.Position, st.Weight, st.Enabled = c.ID, i, 100, true
+		st.ActionType, st.ActionConfig = "status", stop404
+		if err := store.Insert(ctx, s.st, "streams", &st); err != nil {
+			slog.Warn("default stream not created", "campaign", c.Name, "err", err)
+		}
+	}
+}
+
+func (s *Server) validatePreset(_ context.Context, p *model.StreamPreset, _ *model.StreamPreset) error {
+	if p.Name = strings.TrimSpace(p.Name); p.Name == "" {
+		return bad("name is required")
+	}
+	switch p.Kind {
+	case "filters":
+		var d struct {
+			FilterOp string         `json:"filter_op"`
+			Filters  []model.Filter `json:"filters"`
+		}
+		if json.Unmarshal(p.Data, &d) != nil || len(d.Filters) == 0 {
+			return bad("a filter preset needs at least one filter")
+		}
+		if !oneOf(d.FilterOp, "and", "or") {
+			d.FilterOp = "and"
+		}
+		if err := engine.ValidateFilters(d.Filters); err != nil {
+			return bad(err.Error())
+		}
+		p.Data = mustMarshal(d)
+	case "action":
+		var d struct {
+			ActionType   string          `json:"action_type"`
+			ActionConfig json.RawMessage `json:"action_config"`
+		}
+		if json.Unmarshal(p.Data, &d) != nil || d.ActionType == "" {
+			return bad("an action preset needs an action")
+		}
+		if err := s.eng.ValidateStream(&model.Stream{ActionType: d.ActionType, ActionConfig: d.ActionConfig}); err != nil {
+			return bad(err.Error())
+		}
+		p.Data = mustMarshal(d)
+	default:
+		return bad("kind must be filters or action")
+	}
+	return nil
+}
+
+// campaignNewAlias replaces a campaign's public link. The old one stops
+// working immediately.
+func (s *Server) campaignNewAlias(r *http.Request) (any, error) {
+	c, err := s.campaign(r.Context(), pathID(r), model.AccessEdit)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.st.Pool.Exec(r.Context(), "UPDATE campaigns SET alias=$2 WHERE id=$1", c.ID, newAlias()); err != nil {
+		return nil, err
+	}
+	if err := s.reload(r.Context()); err != nil {
+		return nil, err
+	}
+	return store.Get[model.Campaign](r.Context(), s.st, "campaigns", c.ID)
 }
 
 // wouldLockOut reports whether, with ip:port access off, removing the given
@@ -306,15 +417,12 @@ func (s *Server) validateCampaign(_ context.Context, c *model.Campaign, old *mod
 	if c.Name == "" {
 		return bad("name is required")
 	}
-	if c.Alias == "" {
-		c.Alias = strings.ToLower(randToken(6))
-	}
-	if !reAlias.MatchString(c.Alias) {
-		return bad("alias may contain only letters, digits, - and _")
-	}
-	reserved := append([]string{s.eng.Snap().Settings.AdminPath}, ReservedAliases...)
-	if oneOf(strings.ToLower(c.Alias), reserved...) {
-		return bad("this alias is reserved")
+	// The alias is the public campaign link. It is always generated, so it
+	// cannot be guessed or enumerated; use "regenerate" to replace it.
+	if old == nil {
+		c.Alias = newAlias()
+	} else {
+		c.Alias = old.Alias
 	}
 	if c.Rotation == "" {
 		c.Rotation = "position"
@@ -557,12 +665,14 @@ func (s *Server) routes(r chi.Router) {
 		return err
 	}
 	mount(s, r, "/campaigns", resource[model.Campaign]{table: "campaigns", order: "id DESC", validate: s.validateCampaign,
-		visible: s.visibleCampaigns, writable: editable,
+		visible: s.visibleCampaigns, writable: editable, created: s.seedStreams,
 		deletable: func(ctx context.Context, c *model.Campaign) error {
 			_, err := s.campaign(ctx, c.ID, model.AccessOwner)
 			return err
 		}})
 	r.Post("/campaigns/{id}/clone", handler(s.campaignClone))
+	r.Post("/campaigns/{id}/alias", handler(s.campaignNewAlias))
+	mount(s, r, "/stream-presets", resource[model.StreamPreset]{table: "stream_presets", order: "kind, name", validate: s.validatePreset})
 	r.Get("/campaigns/{id}/streams", handler(s.campaignStreams))
 	r.Put("/campaigns/{id}/streams/order", handler(s.streamsReorder))
 	r.Get("/campaigns/{id}/integration", handler(s.campaignIntegration))
@@ -836,7 +946,7 @@ func (s *Server) campaignClone(r *http.Request) (any, error) {
 		return nil, err
 	}
 	c := *src
-	c.Name, c.Alias, c.Token = src.Name+" (copy)", strings.ToLower(randToken(6)), randToken(24)
+	c.Name, c.Alias, c.Token = src.Name+" (copy)", newAlias(), randToken(24)
 	c.OwnerID = currentUser(r).ID // the copy belongs to whoever made it
 	if err := store.Insert(ctx, s.st, "campaigns", &c); err != nil {
 		return nil, err

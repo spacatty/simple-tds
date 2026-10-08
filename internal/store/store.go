@@ -127,10 +127,13 @@ CREATE TABLE IF NOT EXISTS campaign_shares (
   user_id bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   access text NOT NULL,
   PRIMARY KEY (campaign_id, user_id));
+CREATE TABLE IF NOT EXISTS stream_presets (
+  id bigserial PRIMARY KEY, owner_id bigint REFERENCES users(id), name text NOT NULL,
+  kind text NOT NULL, data jsonb NOT NULL DEFAULT '{}');
 `
 
 // OwnedTables are the tables whose rows belong to a user.
-var OwnedTables = []string{"campaigns", "domains", "domain_groups", "whitepages", "conv_keys"}
+var OwnedTables = []string{"campaigns", "domains", "domain_groups", "whitepages", "conv_keys", "stream_presets"}
 
 // AdoptOrphans makes sure there is an admin and that every row has an owner.
 // Installations that predate multi-user support had neither.

@@ -168,6 +168,24 @@ type Stream struct {
 	Note         string          `db:"note" json:"note"`
 }
 
+// StreamPreset is a saved set of stream filters, or a saved action, that a
+// user can apply to a stream in one click.
+//
+// Data is {"filter_op","filters"} for kind "filters" and
+// {"action_type","action_config"} for kind "action".
+type StreamPreset struct {
+	ID      int64           `db:"id" json:"id"`
+	OwnerID int64           `db:"owner_id" json:"owner_id"`
+	Name    string          `db:"name" json:"name"`
+	Kind    string          `db:"kind" json:"kind"`
+	Data    json.RawMessage `db:"data" json:"data"`
+	// Builtin presets ship with the app and cannot be changed.
+	Builtin bool `db:"-" json:"builtin,omitempty"`
+}
+
+func (p *StreamPreset) Owner() int64      { return p.OwnerID }
+func (p *StreamPreset) SetOwner(id int64) { p.OwnerID = id }
+
 type Whitepage struct {
 	ID         int64     `db:"id" json:"id"`
 	OwnerID    int64     `db:"owner_id" json:"owner_id"`

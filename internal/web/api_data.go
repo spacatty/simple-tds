@@ -320,7 +320,7 @@ func parseTime(v string) (time.Time, error) {
 func parseQuery(r *http.Request) (events.Query, error) {
 	v := r.URL.Query()
 	q := events.Query{TZ: v.Get("tz"), Country: strings.ToUpper(v.Get("country")), Domain: v.Get("domain"), Type: v.Get("type"),
-		IP: v.Get("ip"), ClickID: v.Get("click_id"), Bots: v.Get("bots"), Params: map[string]string{}}
+		IP: v.Get("ip"), ClickID: v.Get("click_id"), Bots: v.Get("bots"), Params: map[string]string{}, Dims: map[string]string{}}
 	var err error
 	if q.From, err = parseTime(v.Get("from")); err != nil {
 		return q, bad("bad from")
@@ -338,6 +338,10 @@ func parseQuery(r *http.Request) (events.Query, error) {
 	for k, vals := range v {
 		if name, ok := strings.CutPrefix(k, "p."); ok && name != "" && len(vals) > 0 && vals[0] != "" {
 			q.Params[name] = vals[0]
+		}
+		// f.<dimension>=<value>; an empty value is a real filter ("no country").
+		if name, ok := strings.CutPrefix(k, "f."); ok && name != "" && len(vals) > 0 {
+			q.Dims[name] = vals[0]
 		}
 	}
 	return q, nil
@@ -459,6 +463,8 @@ func (s *Server) meta(*http.Request) (any, error) {
 		"conversion_types":    model.ConversionTypes,
 		"cost_models":         model.CostModels,
 		"report_groups":       events.Dimensions(),
+		"report_filters":      events.FilterableDimensions(),
+		"stream_presets":      builtinPresets,
 		"integration_presets": integrationPresets,
 		"postback_path":       postbackPath,
 		"reserved_aliases":    ReservedAliases,

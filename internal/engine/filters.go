@@ -108,6 +108,9 @@ var filterDefs = []FilterDef{
 		build: flag(func(v *Visit) bool { return v.Unique })},
 	{Type: "empty_referer", Label: "Empty referrer", Group: "Traffic quality", Input: "none",
 		build: flag(func(v *Visit) bool { return v.Referer == "" })},
+	{Type: "empty_language", Label: "Empty browser language", Group: "Traffic quality", Input: "none",
+		Help:  "No Accept-Language header: typical for scripts and crawlers",
+		build: flag(func(v *Visit) bool { return v.Lang == "" })},
 	{Type: "ipv6", Label: "IPv6", Group: "Network", Input: "none",
 		build: flag(func(v *Visit) bool { return v.IP.Is6() && !v.IP.Is4In6() })},
 
