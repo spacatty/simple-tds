@@ -4,7 +4,7 @@ import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-r
 import { ArrowLeft, Copy, Download, MoreHorizontal, RefreshCw, Save, Trash2 } from 'lucide-react'
 import { del, errMsg, get, post, put } from '../api'
 import { canEdit, canRead, isOwner, useLoad, useMeta, useTitle } from '../hooks'
-import type { Campaign, Domain, GeoPreset, IntegrationSnippets, Whitepage } from '../types'
+import type { Campaign, CampaignGroup, Domain, GeoPreset, IntegrationSnippets, Whitepage } from '../types'
 import { Card, CodeBlock, CopyButton, Dropdown, ErrorBox, Field, MenuItem, Notice, NumberInput, Segmented, Select, Skeleton, Toggle, confirmDialog, toast } from '../components/ui'
 import { useDateRange } from '../components/DateRangePicker'
 import StreamFunnel from './StreamFunnel'
@@ -35,8 +35,9 @@ interface Form {
   currency: string
   unique_hours: number | ''
   note: string
+  group_id: number | null
 }
-const formOf = (c: Campaign): Form => ({ name: c.name, rotation: c.rotation, cost_model: c.cost_model, cost_value: c.cost_value, currency: c.currency, unique_hours: c.unique_hours, note: c.note })
+const formOf = (c: Campaign): Form => ({ name: c.name, rotation: c.rotation, cost_model: c.cost_model, cost_value: c.cost_value, currency: c.currency, unique_hours: c.unique_hours, note: c.note, group_id: c.group_id ?? null })
 
 export default function CampaignEditor() {
   const params = useParams()
@@ -49,6 +50,7 @@ export default function CampaignEditor() {
   const wps = useLoad(() => get<Whitepage[]>('whitepages'), [])
   const presets = useLoad(() => get<GeoPreset[]>('geo-presets'), [])
   const domains = useLoad(() => get<Domain[]>('domains'), [])
+  const groups = useLoad(() => get<CampaignGroup[] | null>('campaign-groups'), [])
   const [range, setRange] = useDateRange()
 
   const campaign = camps.data?.find((c) => c.id === id)
@@ -102,6 +104,8 @@ export default function CampaignEditor() {
         currency: form.currency.trim().toUpperCase(),
         unique_hours: form.unique_hours === '' ? 24 : form.unique_hours,
         note: form.note,
+        // The group decides who sees the campaign: only its owner may change it.
+        ...(owner ? { group_id: form.group_id } : {}),
       })
       update(c)
       setForm(formOf(c))
@@ -306,7 +310,7 @@ export default function CampaignEditor() {
         {tab === 'settings' && (
           <div className="ce-form">
             <Card title={t('Campaign settings')}>
-              <SettingsForm form={form} setForm={setForm} campaign={campaign} readOnly={!editable} error={formError} setEnabled={setEnabled} />
+              <SettingsForm form={form} setForm={setForm} campaign={campaign} readOnly={!editable} error={formError} setEnabled={setEnabled} groups={(groups.data ?? []).filter((g) => g.owner_id === campaign.owner_id)} owner={owner} />
               {editable && (
                 <div className="form-actions">
                   <button className="btn primary" disabled={saving || !dirty || !form.name.trim()} onClick={save}>
@@ -383,7 +387,7 @@ export default function CampaignEditor() {
   )
 }
 
-function SettingsForm({ form: f, setForm, campaign, readOnly, error, setEnabled }: { form: Form; setForm: (f: Form) => void; campaign: Campaign; readOnly: boolean; error: string; setEnabled: (v: boolean) => void }) {
+function SettingsForm({ form: f, setForm, campaign, readOnly, error, setEnabled, groups, owner }: { form: Form; setForm: (f: Form) => void; campaign: Campaign; readOnly: boolean; error: string; setEnabled: (v: boolean) => void; groups: CampaignGroup[]; owner: boolean }) {
   const meta = useMeta()
   const set = (patch: Partial<Form>) => setForm({ ...f, ...patch })
   const costHelp: Record<string, string> = {
@@ -427,6 +431,16 @@ function SettingsForm({ form: f, setForm, campaign, readOnly, error, setEnabled 
       <Field label={t('Uniqueness window, hours')} help={t('A visitor (IP + User-Agent) counts as unique once per this period.')}>
         <NumberInput value={f.unique_hours} min={1} onChange={(unique_hours) => set({ unique_hours })} />
       </Field>
+      {(owner || f.group_id !== null) && (
+        <Field label={t('Group')} help={owner ? t('A folder for your campaigns. Everyone a group is shared with gets this campaign too. Groups are managed on the Campaigns page.') : t('Only the owner can move the campaign to another group.')}>
+          <Select
+            value={f.group_id === null ? '' : String(f.group_id)}
+            disabled={!owner}
+            onChange={(v) => set({ group_id: v ? Number(v) : null })}
+            options={[{ value: '', label: t('No group') }, ...groups.map((g) => ({ value: String(g.id), label: g.name }))]}
+          />
+        </Field>
+      )}
       <Field label={t('Note')} className="span-2">
         <textarea className="input" rows={3} value={f.note} onChange={(e) => set({ note: e.target.value })} />
       </Field>

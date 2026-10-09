@@ -19,7 +19,8 @@ type Handler func(v *Visit) (*Result, error)
 type Field struct {
 	Name     string   `json:"name"`
 	Label    string   `json:"label"`
-	Type     string   `json:"type"` // text | textarea | code | number | select | bool | whitepage | campaign
+	Type     string   `json:"type"`           // text | textarea | code | number | select | bool | whitepage | campaign
+	Lang     string   `json:"lang,omitempty"` // code fields: html | javascript; without it the panel goes by content_type
 	Options  []string `json:"options,omitempty"`
 	Default  any      `json:"default,omitempty"`
 	Help     string   `json:"help,omitempty"`
@@ -84,6 +85,12 @@ func (v *Visit) expand(s string, esc bool) string {
 			break
 		}
 		name := s[i+1 : i+j]
+		// Braces nest in scripts and styles: only the innermost pair can be a macro.
+		if k := strings.LastIndexByte(name, '{'); k >= 0 {
+			b.WriteString(s[:i+1+k])
+			s = s[i+1+k:]
+			continue
+		}
 		val, ok := v.macro(name)
 		b.WriteString(s[:i])
 		switch {
@@ -194,7 +201,7 @@ func init() {
 		Type: "status", Label: "HTTP status (404)", Description: "Answer with an HTTP error, by default a plain 404 page.",
 		Fields: []Field{
 			{Name: "code", Label: "Status code", Type: "number", Default: 404},
-			{Name: "body", Label: "Body (optional)", Type: "code", Help: "Leave empty for a standard server error page."},
+			{Name: "body", Label: "Body (optional)", Type: "code", Lang: "html", Help: "Leave empty for a standard server error page."},
 		},
 		Build: func(cfg json.RawMessage, _ *Engine) (Handler, error) {
 			c := struct {
@@ -239,6 +246,36 @@ func init() {
 				if c.ContentType == "application/javascript" {
 					r.Script = r.Body
 				}
+				return r, nil
+			}, nil
+		},
+	})
+
+	RegisterAction(ActionDef{
+		Type: "js", Label: "Show JavaScript", Description: "Run the given JavaScript in the visitor's browser. Macros like {country} are substituted.",
+		Fields: []Field{
+			{Name: "code", Label: "JavaScript", Type: "code", Lang: "javascript", Required: true},
+			{Name: "mode", Label: "Deliver as", Type: "select", Default: "html", Options: []string{"html", "script"},
+				Help: "html wraps the code in a page; script returns raw JavaScript for use in a <script src>."},
+		},
+		Build: func(cfg json.RawMessage, _ *Engine) (Handler, error) {
+			c := struct {
+				Code string `json:"code"`
+				Mode string `json:"mode"`
+			}{Mode: "html"}
+			if err := decode(cfg, &c); err != nil {
+				return nil, err
+			}
+			if strings.TrimSpace(c.Code) == "" {
+				return nil, errors.New("JavaScript is required")
+			}
+			return func(v *Visit) (*Result, error) {
+				code := v.expand(c.Code, false)
+				if c.Mode == "script" {
+					return &Result{Status: http.StatusOK, ContentType: "application/javascript; charset=utf-8", Body: []byte(code), Script: []byte(code)}, nil
+				}
+				r := htmlResult(scriptPage(code))
+				r.Script = []byte(code)
 				return r, nil
 			}, nil
 		},
@@ -377,6 +414,13 @@ func init() {
 			}, nil
 		},
 	})
+}
+
+// scriptPage is a bare HTML page that runs code.
+func scriptPage(code string) string {
+	// Keep the code from closing its own <script> element.
+	safe := strings.ReplaceAll(code, "</script", `<\/script`)
+	return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><script>` + safe + `</script></body></html>`
 }
 
 // jsString encodes s as a JavaScript string literal safe inside <script>.

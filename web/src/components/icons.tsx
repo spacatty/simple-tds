@@ -30,6 +30,17 @@ export function Country({ code, show = 'name', empty = '—' }: { code: string; 
   )
 }
 
+/** A funnel drawn as a chart of narrowing steps: the stock funnel glyph reads as "filter". */
+export function FunnelIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth={1.5} strokeLinejoin="round" aria-hidden="true">
+      <path d="M2.5 3.5h19l-2.5 4.5H5z" />
+      <path d="M6.5 10.5h11L15 15H9z" />
+      <path d="M10 17.5h4v3.5h-4z" />
+    </svg>
+  )
+}
+
 const DEVICES: Record<string, LucideIcon> = { desktop: Monitor, mobile: Smartphone, tablet: Tablet, tv: Tv, bot: Bot }
 
 export function DeviceIcon({ type, size = 14 }: { type: string; size?: number }) {

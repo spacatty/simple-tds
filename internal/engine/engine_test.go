@@ -113,6 +113,11 @@ func TestMacroExpansion(t *testing.T) {
 		t.Errorf("got  %s\nwant %s", got, want)
 	}
 
+	// Code is full of braces of its own; a macro inside a block still expands.
+	if got, want := v.expand("if(a){go('{country}',{x:1})}else{}", false), "if(a){go('RU',{x:1})}else{}"; got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+
 	// {event:STAGE} exists only for the campaign's browser stages.
 	v.Domain, v.Secure = "t.example", true
 	v.Campaign.Stages = []model.Stage{{Key: "lp_click", Public: true}, {Key: "deposit", Goal: true}}

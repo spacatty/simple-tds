@@ -135,6 +135,16 @@ be added there as well, and TLS-fingerprint bot checks are unavailable.
 
   Only the owner (or an admin) can share or delete a campaign. Domains,
   whitepages and keys are not shareable.
+- Campaigns can be filed into **groups** (Campaigns → Groups) and a group can
+  be shared at the same three levels: the share then covers every campaign in
+  the group, including the ones moved into it later. With both a group share
+  and a direct one, the higher level counts. A group holds only its owner's
+  campaigns, and only the owner moves campaigns in or out; deleting the group
+  or taking a campaign out of it ends that access at once.
+- **Dashboards** next to the built-in overview are personal: each user
+  composes their own from numbers, charts, top lists and pinned funnels
+  ("Pin" in any funnel drawer). They store only the layout — the figures come
+  from the reports and follow the same access rules.
 
 The separation also holds for traffic: a campaign link works only on domains
 of its owner (or of someone with edit access), and a postback key only
@@ -152,7 +162,7 @@ version keep working: the existing account becomes admin and owns everything.
 A campaign is reachable as `https://domain/<alias>` on every linked domain, and
 at `/` on domains that name it as their default campaign.
 
-Streams are evaluated top to bottom: **forced** → **regular** (by position, or
+Streams are evaluated top to bottom: **intercepting** → **regular** (by position, or
 by weight) → **default**. Each stream has filters (IS / IS NOT, combined with
 AND or OR) and one action:
 
@@ -160,12 +170,13 @@ AND or OR) and one action:
 |---|---|
 | HTTP status | 404 or any code |
 | Show text / HTML | inline content with macros |
+| Show JavaScript | inline script with macros, run in the visitor's browser: wrapped in a page, or raw for `<script src>` and the JS integration |
 | Redirect | 301/302/303/307, meta or JS |
 | Whitepage | an uploaded HTML or PHP page |
 | JavaScript from URL | fetches code from a partner endpoint; optional cache in minutes (stale copies are served while one background request refreshes them) |
 | Send to campaign | hand over to another campaign |
 
-Typical setup: a forced stream `Bot IS` → whitepage, regular streams by geo and
+Typical setup: an intercepting stream `Bot IS` → whitepage, regular streams by geo and
 device → offers, default stream → whitepage or 404.
 
 Integrations (Campaign → Integration): direct URL, a JS snippet for existing

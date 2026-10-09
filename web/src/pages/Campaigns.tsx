@@ -1,18 +1,21 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { BarChart3, Copy, Eye, MoreVertical, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { BarChart3, Check, Copy, Eye, Folder, FolderCog, MoreVertical, Pencil, Plus, RefreshCw, Trash2, Users } from 'lucide-react'
 import { del, get, post, put } from '../api'
 import { canEdit, canRead, isOwner, useLoad } from '../hooks'
-import type { Campaign, Domain, ReportRow, Stream } from '../types'
+import type { Campaign, CampaignGroup, Domain, ReportRow, Stream } from '../types'
 import { DataTable } from '../components/DataTable'
 import type { Column } from '../components/DataTable'
-import { Badge, CopyButton, Dropdown, Empty, ErrorBox, Field, MenuItem, Modal, PageHeader, SearchInput, Segmented, Skeleton, Toggle, confirmDialog, toast, useBusy } from '../components/ui'
+import { Badge, CopyButton, Dropdown, Empty, ErrorBox, Field, MenuItem, Modal, PageHeader, SearchInput, Segmented, Select, Skeleton, Toggle, confirmDialog, toast, useBusy } from '../components/ui'
 import { DateRangePicker, rangeLabel, useDateRange } from '../components/DateRangePicker'
 import { loadReport, sumRows } from '../reports'
 import { buildSearch } from '../filters'
 import { fmtInt, fmtMoney, fmtPct, ratioPct } from '../format'
 import { errMsg } from '../api'
 import { t, tn, tx } from '../i18n'
+import FunnelDrawer from './FunnelDrawer'
+import { GroupsModal, ownsGroup } from './CampaignGroups'
+import { FunnelIcon } from '../components/icons'
 
 export function costLabel(c: Campaign): string {
   if (c.cost_model === 'none') return '—'
@@ -50,6 +53,13 @@ export default function Campaigns() {
   const [q, setQ] = useState('')
   const [show, setShow] = useState<Show>('all')
   const [creating, setCreating] = useState(false)
+  const [funnelFor, setFunnelFor] = useState<Campaign | null>(null)
+  const groups = useLoad(() => get<CampaignGroup[] | null>('campaign-groups'), [])
+  // '' = every campaign, 'none' = the ungrouped ones, otherwise a group id.
+  const [groupFilter, setGroupFilter] = useState('')
+  const [managing, setManaging] = useState<{ shareId?: number } | null>(null)
+  const groupList = useMemo(() => groups.data ?? [], [groups.data])
+  const groupOf = (c: Campaign) => groupList.find((g) => g.id === c.group_id)
 
   const all = useMemo(() => list.data ?? [], [list.data])
   const stats = useMemo(() => new Map<string, ReportRow>((rep.data ?? []).map((r) => [r.key, r])), [rep.data])
@@ -71,8 +81,9 @@ export default function Campaigns() {
   const active = all.filter((c) => c.enabled).length
   const rows = useMemo(() => {
     const s = q.trim().toLowerCase()
-    return all.filter((c) => (show === 'all' || (show === 'active') === c.enabled) && (!s || c.name.toLowerCase().includes(s) || c.alias.toLowerCase() === s || (c.note ?? '').toLowerCase().includes(s)))
-  }, [all, q, show])
+    const inGroup = (c: Campaign) => groupFilter === '' || (groupFilter === 'none' ? !c.group_id : String(c.group_id ?? '') === groupFilter)
+    return all.filter((c) => inGroup(c) && (show === 'all' || (show === 'active') === c.enabled) && (!s || c.name.toLowerCase().includes(s) || c.alias.toLowerCase() === s || (c.note ?? '').toLowerCase().includes(s)))
+  }, [all, q, show, groupFilter])
 
   const setEnabled = async (c: Campaign, enabled: boolean) => {
     // The switch moves at once and goes back if the server refuses. Updating from the
@@ -83,6 +94,15 @@ export default function Campaigns() {
       await put(`campaigns/${c.id}`, { enabled })
     } catch (e) {
       apply(!enabled)
+      toast.err(e)
+    }
+  }
+  const moveTo = async (c: Campaign, g: CampaignGroup | null) => {
+    try {
+      await put(`campaigns/${c.id}`, { group_id: g ? g.id : null })
+      list.setData((d) => d?.map((x) => (x.id === c.id ? { ...x, group_id: g ? g.id : null } : x)))
+      toast.ok(g ? t('“{name}” moved to group “{group}”', { name: c.name, group: g.name }) : t('“{name}” removed from its group', { name: c.name }))
+    } catch (e) {
       toast.err(e)
     }
   }
@@ -140,6 +160,11 @@ export default function Campaigns() {
               {c.access && c.access !== 'owner' && c.owner_name && <span className="muted small">{t('by {name}@@owner', { name: c.owner_name })}</span>}
             </div>
             <div className="camp-meta">
+              {groupOf(c) && (
+                <button className="camp-group" onClick={() => setGroupFilter(String(c.group_id))} title={t('Show only this group')}>
+                  <Folder size={11} /> {groupOf(c)?.name}
+                </button>
+              )}
               <span className="camp-alias" title={h ? `https://${h}/${c.alias}` : c.alias}>
                 <code className="ellipsis">/{c.alias}</code>
                 <CopyButton text={h ? `https://${h}/${c.alias}` : c.alias} className="icon-btn" title={h ? t('Copy the campaign link') : t('Copy the link ID (no domain yet)')} />
@@ -147,7 +172,11 @@ export default function Campaigns() {
               {n !== undefined && <span>{tn(n, '{n} stream', '{n} streams')}</span>}
               <span>{c.rotation === 'weight' ? t('by weight') : t('by position')}</span>
               {c.cost_model !== 'none' && <span>{costLabel(c)}</span>}
-              {(c.stages ?? []).length > 0 && <span>{tn((c.stages ?? []).length, '{n}-stage funnel', '{n}-stage funnel')}</span>}
+              {(c.stages ?? []).length > 0 && (
+                <button className="camp-funnel" onClick={() => setFunnelFor(c)} title={t('Open the funnel of this campaign')}>
+                  <FunnelIcon size={11} /> {tn((c.stages ?? []).length, '{n}-stage funnel', '{n}-stage funnel')}
+                </button>
+              )}
             </div>
           </div>
         )
@@ -181,9 +210,12 @@ export default function Campaigns() {
       key: 'actions',
       title: '',
       align: 'right',
-      width: 96,
+      width: 124,
       render: (c) => (
         <div className="row-actions" onClick={(e) => e.stopPropagation()}>
+          <button className="icon-btn" onClick={() => setFunnelFor(c)} title={t('Funnel of this campaign')} aria-label={t('Funnel')}>
+            <FunnelIcon size={15} />
+          </button>
           <Link className="icon-btn" to={report(c)} title={t('Report for this campaign')}>
             <BarChart3 size={15} />
           </Link>
@@ -207,6 +239,33 @@ export default function Campaigns() {
                   </MenuItem>
                   {isOwner(c) && (
                     <>
+                      <div className="menu-title">{t('Group')}</div>
+                      {groupList
+                        .filter((g) => g.owner_id === c.owner_id)
+                        .map((g) => (
+                          <MenuItem
+                            key={g.id}
+                            onClick={() => {
+                              close()
+                              if (g.id !== c.group_id) moveTo(c, g)
+                            }}
+                          >
+                            <Folder size={14} /> <span className="grow ellipsis">{g.name}</span>
+                            {g.id === c.group_id && <Check size={14} />}
+                          </MenuItem>
+                        ))}
+                      {c.group_id ? (
+                        <MenuItem
+                          onClick={() => {
+                            close()
+                            moveTo(c, null)
+                          }}
+                        >
+                          <span className="muted">{t('Remove from the group')}</span>
+                        </MenuItem>
+                      ) : (
+                        !groupList.some((g) => g.owner_id === c.owner_id) && <div className="muted pad-s small">{t('No groups yet — create one with “Groups” above the list.')}</div>
+                      )}
                       <div className="menu-sep" />
                       <MenuItem
                         danger
@@ -273,6 +332,26 @@ export default function Campaigns() {
               { value: 'paused', label: t('Paused {n}', { n: all.length - active }) },
             ]}
           />
+          {groupList.length > 0 && (
+            <Select
+              className="input-sm"
+              value={groupFilter}
+              onChange={setGroupFilter}
+              options={[
+                { value: '', label: t('All groups') },
+                ...groupList.map((g) => ({ value: String(g.id), label: `${g.name} (${all.filter((c) => c.group_id === g.id).length})` })),
+                { value: 'none', label: t('No group ({n})', { n: all.filter((c) => !c.group_id).length }) },
+              ]}
+            />
+          )}
+          {groupList.some((g) => String(g.id) === groupFilter && ownsGroup(g)) && (
+            <button className="btn small" onClick={() => setManaging({ shareId: Number(groupFilter) })} title={t('Choose who gets the campaigns of this group')}>
+              <Users size={13} /> {t('Share group')}
+            </button>
+          )}
+          <button className="btn small" onClick={() => setManaging({})} title={t('Create, rename, share and delete campaign groups')}>
+            <FolderCog size={13} /> {t('Groups')}
+          </button>
           <span className="muted small grow">{t('Statistics: {range}', { range: rangeLabel(range).toLowerCase() })}</span>
           <SearchInput value={q} onChange={setQ} placeholder={t('Search name, note or link ID…')} width={260} />
         </div>
@@ -284,12 +363,26 @@ export default function Campaigns() {
           defaultSort={{ key: 'clicks', dir: 'desc' }}
           rowClass={(c) => (c.enabled ? '' : 'camp-off')}
           empty={
-            <Empty title={q || show !== 'all' ? t('No campaigns match') : t('No campaigns yet')} action={!q && show === 'all' && <button className="btn primary" onClick={() => setCreating(true)}><Plus size={15} /> {t('Create the first campaign')}</button>}>
-              {!q && show === 'all' && t('Create a campaign, add streams with filters, and point a domain at it.')}
+            <Empty title={q || show !== 'all' || groupFilter ? t('No campaigns match') : t('No campaigns yet')} action={!q && show === 'all' && !groupFilter && <button className="btn primary" onClick={() => setCreating(true)}><Plus size={15} /> {t('Create the first campaign')}</button>}>
+              {!q && show === 'all' && !groupFilter && t('Create a campaign, add streams with filters, and point a domain at it.')}
             </Empty>
           }
         />
       </div>
+      {funnelFor && <FunnelDrawer campaign={funnelFor} range={range} setRange={setRange} onClose={() => setFunnelFor(null)} />}
+      {managing && (
+        <GroupsModal
+          groups={groupList}
+          campaigns={all}
+          shareId={managing.shareId}
+          onClose={() => setManaging(null)}
+          onChanged={() => {
+            groups.reload()
+            // Deleting a group ungroups its campaigns.
+            list.reload()
+          }}
+        />
+      )}
       {creating && <CreateCampaign onClose={() => setCreating(false)} onCreated={(c) => nav(`/campaigns/${c.id}`)} />}
     </div>
   )
@@ -332,7 +425,7 @@ function CreateCampaign({ onClose, onCreated }: { onClose: () => void; onCreated
           if (name.trim()) submit()
         }}
       >
-        <Field label={t('Name')} help={t('The campaign gets a random, unguessable link and starts with two streams you can edit: a forced “Traffic filter” that stops bots and off-target visitors, and a “Fallback”. Both answer 404 until you point them at a whitepage or an offer.')}>
+        <Field label={t('Name')} help={t('The campaign gets a random, unguessable link and starts with two streams you can edit: an intercepting “Traffic filter” that stops bots and off-target visitors, and a “Fallback”. Both answer 404 until you point them at a whitepage or an offer.')}>
           <input className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={t('FB · DE · sweepstakes')} />
         </Field>
         {error && <div className="field-error">{error}</div>}

@@ -65,8 +65,12 @@ cd web && npm install && npm run dev  # panel with hot reload at http://localhos
 - **Authorization is in the API layer, and runtime repeats it.** Rows belong
   to their creator (`model.Owned`); `mount` in `internal/web/api_config.go`
   enforces ownership by default. Campaign access goes through
-  `s.campaign(ctx, id, minAccess)`. Something a user may not see answers 404,
-  not 403. Report queries must pass through `s.scope`. At runtime a campaign
+  `s.campaign(ctx, id, minAccess)`. A campaign is reached by a direct share or
+  by a share on its group (`campaign_groups`; the higher level counts): both
+  come out of `Store.UserShares`, so go through `s.shareMap` rather than the
+  tables. A group only ever holds its owner's campaigns, and only the owner
+  moves a campaign between groups (`checkCampaignGroup`). Something a user may
+  not see answers 404, not 403. Report queries must pass through `s.scope`. At runtime a campaign
   only answers on domains, and converts through postback keys, of users who
   run it (`CampaignRT.UsableBy`). Any new endpoint or entity needs the same
   treatment.
@@ -85,8 +89,12 @@ cd web && npm install && npm run dev  # panel with hot reload at http://localhos
 - **The panel is served under a variable prefix** (`/` on ip:port,
   `/<admin path>/` on domains): UI URLs are relative, routing uses the hash,
   API calls go to `api/...` without a leading slash.
-- **Partial updates:** `PUT` decodes over the stored row (`readPatch`); maps
-  and lists present in the body replace the old value.
+- **Partial updates:** `PUT` decodes over the stored row (`readPatch`); maps,
+  lists and pointers present in the body replace the old value, so the stored
+  row stays intact for "did this field change" checks.
+- **Dashboards are personal** (`internal/web/api_dash.go`): a row is visible
+  to its owner only, admins included, and holds no data — widgets read the
+  reports, which apply the usual scope.
 - `internal/web/ui/dist` is build output and is not committed.
 
 ## Translations

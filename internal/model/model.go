@@ -56,12 +56,60 @@ func AccessName(a int) string {
 	return ""
 }
 
-// Share grants a user access to someone else's campaign.
+// Share grants a user access to someone else's campaign: directly, or through
+// the campaign group it is in.
 type Share struct {
 	CampaignID int64  `db:"campaign_id" json:"campaign_id"`
 	UserID     int64  `db:"user_id" json:"user_id"`
 	Access     string `db:"access" json:"access"`
 	Username   string `db:"username" json:"username"`
+}
+
+// CampaignGroup is a folder of its owner's campaigns. Sharing a group shares
+// every campaign in it, including the ones added later.
+type CampaignGroup struct {
+	ID      int64  `db:"id" json:"id"`
+	OwnerID int64  `db:"owner_id" json:"owner_id"`
+	Name    string `db:"name" json:"name"`
+	// Access and OwnerName describe the group from the viewer's side; they are
+	// filled in by the API, not stored.
+	Access    string `db:"-" json:"access,omitempty"`
+	OwnerName string `db:"-" json:"owner_name,omitempty"`
+}
+
+func (g *CampaignGroup) Owner() int64      { return g.OwnerID }
+func (g *CampaignGroup) SetOwner(id int64) { g.OwnerID = id }
+
+// GroupShare grants a user access to every campaign of someone else's group.
+type GroupShare struct {
+	GroupID  int64  `db:"group_id" json:"group_id"`
+	UserID   int64  `db:"user_id" json:"user_id"`
+	Access   string `db:"access" json:"access"`
+	Username string `db:"username" json:"username"`
+}
+
+// Dashboard is a user's own board of pinned widgets. It holds no data, only
+// what to show: the numbers come from the reports, with their access rules.
+type Dashboard struct {
+	ID        int64        `db:"id" json:"id"`
+	OwnerID   int64        `db:"owner_id" json:"owner_id"`
+	Name      string       `db:"name" json:"name"`
+	Position  int          `db:"position" json:"position"`
+	Widgets   []DashWidget `db:"widgets" json:"widgets"`
+	CreatedAt time.Time    `db:"created_at" json:"created_at"`
+}
+
+// DashWidget is one tile of a dashboard.
+type DashWidget struct {
+	ID    string `json:"id"`
+	Type  string `json:"type"` // stat | chart | funnel | top
+	Title string `json:"title,omitempty"`
+	// CampaignID and StreamID narrow the widget; zero means everything the viewer can see.
+	CampaignID int64  `json:"campaign_id,omitempty"`
+	StreamID   int64  `json:"stream_id,omitempty"`
+	Metric     string `json:"metric,omitempty"` // stat, chart
+	Dim        string `json:"dim,omitempty"`    // top
+	W          int    `json:"w"`                // width in twelfths of the board
 }
 
 // Owned is implemented by every per-user entity.
@@ -123,8 +171,10 @@ type Campaign struct {
 	OwnerID int64 `db:"owner_id" json:"owner_id"`
 	// Access and OwnerName describe the campaign from the viewer's side; they
 	// are filled in by the API, not stored.
-	Access      string    `db:"-" json:"access,omitempty"`
-	OwnerName   string    `db:"-" json:"owner_name,omitempty"`
+	Access    string `db:"-" json:"access,omitempty"`
+	OwnerName string `db:"-" json:"owner_name,omitempty"`
+	// GroupID is the owner's group the campaign is filed under, if any.
+	GroupID     *int64    `db:"group_id" json:"group_id"`
 	Name        string    `db:"name" json:"name"`
 	Alias       string    `db:"alias" json:"alias"`
 	Token       string    `db:"token" json:"token"` // secret for the PHP integration

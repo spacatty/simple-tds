@@ -229,9 +229,7 @@ func buildRemoteJS(cfg json.RawMessage, e *Engine) (Handler, error) {
 		if c.Mode == "script" {
 			return &Result{Status: http.StatusOK, ContentType: "application/javascript; charset=utf-8", Body: code, Script: code}, nil
 		}
-		// Keep the code from closing its own <script> element.
-		safe := strings.ReplaceAll(string(code), "</script", `<\/script`)
-		page := `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><script>` + safe + `</script></body></html>`
+		page := scriptPage(string(code))
 		return &Result{Status: http.StatusOK, ContentType: "text/html; charset=utf-8", Body: []byte(page), Script: code}, nil
 	}, nil
 }

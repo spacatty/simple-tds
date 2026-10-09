@@ -1,19 +1,22 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { Bot, RefreshCw } from 'lucide-react'
-import { get } from '../api'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { AlertTriangle, Bot, LayoutDashboard, Plus, RefreshCw } from 'lucide-react'
+import { get, post } from '../api'
 import { useInterval, useIsAdmin, useLoad, useMeta } from '../hooks'
-import type { Campaign, ReportRow, Row, Stream, SystemInfo } from '../types'
+import type { Board, Campaign, ReportRow, Row, Stream, SystemInfo } from '../types'
 import { DateRangePicker, rangeBuckets, useDateRange } from '../components/DateRangePicker'
 import type { DateRange } from '../components/DateRangePicker'
-import { BarList, TimeChart } from '../components/charts'
-import { Badge, Card, ErrorBox, PageHeader, Skeleton, Toggle } from '../components/ui'
+import { BarList, Spark, TimeChart } from '../components/charts'
+import { Badge, Card, ErrorBox, Field, Modal, PageHeader, Skeleton, Toggle, toast, useBusy } from '../components/ui'
 import { emptyRow, loadReport, rangeParams } from '../reports'
 import { buildSearch, paramFor } from '../filters'
-import { fmtAgo, fmtDateTime, fmtInt, fmtMoney, fmtPct, humanize, ratioPct } from '../format'
+import { fmtDateTime, fmtInt, fmtMoney, fmtPct, humanize, ratioPct } from '../format'
 import { Browser, BrowserIcon, Country, Device, DeviceIcon, Flag, Os, OsIcon } from '../components/icons'
 import { t, tn, ts } from '../i18n'
+import { errMsg } from '../api'
+import { BoardView } from './Boards'
+import { systemProblems } from './Status'
 
 interface DashData {
   total: ReportRow
@@ -27,6 +30,125 @@ interface DashData {
 
 export default function Dashboard() {
   const [range, setRange] = useDateRange()
+  const [sp, setSp] = useSearchParams()
+  const boards = useLoad(() => get<Board[] | null>('dashboards'), [])
+  const [tick, setTick] = useState(0)
+  const [creating, setCreating] = useState(false)
+  // The open dashboard lives in the address (?board=3), so reload and Back keep it.
+  const boardId = Number(sp.get('board')) || 0
+  const list = boards.data ?? []
+  const board = list.find((b) => b.id === boardId)
+  const open = (id: number) => setSp(id ? { board: String(id) } : {}, { replace: false })
+  // A dashboard that is gone (deleted in another tab) falls back to the overview.
+  useEffect(() => {
+    if (boardId && boards.data && !board) setSp({}, { replace: true })
+  }, [boardId, boards.data, board, setSp])
+  const setBoard = (b: Board) => boards.setData((all) => (all ?? []).map((x) => (x.id === b.id ? b : x)))
+
+  return (
+    <div className="page">
+      <PageHeader title={t('Dashboard')}>
+        <DateRangePicker value={range} onChange={setRange} />
+        <button className="btn" onClick={() => setTick((n) => n + 1)} title={t('Refresh')} aria-label={t('Refresh')}>
+          <RefreshCw size={14} />
+        </button>
+      </PageHeader>
+
+      <div className="dash-tabs" role="tablist">
+        <button role="tab" aria-selected={!board} className={!board ? 'active' : ''} onClick={() => open(0)}>
+          <LayoutDashboard size={14} /> {t('Overview')}
+        </button>
+        {list.map((b) => (
+          <button key={b.id} role="tab" aria-selected={b.id === board?.id} className={b.id === board?.id ? 'active' : ''} onClick={() => open(b.id)} title={b.name}>
+            <span className="ellipsis">{b.name}</span>
+          </button>
+        ))}
+        <button className="dash-tab-add" onClick={() => setCreating(true)} title={t('Compose a dashboard of your own from numbers, charts, top lists and funnels')}>
+          <Plus size={14} /> {t('New dashboard')}
+        </button>
+      </div>
+      <ErrorBox error={boards.error} retry={boards.reload} />
+
+      {board ? (
+        <BoardView
+          key={board.id}
+          board={board}
+          range={range}
+          setRange={setRange}
+          tick={tick}
+          onChange={setBoard}
+          onDeleted={() => {
+            boards.setData((all) => (all ?? []).filter((x) => x.id !== board.id))
+            open(0)
+          }}
+        />
+      ) : (
+        <Overview range={range} tick={tick} />
+      )}
+
+      {creating && (
+        <CreateBoard
+          onClose={() => setCreating(false)}
+          onCreated={(b) => {
+            boards.setData((all) => [...(all ?? []), b])
+            setCreating(false)
+            open(b.id)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function CreateBoard({ onClose, onCreated }: { onClose: () => void; onCreated: (b: Board) => void }) {
+  const [name, setName] = useState('')
+  const [error, setError] = useState('')
+  const [busy, run] = useBusy()
+  const submit = () =>
+    run(async () => {
+      setError('')
+      try {
+        const b = await post<Board>('dashboards', { name, widgets: [] })
+        toast.ok(t('Dashboard created'))
+        onCreated(b)
+      } catch (e) {
+        setError(errMsg(e))
+      }
+    })
+  return (
+    <Modal
+      title={t('New dashboard')}
+      size="sm"
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn" onClick={onClose}>
+            {t('Cancel')}
+          </button>
+          <button className="btn primary" disabled={busy || !name.trim()} onClick={submit}>
+            {t('Create')}
+          </button>
+        </>
+      }
+    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (name.trim()) submit()
+        }}
+      >
+        <Field label={t('Name')} help={t('A dashboard of your own: add numbers, charts and top lists, and pin funnels from any campaign. Only you see it.')}>
+          <input className="input" autoFocus value={name} maxLength={64} onChange={(e) => setName(e.target.value)} placeholder={t('e.g. Morning check')} />
+        </Field>
+        {error && <div className="field-error">{error}</div>}
+        <button type="submit" hidden />
+      </form>
+    </Modal>
+  )
+}
+
+/** The built-in dashboard: everything the viewer can see, for the period. */
+function Overview({ range, tick }: { range: DateRange; tick: number }) {
   const buckets = useMemo(() => rangeBuckets(range), [range])
 
   const rep = useLoad<DashData>(async () => {
@@ -40,12 +162,13 @@ export default function Dashboard() {
       loadReport('browser', range),
     ])
     return { total: total[0] ?? emptyRow('total'), timeline, campaigns, countries, devices, systems, browsers }
-  }, [range.from, range.to])
+  }, [range.from, range.to, tick])
 
   const names = useLoad(() => get<Campaign[]>('campaigns'), [])
   const isAdmin = useIsAdmin()
   const sys = useLoad(() => (isAdmin ? get<SystemInfo>('system') : Promise.resolve(undefined)), [isAdmin])
-  useInterval(() => sys.reload(), 15000, isAdmin)
+  useInterval(() => sys.reload(), 30000, isAdmin)
+  const problems = systemProblems(sys.data)
 
   const series = useMemo(() => {
     const byKey = new Map((rep.data?.timeline ?? []).map((r) => [r.key, r]))
@@ -80,48 +203,88 @@ export default function Dashboard() {
   const conv = (r: ReportRow) => t('{n} conv', { n: fmtInt(r.conversions) })
   const campName = (id: string) => names.data?.find((c) => String(c.id) === id)?.name ?? (id === '0' ? t('No campaign') : `#${id}`)
 
-  const tiles: { label: string; value: string; sub?: string; tone?: string }[] = tot
-    ? [
-        { label: t('Clicks'), value: fmtInt(tot.clicks) },
-        { label: t('Uniques'), value: fmtInt(tot.uniques), sub: t('{pct} of clicks', { pct: ratioPct(tot.uniques, tot.clicks) }) },
-        { label: t('Bots'), value: ratioPct(tot.bots, tot.clicks), sub: tn(tot.bots, '{n} click', '{n} clicks', { n: fmtInt(tot.bots) }) },
-        { label: t('Conversions'), value: fmtInt(tot.conversions), sub: tot.rejected ? t('{n} rejected', { n: fmtInt(tot.rejected) }) : undefined },
-        { label: 'CR', value: fmtPct(tot.cr) },
-        { label: t('Revenue'), value: fmtMoney(tot.revenue) },
-        { label: t('Cost'), value: fmtMoney(tot.cost) },
-        { label: t('Profit'), value: fmtMoney(tot.profit), tone: tot.profit > 0 ? 'pos' : tot.profit < 0 ? 'neg' : '' },
-        { label: 'ROI', value: tot.cost > 0 ? fmtPct(tot.roi, 1) : '—', tone: tot.cost > 0 ? (tot.roi > 0 ? 'pos' : tot.roi < 0 ? 'neg' : '') : '' },
-      ]
-    : []
+  const spark = (key: 'clicks' | 'conversions') => series.map((p) => p[key])
+  const sign = (v: number) => (v > 0 ? ' pos' : v < 0 ? ' neg' : '')
 
   return (
-    <div className="page">
-      <PageHeader title={t('Dashboard')}>
-        <DateRangePicker value={range} onChange={setRange} />
-        <button className="btn" onClick={() => rep.reload()} title={t('Refresh')} aria-label={t('Refresh')}>
-          <RefreshCw size={14} className={rep.loading ? 'spin' : ''} />
-        </button>
-      </PageHeader>
-
-      {/* Non-admins get no engine stats from api/system: no strip for them. */}
-      {isAdmin && <HealthStrip sys={sys.data} error={sys.error} />}
+    <>
+      {/* Admins hear about trouble here; the details live on System → Status. */}
+      {isAdmin && problems.length > 0 && (
+        <Link to="/status" className={'dash-alert ' + (problems.some((p) => p.level === 'err') ? 'err' : 'warn')}>
+          <AlertTriangle size={15} />
+          <span className="grow">{problems[0].text}{problems.length > 1 ? ' ' + tn(problems.length - 1, '(+{n} more)', '(+{n} more)') : ''}</span>
+          <b>{t('Open status')}</b>
+        </Link>
+      )}
       <ErrorBox error={rep.error} retry={rep.reload} />
 
-      <div className="tiles nine">
-        {!tot
-          ? Array.from({ length: 9 }).map((_, i) => (
-              <div className="tile" key={i}>
-                <Skeleton rows={2} />
-              </div>
-            ))
-          : tiles.map((x) => (
-              <div className="tile" key={x.label}>
-                <div className="tile-label">{x.label}</div>
-                <div className={'tile-value ' + (x.tone ?? '')}>{x.value}</div>
-                <div className="tile-sub">{x.sub ?? ' '}</div>
-              </div>
-            ))}
-      </div>
+      <section className="score">
+        <div className="score-block m-traffic">
+          <header>{t('Traffic')}</header>
+          <div className="score-hero">
+            {tot ? <b>{fmtInt(tot.clicks)}</b> : <Skeleton rows={1} height={30} />}
+            <span>{t('clicks@@unit')}</span>
+            {tot && <Spark values={spark('clicks')} color="var(--series-1)" />}
+          </div>
+          <dl>
+            <div>
+              <dt>{t('Uniques')}</dt>
+              <dd>
+                {tot ? fmtInt(tot.uniques) : '·'} <small>{tot ? ratioPct(tot.uniques, tot.clicks) : ''}</small>
+              </dd>
+            </div>
+            <div>
+              <dt>{t('Bots')}</dt>
+              <dd className={tot && tot.bots > 0 ? 'tone-warn' : ''}>
+                {tot ? ratioPct(tot.bots, tot.clicks) : '·'} <small>{tot ? fmtInt(tot.bots) : ''}</small>
+              </dd>
+            </div>
+          </dl>
+        </div>
+        <div className="score-block m-conv">
+          <header>{t('Conversions')}</header>
+          <div className="score-hero">
+            {tot ? <b>{fmtInt(tot.conversions)}</b> : <Skeleton rows={1} height={30} />}
+            <span>{t('conversions@@unit')}</span>
+            {tot && <Spark values={spark('conversions')} color="var(--series-3)" />}
+          </div>
+          <dl>
+            <div>
+              <dt>CR</dt>
+              <dd className={tot && tot.cr > 0 ? 'tone-accent' : ''}>{tot ? fmtPct(tot.cr) : '·'}</dd>
+            </div>
+            <div>
+              <dt>{t('Rejected')}</dt>
+              <dd>{tot ? fmtInt(tot.rejected) : '·'}</dd>
+            </div>
+            <div>
+              <dt title={t('Revenue per non-bot click')}>EPC</dt>
+              <dd>{tot ? tot.epc.toFixed(4) : '·'}</dd>
+            </div>
+          </dl>
+        </div>
+        <div className="score-block m-money">
+          <header>{t('Money')}</header>
+          <div className="score-hero">
+            {tot ? <b className={sign(tot.profit)}>{fmtMoney(tot.profit)}</b> : <Skeleton rows={1} height={30} />}
+            <span>{t('profit@@unit')}</span>
+          </div>
+          <dl>
+            <div>
+              <dt>{t('Revenue')}</dt>
+              <dd>{tot ? fmtMoney(tot.revenue) : '·'}</dd>
+            </div>
+            <div>
+              <dt>{t('Cost')}</dt>
+              <dd>{tot ? fmtMoney(tot.cost) : '·'}</dd>
+            </div>
+            <div>
+              <dt>ROI</dt>
+              <dd className={tot && tot.cost > 0 ? sign(tot.roi) : ''}>{tot && tot.cost > 0 ? fmtPct(tot.roi, 1) : '—'}</dd>
+            </div>
+          </dl>
+        </div>
+      </section>
 
       <div className="grid-2">
         <Card title={buckets.group === 'hour' ? t('Clicks by hour') : t('Clicks by day')}>
@@ -161,7 +324,7 @@ export default function Dashboard() {
           {rep.data ? <BarList items={top(rep.data.browsers, 'browser', (k) => (k ? <Browser browser={k} /> : t('Unknown')), share)} /> : <Skeleton rows={5} />}
         </Card>
       </div>
-    </div>
+    </>
   )
 }
 
@@ -301,44 +464,5 @@ function RecentClicks({ range, campaigns }: { range: DateRange; campaigns: Campa
         </div>
       )}
     </Card>
-  )
-}
-
-function HealthStrip({ sys, error }: { sys?: SystemInfo; error: string }) {
-  if (error && !sys) return <ErrorBox error={t('System status unavailable: {error}', { error })} />
-  if (!sys) return <div className="health" />
-  if (!sys.stats || !sys.geo) return null
-  const stats = sys.stats
-  const geo = sys.geo
-  const item = (label: string, ok: boolean, text: string, title?: string, warn?: boolean) => (
-    <div className="health-item" title={title}>
-      <span className={'dot ' + (ok ? 'ok' : warn ? 'warn' : 'err')} />
-      <span className="muted">{label}</span>
-      <b>{text}</b>
-    </div>
-  )
-  const h = sys.health
-  const geoOK = geo.city.loaded && geo.asn.loaded
-  return (
-    <div className="health">
-      {item('PostgreSQL', h.postgres === 'ok', h.postgres === 'ok' ? 'OK' : t('Error'), ts(h.postgres))}
-      {item('ClickHouse', h.clickhouse === 'ok', h.clickhouse === 'ok' ? 'OK' : t('Error'), ts(h.clickhouse))}
-      {item(t('Write queue'), stats.queue_len < 10000, fmtInt(stats.queue_len), t('Clicks waiting to be written to ClickHouse'), true)}
-      {item(t('Dropped clicks'), stats.clicks_dropped === 0, fmtInt(stats.clicks_dropped), t('Clicks lost because the write queue was full (since start)'))}
-      {item(
-        t('Geo DB'),
-        geoOK,
-        geoOK ? t('Loaded · {ago}', { ago: fmtAgo(geo.city.updated) }) : geo.city.loaded ? t('No ASN database') : t('Not loaded'),
-        ts(geo.last_error) || t('City and ASN databases'),
-        geo.city.loaded,
-      )}
-      {item(t('Written'), true, fmtInt(stats.clicks_written), t('Clicks written since start'))}
-      <div className="health-item">
-        <span className="muted">{t('Active')}</span>
-        <b>
-          {tn(stats.campaigns, '{n} campaign', '{n} campaigns', { n: fmtInt(stats.campaigns) })} · {tn(stats.domains, '{n} domain', '{n} domains', { n: fmtInt(stats.domains) })}
-        </b>
-      </div>
-    </div>
   )
 }

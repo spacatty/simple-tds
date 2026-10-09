@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
-import { BarChart3, ChevronDown, ChevronsUpDown, FileCode2, Globe, LayoutDashboard, Link2, LogOut, Menu, Moon, MousePointerClick, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, ShieldCheck, Split, Sun, Target, Users as UsersIcon } from 'lucide-react'
+import { Activity, BarChart3, ChevronDown, ChevronsUpDown, FileCode2, Globe, LayoutDashboard, Link2, LogOut, Menu, Moon, MousePointerClick, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, ShieldCheck, Split, Sun, Target, Users as UsersIcon } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { User } from '../types'
 import type { Theme } from '../hooks'
@@ -50,6 +50,7 @@ const GROUPS: { id: string; label: string; items: Item[] }[] = [
     id: 'system',
     label: t('System'),
     items: [
+      { to: '/status', label: t('Status'), icon: Activity, admin: true },
       { to: '/users', label: t('Users'), icon: UsersIcon, admin: true },
       { to: '/settings', label: t('Settings'), icon: SettingsIcon },
     ],

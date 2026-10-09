@@ -159,7 +159,7 @@ func mount[T any](s *Server, r chi.Router, path string, res resource[T]) {
 
 // readPatch decodes a partial update over v. Fields absent from the body keep
 // their value; maps and slices that are present replace the old ones outright
-// (plain decoding would merge into the old map and reuse the old slice).
+// (plain decoding would merge into the old map and reuse the old slice or pointer).
 func readPatch(r *http.Request, v any) error {
 	body, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, 4<<20))
 	if err != nil {
@@ -175,7 +175,10 @@ func readPatch(r *http.Request, v any) error {
 		if _, ok := present[name]; !ok {
 			continue
 		}
-		if f := rv.Field(i); f.Kind() == reflect.Map || f.Kind() == reflect.Slice {
+		// Pointers too: v starts as a shallow copy of the stored row, and decoding
+		// through a shared pointer would rewrite that row as well, hiding the
+		// change from every "did this field change" check.
+		if f := rv.Field(i); f.Kind() == reflect.Map || f.Kind() == reflect.Slice || f.Kind() == reflect.Pointer {
 			f.Set(reflect.Zero(f.Type()))
 		}
 	}
@@ -193,6 +196,8 @@ func idOf(v any) int64 {
 	case *model.DomainGroup:
 		return t.ID
 	case *model.Campaign:
+		return t.ID
+	case *model.CampaignGroup:
 		return t.ID
 	case *model.Stream:
 		return t.ID
@@ -413,10 +418,13 @@ func (s *Server) validateDomain(ctx context.Context, d *model.Domain, old *model
 	return nil
 }
 
-func (s *Server) validateCampaign(_ context.Context, c *model.Campaign, old *model.Campaign) error {
+func (s *Server) validateCampaign(ctx context.Context, c *model.Campaign, old *model.Campaign) error {
 	c.Name = strings.TrimSpace(c.Name)
 	if c.Name == "" {
 		return bad("name is required")
+	}
+	if err := s.checkCampaignGroup(ctx, c, old); err != nil {
+		return err
 	}
 	// The alias is the public campaign link. It is always generated, so it
 	// cannot be guessed or enumerated; use "regenerate" to replace it.
@@ -718,6 +726,8 @@ func (s *Server) routes(r chi.Router) {
 			_, err := s.campaign(ctx, c.ID, model.AccessOwner)
 			return err
 		}})
+	s.groupRoutes(r)
+	s.dashboardRoutes(r)
 	r.Post("/campaigns/{id}/clone", handler(s.campaignClone))
 	r.Post("/campaigns/{id}/alias", handler(s.campaignNewAlias))
 	mount(s, r, "/stream-presets", resource[model.StreamPreset]{table: "stream_presets", order: "kind, name", validate: s.validatePreset})
@@ -1003,6 +1013,9 @@ func (s *Server) campaignClone(r *http.Request) (any, error) {
 	c := *src
 	c.Name, c.Alias, c.Token = src.Name+" (copy)", newAlias(), randToken(24)
 	c.OwnerID = currentUser(r).ID // the copy belongs to whoever made it
+	if c.OwnerID != src.OwnerID {
+		c.GroupID = nil // the group is the original owner's
+	}
 	if err := store.Insert(ctx, s.st, "campaigns", &c); err != nil {
 		return nil, err
 	}

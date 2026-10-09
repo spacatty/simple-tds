@@ -131,10 +131,23 @@ CREATE TABLE IF NOT EXISTS stream_presets (
   id bigserial PRIMARY KEY, owner_id bigint REFERENCES users(id), name text NOT NULL,
   kind text NOT NULL, data jsonb NOT NULL DEFAULT '{}');
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS stages jsonb NOT NULL DEFAULT '[]';
+CREATE TABLE IF NOT EXISTS campaign_groups (
+  id bigserial PRIMARY KEY, owner_id bigint REFERENCES users(id), name text NOT NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS campaign_groups_owner_name ON campaign_groups(owner_id, name);
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS group_id bigint REFERENCES campaign_groups(id) ON DELETE SET NULL;
+CREATE TABLE IF NOT EXISTS campaign_group_shares (
+  group_id bigint NOT NULL REFERENCES campaign_groups(id) ON DELETE CASCADE,
+  user_id bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  access text NOT NULL,
+  PRIMARY KEY (group_id, user_id));
+CREATE TABLE IF NOT EXISTS dashboards (
+  id bigserial PRIMARY KEY, owner_id bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name text NOT NULL, position int NOT NULL DEFAULT 0, widgets jsonb NOT NULL DEFAULT '[]',
+  created_at timestamptz NOT NULL DEFAULT now());
 `
 
 // OwnedTables are the tables whose rows belong to a user.
-var OwnedTables = []string{"campaigns", "domains", "domain_groups", "whitepages", "conv_keys", "stream_presets"}
+var OwnedTables = []string{"campaigns", "campaign_groups", "domains", "domain_groups", "whitepages", "conv_keys", "stream_presets"}
 
 // AdoptOrphans makes sure there is an admin and that every row has an owner.
 // Installations that predate multi-user support had neither.
@@ -352,15 +365,77 @@ func (s *Store) shares(ctx context.Context, where string, args ...any) ([]model.
 	return out, err
 }
 
-// Shares returns every share (for the runtime snapshot).
-func (s *Store) Shares(ctx context.Context) ([]model.Share, error) { return s.shares(ctx, "") }
+// A group share reaches the campaigns of the group, and only while the group
+// still belongs to the campaign's owner: nobody else can file a campaign
+// under a group to hand it out.
+const groupShareSelect = `SELECT c.id AS campaign_id, s.user_id, s.access, u.username
+	FROM campaign_group_shares s
+	JOIN campaign_groups g ON g.id = s.group_id
+	JOIN campaigns c ON c.group_id = g.id AND c.owner_id = g.owner_id
+	JOIN users u ON u.id = s.user_id`
 
+// effectiveShares is the direct shares followed by the ones that come through
+// groups. A user can appear twice for one campaign; the higher level counts.
+func (s *Store) effectiveShares(ctx context.Context, where string, args ...any) ([]model.Share, error) {
+	direct, err := s.shares(ctx, where, args...)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.Pool.Query(ctx, groupShareSelect+where, args...)
+	if err != nil {
+		return nil, err
+	}
+	viaGroup, err := pgx.CollectRows(rows, pgx.RowToStructByName[model.Share])
+	return append(direct, viaGroup...), err
+}
+
+// Shares returns every share, direct or through a group (for the runtime snapshot).
+func (s *Store) Shares(ctx context.Context) ([]model.Share, error) {
+	return s.effectiveShares(ctx, "")
+}
+
+// CampaignShares lists the people a campaign is shared with directly.
 func (s *Store) CampaignShares(ctx context.Context, campaignID int64) ([]model.Share, error) {
 	return s.shares(ctx, " WHERE s.campaign_id=$1 ORDER BY u.username", campaignID)
 }
 
+// UserShares returns everything shared with a user, directly or through a group.
 func (s *Store) UserShares(ctx context.Context, userID int64) ([]model.Share, error) {
-	return s.shares(ctx, " WHERE s.user_id=$1", userID)
+	return s.effectiveShares(ctx, " WHERE s.user_id=$1", userID)
+}
+
+// GroupShares lists the people a campaign group is shared with.
+func (s *Store) GroupShares(ctx context.Context, groupID int64) ([]model.GroupShare, error) {
+	return s.groupShares(ctx, " WHERE s.group_id=$1 ORDER BY u.username", groupID)
+}
+
+// UserGroupShares lists the groups shared with a user.
+func (s *Store) UserGroupShares(ctx context.Context, userID int64) ([]model.GroupShare, error) {
+	return s.groupShares(ctx, " WHERE s.user_id=$1", userID)
+}
+
+func (s *Store) groupShares(ctx context.Context, where string, args ...any) ([]model.GroupShare, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT s.group_id, s.user_id, s.access, u.username
+		FROM campaign_group_shares s JOIN users u ON u.id = s.user_id`+where, args...)
+	if err != nil {
+		return nil, err
+	}
+	out, err := pgx.CollectRows(rows, pgx.RowToStructByName[model.GroupShare])
+	if out == nil {
+		out = []model.GroupShare{}
+	}
+	return out, err
+}
+
+// SetGroupShare grants, changes or (with an empty access) revokes a group share.
+func (s *Store) SetGroupShare(ctx context.Context, groupID, userID int64, access string) error {
+	if access == "" {
+		_, err := s.Pool.Exec(ctx, "DELETE FROM campaign_group_shares WHERE group_id=$1 AND user_id=$2", groupID, userID)
+		return err
+	}
+	_, err := s.Pool.Exec(ctx, `INSERT INTO campaign_group_shares(group_id,user_id,access) VALUES($1,$2,$3)
+		ON CONFLICT (group_id,user_id) DO UPDATE SET access=EXCLUDED.access`, groupID, userID, access)
+	return mapErr(err)
 }
 
 // SetShare grants, changes or (with an empty access) revokes a share.

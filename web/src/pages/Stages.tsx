@@ -3,17 +3,10 @@ import { Link } from 'react-router-dom'
 import { ArrowDown, ArrowUp, CornerDownLeft, Plus, Trash2 } from 'lucide-react'
 import { errMsg, get, put } from '../api'
 import { useLoad, useMeta } from '../hooks'
-import type { Campaign, ConvKey, FunnelRow, Stage } from '../types'
-import { DateRangePicker } from '../components/DateRangePicker'
+import type { Campaign, ConvKey, Stage } from '../types'
 import type { DateRange } from '../components/DateRangePicker'
-import { BarList } from '../components/charts'
-import type { BarItem } from '../components/charts'
-import { Card, CopyButton, ErrorBox, Notice, Segmented, Select, useBusy, toast } from '../components/ui'
-import { rangeParams } from '../reports'
-import { fmtInt, fmtMoney, fmtSpan, humanize, ratioPct } from '../format'
-import { buildSearch } from '../filters'
-import { countryName } from '../countries'
-import { dimIcon } from '../components/icons'
+import { Card, CopyButton, Notice, Select, useBusy, toast } from '../components/ui'
+import { FunnelView } from './FunnelDrawer'
 import { t, tx } from '../i18n'
 
 const slug = (s: string) =>
@@ -22,8 +15,6 @@ const slug = (s: string) =>
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
     .slice(0, 32)
-
-const GROUPS = ['total', 'day', 'country', 'device_type', 'os', 'browser', 'domain', 'ref_domain', 'keyword', 'sub1', 'sub2', 'sub3', 'sub4', 'sub5']
 
 /** Campaign tab: the conversion funnel — its stages, how far clicks get, and how to report each stage. */
 export default function Stages({
@@ -45,7 +36,11 @@ export default function Stages({
   return (
     <>
       <StageEditor key={campaign.id} campaign={campaign} saved={saved} readOnly={readOnly} onSaved={onSaved} />
-      {saved.length > 0 && <FunnelReport campaign={campaign} stages={saved} range={range} setRange={setRange} />}
+      {saved.length > 0 && (
+        <Card title={t('Funnel')}>
+          <FunnelView campaign={campaign} range={range} setRange={setRange} />
+        </Card>
+      )}
       <HowToSend stages={saved} domain={domain} />
     </>
   )
@@ -140,183 +135,6 @@ function StageEditor({ campaign, saved, readOnly, onSaved }: { campaign: Campaig
               {t('Discard')}
             </button>
           )}
-        </div>
-      )}
-    </Card>
-  )
-}
-
-function FunnelReport({ campaign, stages, range, setRange }: { campaign: Campaign; stages: Stage[]; range: DateRange; setRange: (r: DateRange) => void }) {
-  const meta = useMeta()
-  const [group, setGroup] = useState('total')
-  const [strict, setStrict] = useState('')
-  const [bots, setBots] = useState('exclude')
-  const keys = stages.map((s) => s.key).join(',')
-  const rep = useLoad(
-    () => get<{ rows: FunnelRow[] | null }>('reports/funnel', { campaign_id: campaign.id, group, strict, bots, ...rangeParams(range) }),
-    [campaign.id, keys, group, strict, bots, range.from, range.to],
-  )
-  const rows = rep.data?.rows ?? []
-  const groups = GROUPS.filter((g) => g === 'total' || meta.report_groups.includes(g))
-
-  const total = rows[0]
-  const bars: BarItem[] =
-    group === 'total' && total
-      ? [
-          { key: '#clicks', label: t('Clicks'), value: total.clicks },
-          ...stages.map((s, i): BarItem => {
-            // Right after the stages change the report on screen still has the old ones.
-            const st = total.steps?.[i] ?? { reached: 0, events: 0, revenue: 0 }
-            const prev = i === 0 ? total.clicks : (total.steps?.[i - 1]?.reached ?? 0)
-            return {
-              key: s.key,
-              label: s.name + (s.goal ? ' ★' : ''),
-              value: st.reached,
-              extra: `${t('{prev} of previous · {total} of clicks', { prev: ratioPct(st.reached, prev), total: ratioPct(st.reached, total.clicks, 2) })}${st.revenue > 0 ? ' · ' + fmtMoney(st.revenue, campaign.currency) : ''}`,
-            }
-          }),
-        ]
-      : []
-
-  // Links into the logs: the clicks behind a number, and the events of a stage.
-  const clicksLink = (extra: Record<string, string>) => '/clicks' + buildSearch({ range, filters: { campaign_id: campaign.id }, bots, extra })
-  const eventsLink = (key: string) => '/conversions?' + new URLSearchParams({ campaign_id: String(campaign.id), type: key }).toString()
-
-  return (
-    <Card title={t('Funnel')} actions={<DateRangePicker value={range} onChange={setRange} />}>
-      <p className="muted small">{t('Clicks of the selected period and how far each of them got since — a purchase made days later still counts for the day of its click.')}</p>
-      <div className="toolbar wrap" style={{ margin: '4px 0 16px' }}>
-        <Select value={group} onChange={setGroup} options={groups.map((g) => ({ value: g, label: g === 'total' ? t('Whole campaign') : t('By {dim}', { dim: humanize(g).toLowerCase() }) }))} />
-        <Segmented
-          small
-          value={strict}
-          onChange={setStrict}
-          options={[
-            { value: '', label: t('Any order') },
-            { value: '1', label: t('In order') },
-          ]}
-        />
-        <Segmented
-          small
-          value={bots}
-          onChange={setBots}
-          options={[
-            { value: 'exclude', label: t('No bots') },
-            { value: '', label: t('All traffic') },
-          ]}
-        />
-      </div>
-      {strict === '1' && <div className="field-help">{t('In order: a click reaches a stage only after passing every earlier stage first.')}</div>}
-      <ErrorBox error={rep.error} retry={rep.reload} />
-      {group === 'total' ? (
-        <>
-          <BarList items={bars} empty={rep.loading ? t('Loading…') : t('No clicks in this period')} />
-          {total && (
-            <div className="table-wrap funnel-steps" style={{ overflowX: 'auto' }}>
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>{t('Stage')}</th>
-                    <th style={{ textAlign: 'right' }} title={t('Clicks of the period that got this far. Opens them in the click log.')}>
-                      {t('Reached')}
-                    </th>
-                    <th style={{ textAlign: 'right' }} title={t('Clicks that got to the previous step and no further. Opens them in the click log.')}>
-                      {t('Stopped before')}
-                    </th>
-                    <th style={{ textAlign: 'right' }} title={t('Events received for this stage, repeats included. Opens them in the conversion log.')}>
-                      {t('Events')}
-                    </th>
-                    <th style={{ textAlign: 'right' }}>{t('Revenue')}</th>
-                    <th style={{ textAlign: 'right' }} title={t('Median time from the click to its first event of this stage')}>
-                      {t('Time from click')}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stages.map((s, i) => {
-                    const st = total.steps?.[i] ?? { reached: 0, events: 0, revenue: 0 }
-                    const prev = i === 0 ? total.clicks : (total.steps?.[i - 1]?.reached ?? 0)
-                    const lost = Math.max(0, prev - st.reached)
-                    const drop: Record<string, string> = { not_reached: s.key }
-                    if (i > 0) drop.reached = stages[i - 1].key
-                    return (
-                      <tr key={s.key}>
-                        <td>
-                          {s.name}
-                          {s.goal && ' ★'} <span className="muted mono small">{s.key}</span>
-                        </td>
-                        <td style={{ textAlign: 'right' }} className="nowrap">
-                          <Link className="link" to={clicksLink({ reached: s.key })}>
-                            {fmtInt(st.reached)}
-                          </Link>{' '}
-                          <span className="muted small">{ratioPct(st.reached, prev)}</span>
-                        </td>
-                        <td style={{ textAlign: 'right' }} className="nowrap">
-                          <Link className="link" to={clicksLink(drop)}>
-                            {fmtInt(lost)}
-                          </Link>{' '}
-                          <span className="muted small">{ratioPct(lost, prev)}</span>
-                        </td>
-                        <td style={{ textAlign: 'right' }}>
-                          <Link className="link" to={eventsLink(s.key)}>
-                            {fmtInt(st.events)}
-                          </Link>
-                        </td>
-                        <td style={{ textAlign: 'right' }}>{st.revenue ? fmtMoney(st.revenue, campaign.currency) : <span className="muted">—</span>}</td>
-                        <td style={{ textAlign: 'right' }} className="nowrap">
-                          {st.reached > 0 && st.median_sec ? fmtSpan(st.median_sec) : <span className="muted">—</span>}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-              <div className="field-help">
-                {strict === '1'
-                  ? t('The numbers open the matching clicks and events in the logs. The logs do not check the order of stages, so with “In order” they can show a few more clicks.')
-                  : t('The numbers open the matching clicks and events in the logs.')}
-              </div>
-            </div>
-          )}
-        </>
-      ) : rows.length === 0 ? (
-        <div className="muted pad">{rep.loading ? t('Loading…') : t('No clicks in this period')}</div>
-      ) : (
-        <div className="table-wrap" style={{ overflowX: 'auto' }}>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>{humanize(group)}</th>
-                <th style={{ textAlign: 'right' }}>{t('Clicks')}</th>
-                {stages.map((s) => (
-                  <th key={s.key} style={{ textAlign: 'right' }} title={t('{key}: clicks that reached it, and the share of the previous step', { key: s.key })}>
-                    {s.name}
-                  </th>
-                ))}
-                <th style={{ textAlign: 'right' }}>{t('Revenue')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.slice(0, 100).map((r) => (
-                <tr key={r.key}>
-                  <td className={group === 'day' ? 'mono nowrap' : ''}>
-                    <span className="with-icon">
-                      {dimIcon(group, r.key)}
-                      {r.key === '' ? t('(empty)') : group === 'country' ? countryName(r.key) : r.key}
-                    </span>
-                  </td>
-                  <td style={{ textAlign: 'right' }}>{fmtInt(r.clicks)}</td>
-                  {r.steps.map((st, i) => (
-                    <td key={i} style={{ textAlign: 'right' }} className="nowrap">
-                      {fmtInt(st.reached)} <span className="muted small">{ratioPct(st.reached, i === 0 ? r.clicks : r.steps[i - 1].reached, 0)}</span>
-                    </td>
-                  ))}
-                  <td style={{ textAlign: 'right' }}>{fmtMoney(r.steps.reduce((n, st) => n + st.revenue, 0), campaign.currency)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {rows.length > 100 && <div className="field-help">{t('Showing the 100 rows with the most clicks of {total}.', { total: fmtInt(rows.length) })}</div>}
         </div>
       )}
     </Card>

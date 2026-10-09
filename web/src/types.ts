@@ -15,6 +15,43 @@ export interface Share {
   username: string
 }
 
+export interface CampaignGroup {
+  id: number
+  owner_id: number
+  name: string
+  /** The viewer's access: owner | edit | read | stats */
+  access?: string
+  owner_name?: string
+}
+
+export interface GroupShare {
+  group_id: number
+  user_id: number
+  access: string
+  username: string
+}
+
+/** One tile of a user's own dashboard. */
+export interface BoardWidget {
+  id: string
+  type: 'stat' | 'chart' | 'funnel' | 'top'
+  title?: string
+  campaign_id?: number
+  stream_id?: number
+  metric?: string
+  dim?: string
+  /** Width in twelfths of the board. */
+  w: number
+}
+
+/** A user's own dashboard. */
+export interface Board {
+  id: number
+  name: string
+  position: number
+  widgets: BoardWidget[] | null
+}
+
 export interface DirectoryEntry {
   id: number
   username: string
@@ -63,6 +100,8 @@ export interface FunnelRow {
 
 export interface Campaign {
   id: number
+  /** The owner's group the campaign is filed under; null when none, or when the viewer cannot see the group. */
+  group_id?: number | null
   name: string
   alias: string
   token: string
@@ -201,6 +240,8 @@ export interface ActionField {
   name: string
   label: string
   type: string
+  /** Code fields: html | javascript. */
+  lang?: string
   options?: string[]
   default?: unknown
   help?: string

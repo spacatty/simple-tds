@@ -22,6 +22,9 @@ import (
 //     belongs to the user who created it and is invisible to other users.
 //   - A campaign can be shared with other users at one of three levels:
 //     stats (reports only), read (plus configuration, read-only) or edit.
+//   - A campaign group can be shared the same way: the share then covers every
+//     campaign its owner keeps in the group. With both a direct and a group
+//     share, the higher level counts.
 //
 // Resources a user may not see answer 404, never 403, so their existence
 // does not leak.
@@ -73,7 +76,8 @@ func visibleOwned[T any](ctx context.Context, items []T) []T {
 	return out
 }
 
-// shareMap returns the user's shared campaigns and their access level.
+// shareMap returns the campaigns shared with the user, directly or through a
+// group, and the access level on each.
 func (s *Server) shareMap(ctx context.Context, u *model.User) (map[int64]int, error) {
 	shares, err := s.st.UserShares(ctx, u.ID)
 	if err != nil {
@@ -81,7 +85,9 @@ func (s *Server) shareMap(ctx context.Context, u *model.User) (map[int64]int, er
 	}
 	m := make(map[int64]int, len(shares))
 	for _, sh := range shares {
-		m[sh.CampaignID], _ = model.ParseAccess(sh.Access)
+		if a, _ := model.ParseAccess(sh.Access); a > m[sh.CampaignID] {
+			m[sh.CampaignID] = a
+		}
 	}
 	return m, nil
 }
@@ -124,6 +130,14 @@ func (s *Server) visibleCampaigns(ctx context.Context, all []model.Campaign) []m
 			names[x.ID] = x.Username
 		}
 	}
+	// A group is named only to those who can see it: someone holding just a
+	// direct share on one campaign learns nothing about the owner's folders.
+	groups := map[int64]bool{}
+	if gs, err := s.st.UserGroupShares(ctx, u.ID); err == nil {
+		for _, g := range gs {
+			groups[g.GroupID] = true
+		}
+	}
 	out := make([]model.Campaign, 0, len(all))
 	for _, c := range all {
 		a := accessOf(u, &c, shares)
@@ -131,6 +145,9 @@ func (s *Server) visibleCampaigns(ctx context.Context, all []model.Campaign) []m
 			continue
 		}
 		c.Access, c.OwnerName = model.AccessName(a), names[c.OwnerID]
+		if a < model.AccessOwner && c.GroupID != nil && !groups[*c.GroupID] {
+			c.GroupID = nil
+		}
 		if a < model.AccessEdit {
 			c.Token = "" // the integration secret is for editors only
 		}
@@ -397,8 +414,10 @@ func (s *Server) userDelete(r *http.Request) (any, error) {
 	}
 	defer tx.Rollback(ctx)
 	// Group names are unique per owner: tag inherited ones to avoid a clash.
-	if _, err := tx.Exec(ctx, "UPDATE domain_groups SET name = name || ' (' || $2 || ')' WHERE owner_id=$1", u.ID, u.Username); err != nil {
-		return nil, err
+	for _, t := range []string{"domain_groups", "campaign_groups"} {
+		if _, err := tx.Exec(ctx, "UPDATE "+t+" SET name = name || ' (' || $2 || ')' WHERE owner_id=$1", u.ID, u.Username); err != nil {
+			return nil, err
+		}
 	}
 	for _, t := range store.OwnedTables {
 		if _, err := tx.Exec(ctx, "UPDATE "+t+" SET owner_id=$2 WHERE owner_id=$1", u.ID, me.ID); err != nil {
@@ -408,6 +427,10 @@ func (s *Server) userDelete(r *http.Request) (any, error) {
 	// The new owner needs no share on what is now their own campaign.
 	if _, err := tx.Exec(ctx, `DELETE FROM campaign_shares s USING campaigns c
 		WHERE c.id = s.campaign_id AND c.owner_id = s.user_id`); err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM campaign_group_shares s USING campaign_groups g
+		WHERE g.id = s.group_id AND g.owner_id = s.user_id`); err != nil {
 		return nil, err
 	}
 	if _, err := tx.Exec(ctx, "DELETE FROM users WHERE id=$1", u.ID); err != nil {

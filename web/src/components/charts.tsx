@@ -158,3 +158,19 @@ export function BarList({ items, fmt = fmtInt, color = 'var(--series-1)', empty 
     </div>
   )
 }
+
+/** A trend line with no axes, for the corner of a number. */
+export function Spark({ values, color = 'var(--series-1)', width = 120, height = 36 }: { values: number[]; color?: string; width?: number; height?: number }) {
+  if (values.length < 2) return null
+  const max = Math.max(...values)
+  const min = Math.min(0, ...values)
+  const span = max - min || 1
+  const pts = values.map((v, i) => [(i / (values.length - 1)) * width, height - 2 - ((v - min) / span) * (height - 4)] as const)
+  const line = pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`).join(' ')
+  return (
+    <svg className="spark" viewBox={`0 0 ${width} ${height}`} width={width} height={height} preserveAspectRatio="none" aria-hidden="true">
+      <path d={`${line} L${width} ${height} L0 ${height} Z`} fill={color} opacity={0.14} />
+      <path d={line} fill="none" stroke={color} strokeWidth={1.6} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+    </svg>
+  )
+}

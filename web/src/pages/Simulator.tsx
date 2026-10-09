@@ -17,7 +17,7 @@ const UA_PRESETS: { label: string; ua: string }[] = [
   { label: t('Facebook crawler'), ua: 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)' },
   { label: 'curl', ua: 'curl/8.5.0' },
 ]
-const KIND_LABEL: Record<string, string> = { forced: t('forced@@stream'), regular: t('regular@@stream'), default: t('default@@stream') }
+const KIND_LABEL: Record<string, string> = { forced: t('intercepting@@stream'), regular: t('regular@@stream'), default: t('default@@stream') }
 
 interface SimForm {
   ip: string

@@ -20,6 +20,7 @@ import Clicks from './pages/Clicks'
 import Antibot from './pages/Antibot'
 import SettingsPage from './pages/Settings'
 import UsersPage from './pages/Users'
+import StatusPage from './pages/Status'
 
 export default function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
@@ -131,6 +132,7 @@ export default function App() {
             <Route path="/clicks" element={<Clicks />} />
             {user.role === 'admin' && <Route path="/antibot" element={<Antibot />} />}
             {user.role === 'admin' && <Route path="/users" element={<UsersPage />} />}
+            {user.role === 'admin' && <Route path="/status" element={<StatusPage />} />}
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

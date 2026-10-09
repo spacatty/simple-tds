@@ -1,18 +1,21 @@
 import { useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Ban, BookmarkPlus, Check, Code2, CornerDownRight, ExternalLink, Eye, FileCode2, FileText, Pencil, Plus, Search, Split, Trash2, X } from 'lucide-react'
+import { Ban, BookmarkPlus, Braces, Check, ChevronRight, Code2, CornerDownRight, ExternalLink, Eye, FileCode2, FileText, Pencil, Plus, Search, Split, Trash2, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { del, errMsg, get, post, put } from '../api'
 import { useMeta } from '../hooks'
 import type { ActionConfig, ActionDef, ActionField, Campaign, Filter, FilterDef, GeoPreset, Stage, Stream, StreamPreset, Whitepage } from '../types'
 import { Chips, Drawer, Dropdown, Field, MenuItem, MultiSelect, Notice, NumberInput, Segmented, Select, Toggle, confirmDialog, toast } from '../components/ui'
 import { CountrySelect } from '../components/CountrySelect'
+import { CodeEditor, languageOf } from '../components/CodeEditor'
+import type { CodeEditorHandle } from '../components/CodeEditor'
 import { StageLinks } from './Stages'
 import { t, tn, ts, tx } from '../i18n'
 
 export const ACTION_ICONS: Record<string, LucideIcon> = {
   status: Ban,
   text: FileText,
+  js: Braces,
   redirect: ExternalLink,
   whitepage: FileCode2,
   remote_js: Code2,
@@ -158,7 +161,7 @@ interface Props {
 const KIND_HELP: Record<string, string> = {
   forced: t('Checked before everything else, top to bottom; the first match wins. For traffic that must never reach an offer.'),
   regular: t('The main streams: first match by position, or a weighted draw among the matches, depending on the campaign rotation.'),
-  default: t('The fallback when no forced or regular stream matched. Usually has no filters.'),
+  default: t('The fallback when no intercepting or regular stream matched. Usually has no filters.'),
 }
 
 export default function StreamEditor({ draft: initial, campaign, campaigns, whitepages, presets, domain, streamPresets, onPresetsChanged, readOnly, refNames, onClose, onSaved }: Props) {
@@ -167,6 +170,8 @@ export default function StreamEditor({ draft: initial, campaign, campaigns, whit
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [tried, setTried] = useState(false)
+  // Reference material rather than settings: folded until asked for.
+  const [stagesOpen, setStagesOpen] = useState(false)
   const set = (patch: Partial<StreamDraft>) => setD((x) => ({ ...x, ...patch }))
 
   const filterDefs = useMemo(() => new Map(meta.filters.map((f) => [f.type, f])), [meta.filters])
@@ -264,14 +269,15 @@ export default function StreamEditor({ draft: initial, campaign, campaigns, whit
         <section className="se-head">
           <div className="se-top">
             <div className="se-name">
-              <input className={'input' + (tried && !d.name.trim() ? ' invalid' : '')} autoFocus={!d.id} value={d.name} onChange={(e) => set({ name: e.target.value })} placeholder={t('Stream name, e.g. DE mobile → offer A')} aria-label={t('Stream name')} />
+              <input className={'input input-lg' + (tried && !d.name.trim() ? ' invalid' : '')} autoFocus={!d.id} value={d.name} onChange={(e) => set({ name: e.target.value })} placeholder={t('Stream name, e.g. DE mobile → offer A')} aria-label={t('Stream name')} />
               {tried && !d.name.trim() && <div className="field-error">{t('Name is required')}</div>}
             </div>
             <Segmented
+              className="kinds"
               value={d.kind}
               onChange={(kind) => set({ kind })}
               options={[
-                { value: 'forced', label: t('Forced'), title: KIND_HELP.forced },
+                { value: 'forced', label: t('Intercepting'), title: KIND_HELP.forced },
                 { value: 'regular', label: t('Regular'), title: KIND_HELP.regular },
                 { value: 'default', label: t('Default'), title: KIND_HELP.default },
               ]}
@@ -304,6 +310,7 @@ export default function StreamEditor({ draft: initial, campaign, campaigns, whit
             <h4>{t('Filters')}</h4>
             <Segmented
               small
+              className="ops"
               value={d.filter_op === 'or' ? 'or' : 'and'}
               onChange={(filter_op) => set({ filter_op })}
               options={[
@@ -328,7 +335,7 @@ export default function StreamEditor({ draft: initial, campaign, campaigns, whit
               const err = tried ? filterError(f) : ''
               return (
                 <div className={'filter-row' + (err ? ' invalid' : '')} key={i}>
-                  <span className="filter-join">{i === 0 ? t('IF') : d.filter_op === 'or' ? t('OR') : t('AND')}</span>
+                  <span className={'filter-join' + (i === 0 ? '' : d.filter_op === 'or' ? ' or' : ' and')}>{i === 0 ? t('IF') : d.filter_op === 'or' ? t('OR') : t('AND')}</span>
                   <Select className="filter-type" value={f.type} options={filterOptions} onChange={(type) => setFilter(i, { type, values: [] })} />
                   <div className={'mode-pill ' + (f.mode === 'is_not' ? 'not' : 'is')}>
                     <button type="button" className={f.mode !== 'is_not' ? 'active' : ''} onClick={() => setFilter(i, { mode: 'is' })}>
@@ -398,18 +405,22 @@ export default function StreamEditor({ draft: initial, campaign, campaigns, whit
               macros={meta.macros}
               stages={stages}
               insertRef={insertMacro}
+              readOnly={readOnly}
             />
           )}
         </section>
 
         {/* ---- conversions ---- */}
-        <section className="se-section">
-          <header className="se-section-head">
+        {/* <details>, not a button: it must still open inside the disabled (read-only) fieldset. */}
+        <details className="se-section se-fold" open={stagesOpen} onToggle={(e) => setStagesOpen(e.currentTarget.open)}>
+          <summary className="se-section-head">
+            <ChevronRight size={16} className="se-fold-icon" />
             <h4>{stages.length > 0 ? t('Funnel stages') : t('Conversions')}</h4>
+            {stages.length > 0 && <span className="count">{stages.length}</span>}
             <span className="muted grow ellipsis">{stages.length > 0 ? t('Ready-to-use URLs for every stage of this campaign’s funnel.') : t('The postback URL that reports a conversion for clicks of this campaign.')}</span>
-          </header>
-          <StageLinks stages={stages} domain={domain} onInsert={hasText && !readOnly ? (m) => insertMacro.current?.(m) : undefined} />
-        </section>
+          </summary>
+          {stagesOpen && <StageLinks stages={stages} domain={domain} onInsert={hasText && !readOnly ? (m) => insertMacro.current?.(m) : undefined} />}
+        </details>
 
         <section className="se-section">
           <Field label={t('Note')}>
@@ -461,7 +472,7 @@ export function PresetControls({
 
   return (
     <div className="row gap-s preset-controls">
-      <Dropdown align="right" className="btn small" label={t('Apply preset')} title={t('Presets: built-in and your own')}>
+      <Dropdown align="right" className="btn small ghost" label={t('Apply preset')} title={t('Presets: built-in and your own')}>
         {(close) => (
           <div className="menu preset-menu">
             {list.length === 0 && <div className="muted pad-s">{t('No presets yet. Set this section up and use “Save as preset”.')}</div>}
@@ -522,7 +533,7 @@ export function PresetControls({
       </Dropdown>
       <Dropdown
         align="right"
-        className="btn small"
+        className="btn small ghost"
         chevron={false}
         disabled={!canSave}
         title={canSave ? t('Save the current setup as a reusable preset') : t('Complete this section first')}
@@ -663,6 +674,7 @@ function ActionForm({
   macros,
   stages,
   insertRef,
+  readOnly,
 }: {
   def: ActionDef
   config: ActionConfig
@@ -675,9 +687,13 @@ function ActionForm({
   /** The campaign funnel: its browser stages become {event:…} macros. */
   stages: Stage[]
   insertRef: { current: ((macro: string) => void) | null }
+  readOnly?: boolean
 }) {
   const fields = def.fields ?? []
   const els = useRef<Record<string, TextEl | null>>({})
+  // Code fields are editors of their own: they insert at their cursor themselves.
+  const editors = useRef<Record<string, { current: CodeEditorHandle | null }>>({})
+  const editor = (name: string) => (editors.current[name] ??= { current: null })
   const last = useRef<{ name: string; start: number; end: number } | null>(null)
   const textFields = fields.filter((f) => f.type === 'text' || f.type === 'textarea' || f.type === 'code')
 
@@ -689,10 +705,12 @@ function ActionForm({
   const insertMacro = (macro: string) => {
     const target = last.current && textFields.some((f) => f.name === last.current!.name) ? last.current : textFields[0] ? { name: textFields[0].name, start: -1, end: -1 } : null
     if (!target) return
+    const token = `{${macro}}`
+    const ed = editors.current[target.name]?.current
+    if (ed) return ed.insert(token)
     const cur = String(config[target.name] ?? '')
     const start = target.start < 0 ? cur.length : Math.min(target.start, cur.length)
     const end = target.end < 0 ? cur.length : Math.min(target.end, cur.length)
-    const token = `{${macro}}`
     setVal(target.name, cur.slice(0, start) + token + cur.slice(end))
     const pos = start + token.length
     last.current = { name: target.name, start: pos, end: pos }
@@ -719,10 +737,10 @@ function ActionForm({
     }
   }
 
-  if (fields.length === 0) return <div className="muted">{t('This action has no settings.')}</div>
+  if (fields.length === 0) return <div className="action-panel muted">{t('This action has no settings.')}</div>
 
   return (
-    <div>
+    <div className="action-panel">
       <div className="form-grid">
         {fields.map((f) => {
           const v = config[f.name]
@@ -822,11 +840,27 @@ function ActionForm({
                   />
                 </Field>
               )
-            case 'textarea':
             case 'code':
               return (
                 <Field key={f.name} label={label} help={help} error={err} className="span-2">
-                  <textarea className={'input' + (f.type === 'code' ? ' mono code' : '')} rows={f.type === 'code' ? 8 : 3} spellCheck={false} value={String(v ?? '')} onChange={(e) => setVal(f.name, e.target.value)} {...textProps} />
+                  <CodeEditor
+                    value={String(v ?? '')}
+                    onChange={(code) => setVal(f.name, code)}
+                    language={f.lang ?? languageOf(config.content_type)}
+                    readOnly={readOnly}
+                    macros={[...macroList.filter((m) => !m.includes(':')), ...browserStages.map((st) => 'event:' + st.key)]}
+                    minHeight={f.required ? 260 : 120}
+                    invalid={!!err}
+                    handle={editor(f.name)}
+                    ariaLabel={ts(f.label)}
+                    onFocus={() => (last.current = { name: f.name, start: -1, end: -1 })}
+                  />
+                </Field>
+              )
+            case 'textarea':
+              return (
+                <Field key={f.name} label={label} help={help} error={err} className="span-2">
+                  <textarea className="input" rows={3} spellCheck={false} value={String(v ?? '')} onChange={(e) => setVal(f.name, e.target.value)} {...textProps} />
                 </Field>
               )
             default:
