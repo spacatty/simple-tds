@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"simpletds/internal/engine"
+	"simpletds/internal/reputation"
 )
 
 // The panel translates text that comes from the server (action and filter
@@ -53,5 +54,9 @@ func TestServerTextIsTranslated(t *testing.T) {
 	}
 	for _, p := range integrationPresets {
 		check("integration preset "+p.Name, p.Description)
+	}
+	for _, d := range reputation.Defs() {
+		check("reputation provider "+d.ID, d.Description)
+		check("reputation provider "+d.ID, d.KeyHelp)
 	}
 }

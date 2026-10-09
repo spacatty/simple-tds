@@ -67,12 +67,15 @@ export function TimeChart({
   height = 200,
   fmt = fmtInt,
   area,
+  fill,
 }: {
   data: Record<string, string | number>[]
   series: Series[]
   height?: number
   fmt?: (v: number) => string
   area?: boolean
+  /** Take the height of the parent instead of `height`. */
+  fill?: boolean
 }) {
   const common = (
     <>
@@ -82,26 +85,29 @@ export function TimeChart({
       <Tooltip content={<ChartTip series={series} fmt={fmt} />} cursor={{ stroke: 'var(--text-3)', strokeWidth: 1 }} isAnimationActive={false} />
     </>
   )
+  const chart = (
+    <ResponsiveContainer width="100%" height={fill ? '100%' : height}>
+      {area ? (
+        <AreaChart data={data} margin={margin}>
+          {common}
+          {series.map((s) => (
+            <Area key={s.key} type="monotone" dataKey={s.key} stroke={s.color} fill={s.color} fillOpacity={0.12} strokeWidth={2} dot={false} activeDot={{ r: 4, stroke: 'var(--surface)', strokeWidth: 2 }} isAnimationActive={false} />
+          ))}
+        </AreaChart>
+      ) : (
+        <LineChart data={data} margin={margin}>
+          {common}
+          {series.map((s) => (
+            <Line key={s.key} type="monotone" dataKey={s.key} stroke={s.color} strokeWidth={2} dot={false} activeDot={{ r: 4, stroke: 'var(--surface)', strokeWidth: 2 }} isAnimationActive={false} />
+          ))}
+        </LineChart>
+      )}
+    </ResponsiveContainer>
+  )
   return (
-    <div>
+    <div className={fill ? 'chart-fill' : undefined}>
       <Legend series={series} />
-      <ResponsiveContainer width="100%" height={height}>
-        {area ? (
-          <AreaChart data={data} margin={margin}>
-            {common}
-            {series.map((s) => (
-              <Area key={s.key} type="monotone" dataKey={s.key} stroke={s.color} fill={s.color} fillOpacity={0.12} strokeWidth={2} dot={false} activeDot={{ r: 4, stroke: 'var(--surface)', strokeWidth: 2 }} isAnimationActive={false} />
-            ))}
-          </AreaChart>
-        ) : (
-          <LineChart data={data} margin={margin}>
-            {common}
-            {series.map((s) => (
-              <Line key={s.key} type="monotone" dataKey={s.key} stroke={s.color} strokeWidth={2} dot={false} activeDot={{ r: 4, stroke: 'var(--surface)', strokeWidth: 2 }} isAnimationActive={false} />
-            ))}
-          </LineChart>
-        )}
-      </ResponsiveContainer>
+      {fill ? <div className="chart-fill-area">{chart}</div> : chart}
     </div>
   )
 }

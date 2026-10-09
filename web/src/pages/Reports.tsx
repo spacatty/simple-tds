@@ -9,7 +9,7 @@ import type { Column } from '../components/DataTable'
 import { DateRangePicker, currentRange, rememberRange } from '../components/DateRangePicker'
 import type { DateRange } from '../components/DateRangePicker'
 import { CategoryBarChart, TimeChart } from '../components/charts'
-import { Card, Empty, ErrorBox, PageHeader, Segmented, Select } from '../components/ui'
+import { Card, Empty, ErrorBox, FilterBar, FilterField, PageHeader, Segmented, Select } from '../components/ui'
 import { METRICS, loadReport, sumRows } from '../reports'
 import type { MetricKey } from '../reports'
 import { CLICK_ONLY, CONV_ONLY, bucketRange, buildSearch, dimLabel, filterParams, paramFor, parseFilters, rangeFromSearch, writeRange } from '../filters'
@@ -201,72 +201,83 @@ export default function Reports() {
   return (
     <div className="page">
       <PageHeader title={t('Breakdown')} sub={t('Click any row to drill into it.')}>
-        <DateRangePicker value={range} onChange={setRange} />
-        <button className="btn" onClick={() => rep.reload()} title={t('Refresh')} aria-label={t('Refresh')}>
-          <RefreshCw size={14} className={rep.loading ? 'spin' : ''} />
-        </button>
-      </PageHeader>
-
-      <div className="toolbar wrap">
-        <label className="inline-field">
-          <span className="muted">{t('Group by')}</span>
-          <Select value={group} onChange={(g) => update((n) => n.set('group', g))} options={groupOptions} />
-        </label>
-        <Select
-          value={campaignId}
-          onChange={(v) =>
-            update((n) => {
-              n.delete('campaign_id')
-              n.delete('stream_id') // a stream belongs to one campaign
-              if (v) n.set('campaign_id', v)
-            })
-          }
-          placeholder={t('All campaigns')}
-          options={(camps.data ?? []).map((c) => ({ value: String(c.id), label: c.name }))}
-        />
-        <Segmented
-          small
-          value={filters.bots}
-          onChange={(bots) =>
-            update((n) => {
-              if (bots) n.set('bots', bots)
-              else n.delete('bots')
-            })
-          }
-          options={[
-            { value: '', label: t('All traffic') },
-            { value: 'exclude', label: t('No bots') },
-            { value: 'only', label: t('Bots only') },
-          ]}
-        />
-        <span className="grow" />
         <Link className="btn" to={'/clicks' + clicksSearch()} title={t('Open the click log with the same filters')}>
           <MousePointerClick size={14} /> {t('View clicks')}
         </Link>
         <button className="btn" disabled={!rows.length} onClick={exportCSV}>
           <Download size={14} /> {t('Export CSV')}
         </button>
-      </div>
+        <DateRangePicker value={range} onChange={setRange} />
+        <button className="btn" onClick={() => rep.reload()} title={t('Refresh')} aria-label={t('Refresh')}>
+          <RefreshCw size={14} className={rep.loading ? 'spin' : ''} />
+        </button>
+      </PageHeader>
 
-      {filters.crumbs.length > 0 && (
-        <nav className="crumbs" aria-label={t('Active filters')}>
-          <span className="muted">{t('Filtered by')}</span>
-          {filters.crumbs.map((c, i) => (
-            <span className="crumb-wrap" key={c.param}>
-              {i > 0 && <ChevronRight size={13} className="muted" />}
-              <span className="crumb">
-                <span className="muted">{dimLabel(c.dim)}:</span> <b>{crumbText(c)}</b>
-                <button aria-label={t('Remove filter {name}', { name: dimLabel(c.dim) })} title={t('Remove this filter')} onClick={() => update((n) => n.delete(c.param))}>
-                  <X size={12} />
-                </button>
-              </span>
-            </span>
-          ))}
-          <button className="btn small ghost" onClick={() => update((n) => filters.crumbs.forEach((c) => n.delete(c.param)))}>
-            {t('Clear all')}
-          </button>
-        </nav>
-      )}
+      <FilterBar
+        onReset={
+          filters.crumbs.length > 0 || filters.bots
+            ? () =>
+                update((n) => {
+                  filters.crumbs.forEach((c) => n.delete(c.param))
+                  n.delete('bots')
+                })
+            : undefined
+        }
+        chips={
+          filters.crumbs.length > 0 && (
+            <>
+              <span className="muted">{t('Filtered by')}</span>
+              {filters.crumbs.map((c, i) => (
+                <span className="crumb-wrap" key={c.param}>
+                  {i > 0 && <ChevronRight size={13} className="muted" />}
+                  <span className="crumb">
+                    <span className="muted">{dimLabel(c.dim)}:</span> <b>{crumbText(c)}</b>
+                    <button aria-label={t('Remove filter {name}', { name: dimLabel(c.dim) })} title={t('Remove this filter')} onClick={() => update((n) => n.delete(c.param))}>
+                      <X size={12} />
+                    </button>
+                  </span>
+                </span>
+              ))}
+            </>
+          )
+        }
+      >
+        <FilterField label={t('Group by')}>
+          <Select value={group} onChange={(g) => update((n) => n.set('group', g))} options={groupOptions} />
+        </FilterField>
+        <FilterField label={t('Campaign')} active={!!campaignId}>
+          <Select
+            value={campaignId}
+            onChange={(v) =>
+              update((n) => {
+                n.delete('campaign_id')
+                n.delete('stream_id') // a stream belongs to one campaign
+                if (v) n.set('campaign_id', v)
+              })
+            }
+            placeholder={t('All campaigns')}
+            options={(camps.data ?? []).map((c) => ({ value: String(c.id), label: c.name }))}
+          />
+        </FilterField>
+        <FilterField label={t('Traffic')} size="auto">
+          <Segmented
+            small
+            className="bots"
+            value={filters.bots}
+            onChange={(bots) =>
+              update((n) => {
+                if (bots) n.set('bots', bots)
+                else n.delete('bots')
+              })
+            }
+            options={[
+              { value: '', label: t('All traffic') },
+              { value: 'exclude', label: t('No bots') },
+              { value: 'only', label: t('Bots only') },
+            ]}
+          />
+        </FilterField>
+      </FilterBar>
 
       <ErrorBox error={rep.error} retry={rep.reload} />
 

@@ -1042,6 +1042,44 @@ export function SearchInput({ value, onChange, placeholder = t('Search…'), wid
   )
 }
 
+/**
+ * The filters of a log or a report: captioned fields on one panel. `chips`
+ * lists the filters that have no field of their own (a drill-down from
+ * Reports, say); `onReset` shows a button that drops every filter.
+ */
+export function FilterBar({ children, chips, onReset }: { children: ReactNode; chips?: ReactNode; onReset?: () => void }) {
+  return (
+    <div className="filterbar">
+      <div className="filterbar-fields">
+        {children}
+        {onReset && (
+          <button type="button" className="btn ghost filterbar-reset" onClick={onReset}>
+            <X size={14} /> {t('Reset filters')}
+          </button>
+        )}
+      </div>
+      {chips && (
+        <nav className="filterbar-chips" aria-label={t('Active filters')}>
+          {chips}
+        </nav>
+      )}
+    </div>
+  )
+}
+
+/** One captioned control of a FilterBar; `active` marks a filter that narrows the result. */
+export function FilterField({ label, children, active, size = 'md' }: { label: string; children: ReactNode; active?: boolean; size?: 'sm' | 'md' | 'lg' | 'auto' }) {
+  const id = useId()
+  return (
+    <div className={'ff ff-' + size + (active ? ' on' : '')} role="group" aria-labelledby={id}>
+      <span className="ff-label" id={id}>
+        {label}
+      </span>
+      {children}
+    </div>
+  )
+}
+
 export function PageHeader({ title, sub, children }: { title: ReactNode; sub?: ReactNode; children?: ReactNode }) {
   useTitle(typeof title === 'string' ? title : undefined)
   return (

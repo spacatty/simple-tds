@@ -66,11 +66,12 @@ type Server struct {
 	publicIP atomic.Value // string; this server's public address, for DNS hints
 
 	checkMu sync.Mutex
+	rep     repState
 	servers []*http.Server
 }
 
 func New(cfg Config, st *store.Store, ev *events.DB, eng *engine.Engine, g *geo.DB, lists *antibot.Lists, pages *whitepage.Manager) (*Server, error) {
-	s := &Server{cfg: cfg, st: st, ev: ev, eng: eng, geo: g, lists: lists, pages: pages, sessions: map[string]sessionEntry{}}
+	s := &Server{cfg: cfg, st: st, ev: ev, eng: eng, geo: g, lists: lists, pages: pages, sessions: map[string]sessionEntry{}, rep: newRepState()}
 	cert, err := selfSigned()
 	if err != nil {
 		return nil, err
@@ -287,7 +288,8 @@ func (s *Server) detectPublicIP(ctx context.Context) {
 	}
 }
 
-// background runs the periodic jobs: list and geo refresh, domain checks.
+// background runs the periodic jobs: list and geo refresh, domain checks,
+// domain reputation.
 func (s *Server) background(ctx context.Context) {
 	go s.detectPublicIP(ctx)
 	s.lists.Reload(ctx)
@@ -296,10 +298,13 @@ func (s *Server) background(ctx context.Context) {
 		s.geo.Refresh(ctx, s.eng.Snap().Settings, false)
 	}()
 	go s.checkDomains(ctx, nil)
+	go s.checkReputation(ctx, nil, s.repInterval())
 	hourly := time.NewTicker(time.Hour)
 	checks := time.NewTicker(30 * time.Minute)
+	reputations := time.NewTicker(repTick)
 	defer hourly.Stop()
 	defer checks.Stop()
+	defer reputations.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -309,6 +314,9 @@ func (s *Server) background(ctx context.Context) {
 			s.geo.Refresh(ctx, s.eng.Snap().Settings, false)
 		case <-checks.C:
 			s.checkDomains(ctx, nil)
+		case <-reputations.C:
+			// On its own goroutine: a provider with a small quota takes a while.
+			go s.checkReputation(ctx, nil, s.repInterval())
 		}
 	}
 }

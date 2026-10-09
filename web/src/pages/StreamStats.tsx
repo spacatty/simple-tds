@@ -89,9 +89,18 @@ export default function StreamStats({ campaign, stream, range, setRange, onClose
     >
       <div className="toolbar wrap" style={{ marginBottom: 12 }}>
         <DateRangePicker value={range} onChange={setRange} />
+        <span className="grow" />
+        <label className="inline-field">
+          <span className="muted">{t('Group by')}</span>
+          <Select value={group} onChange={setGroup} options={GROUPS.map((g) => ({ value: g, label: dimLabel(g) }))} />
+        </label>
+        <label className="inline-field">
+          <span className="muted">{t('Chart')}</span>
+          <Select value={metric} onChange={(m) => setMetric(m as MetricKey)} options={METRICS.map((m) => ({ value: m.key, label: m.label }))} />
+        </label>
       </div>
       <ErrorBox error={total.error || rep.error} retry={() => (total.reload(), rep.reload())} />
-      <div className="kpis">
+      <div className="kpis" style={{ marginBottom: 14 }}>
         {!tot ? (
           <Skeleton rows={2} />
         ) : (
@@ -102,17 +111,6 @@ export default function StreamStats({ campaign, stream, range, setRange, onClose
             </div>
           ))
         )}
-      </div>
-
-      <div className="toolbar wrap" style={{ margin: '14px 0 10px' }}>
-        <label className="inline-field">
-          <span className="muted">{t('Group by')}</span>
-          <Select value={group} onChange={setGroup} options={GROUPS.map((g) => ({ value: g, label: dimLabel(g) }))} />
-        </label>
-        <label className="inline-field">
-          <span className="muted">{t('Chart')}</span>
-          <Select value={metric} onChange={(m) => setMetric(m as MetricKey)} options={METRICS.map((m) => ({ value: m.key, label: m.label }))} />
-        </label>
       </div>
 
       {rows.length > 0 &&

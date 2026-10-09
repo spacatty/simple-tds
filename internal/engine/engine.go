@@ -39,6 +39,9 @@ type CampaignRT struct {
 	// users are the owner and everyone holding an edit share: the people
 	// allowed to run this campaign on their domains and postback keys.
 	users map[int64]bool
+	// suppress are the lists of sources this campaign refuses: one per user
+	// with rules for all of their campaigns, one for the rules naming it.
+	suppress []*suppressList
 }
 
 // UsableBy reports whether a user may attach the campaign to their own
@@ -147,6 +150,10 @@ func (e *Engine) Reload(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	rules, err := store.List[model.SuppressRule](ctx, e.Store, "suppress_rules", "id")
+	if err != nil {
+		return err
+	}
 
 	s := &Snapshot{Settings: st, Domains: map[string]*DomainRT{}, ByAlias: map[string]*CampaignRT{},
 		ByID: map[int64]*CampaignRT{}, Whitepages: map[int64]*model.Whitepage{},
@@ -175,6 +182,7 @@ func (e *Engine) Reload(ctx context.Context) error {
 			c.users[sh.UserID] = true
 		}
 	}
+	attachSuppress(s.ByID, rules)
 	for i := range streams {
 		c := s.ByID[streams[i].CampaignID]
 		if c == nil || !streams[i].Enabled {

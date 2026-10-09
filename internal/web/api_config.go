@@ -213,6 +213,8 @@ func idOf(v any) int64 {
 		return t.ID
 	case *model.Integration:
 		return t.ID
+	case *model.SuppressRule:
+		return t.ID
 	}
 	return 0
 }
@@ -406,12 +408,18 @@ func (s *Server) validateDomain(ctx context.Context, d *model.Domain, old *model
 	}
 	if old == nil {
 		d.Status, d.StatusMsg, d.CheckedAt = "pending", "", nil
+		d.RepStatus, d.Reputation, d.RepCheckedAt = "", nil, nil
 		return nil
 	}
-	// Status is owned by the checker.
+	// Status and reputation are owned by their checkers.
 	d.Status, d.StatusMsg, d.CheckedAt = old.Status, old.StatusMsg, old.CheckedAt
+	d.RepStatus, d.Reputation, d.RepCheckedAt = old.RepStatus, old.Reputation, old.RepCheckedAt
 	if old.Name != d.Name || old.TLSMode != d.TLSMode {
 		d.Status, d.StatusMsg = "pending", ""
+	}
+	if old.Name != d.Name {
+		// What was said about the old name says nothing about the new one.
+		d.RepStatus, d.Reputation, d.RepCheckedAt = "", nil, nil
 	}
 	losing := old.AdminEnabled && old.Status == "ok" && (!d.AdminEnabled || !d.Enabled || d.Status != "ok")
 	if losing && s.wouldLockOut(ctx, old.ID) {
@@ -711,6 +719,8 @@ func (s *Server) routes(r chi.Router) {
 		changed: func(_ context.Context, id int64, deleted bool) {
 			if !deleted {
 				go s.checkDomains(context.Background(), []int64{id})
+				// Asks nobody unless the domain is new or was renamed.
+				go s.checkReputation(context.Background(), []int64{id}, s.repInterval())
 			}
 		}})
 	r.Post("/domains/bulk", handler(s.domainsBulkAdd))
@@ -794,6 +804,7 @@ func (s *Server) routes(r chi.Router) {
 	mount(s, r, "/integrations", resource[model.Integration]{table: "integrations", order: "id", validate: validateIntegration, adminOnly: true})
 	admin.Post("/integrations/test", handler(s.integrationTest))
 
+	s.suppressRoutes(r)
 	s.userRoutes(r)
 
 	s.whitepageRoutes(r)
@@ -852,6 +863,7 @@ func (s *Server) domainsBulkAdd(r *http.Request) (any, error) {
 	}
 	if len(ids) > 0 {
 		go s.checkDomains(context.Background(), ids)
+		go s.checkReputation(context.Background(), ids, 0)
 	}
 	return map[string]any{"results": results, "added": len(ids)}, s.reload(r.Context())
 }
@@ -952,6 +964,7 @@ func (s *Server) domainsCheck(r *http.Request) (any, error) {
 	}
 	// Runs in the background: certificate issuance can take a while.
 	go s.checkDomains(context.Background(), ids)
+	go s.checkReputation(context.Background(), ids, repManualGap)
 	return nil, nil
 }
 

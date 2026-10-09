@@ -144,6 +144,15 @@ CREATE TABLE IF NOT EXISTS dashboards (
   id bigserial PRIMARY KEY, owner_id bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name text NOT NULL, position int NOT NULL DEFAULT 0, widgets jsonb NOT NULL DEFAULT '[]',
   created_at timestamptz NOT NULL DEFAULT now());
+ALTER TABLE domains ADD COLUMN IF NOT EXISTS rep_status text NOT NULL DEFAULT '';
+ALTER TABLE domains ADD COLUMN IF NOT EXISTS reputation jsonb NOT NULL DEFAULT '[]';
+ALTER TABLE domains ADD COLUMN IF NOT EXISTS rep_checked_at timestamptz;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS prefs jsonb NOT NULL DEFAULT '{}';
+CREATE TABLE IF NOT EXISTS suppress_rules (
+  id bigserial PRIMARY KEY, owner_id bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind text NOT NULL, value text NOT NULL, campaign_ids jsonb NOT NULL DEFAULT '[]',
+  store text NOT NULL DEFAULT 'count', created_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS suppress_rules_owner ON suppress_rules(owner_id, kind);
 `
 
 // OwnedTables are the tables whose rows belong to a user.
@@ -453,6 +462,17 @@ func (s *Store) SetShare(ctx context.Context, campaignID, userID int64, access s
 
 func (s *Store) SetDomainStatus(ctx context.Context, id int64, status, msg string) {
 	s.Pool.Exec(ctx, "UPDATE domains SET status=$2, status_msg=$3, checked_at=now() WHERE id=$1", id, status, msg)
+}
+
+// SetDomainReputation stores the blocklist answers for a domain. A nil
+// results clears them, as if the domain had never been checked.
+func (s *Store) SetDomainReputation(ctx context.Context, id int64, status string, results []model.RepResult) error {
+	if results == nil {
+		_, err := s.Pool.Exec(ctx, "UPDATE domains SET rep_status='', reputation='[]', rep_checked_at=NULL WHERE id=$1", id)
+		return err
+	}
+	_, err := s.Pool.Exec(ctx, "UPDATE domains SET rep_status=$2, reputation=$3, rep_checked_at=now() WHERE id=$1", id, status, results)
+	return err
 }
 
 func (s *Store) SetListState(ctx context.Context, id int64, entries int, lastErr string) {

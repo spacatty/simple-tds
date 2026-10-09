@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react'
-import type { ReactNode } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, ArrowRight, BarChart3, LayoutGrid, Maximize2, Pencil, Plus, Settings2, Trash2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BarChart3, Check, Globe, GripVertical, Maximize2, Pencil, Plus, Settings2, Trash2 } from 'lucide-react'
 import { del, get, put } from '../api'
 import { useLoad } from '../hooks'
 import type { Board, BoardWidget, Campaign, ReportRow } from '../types'
@@ -12,10 +12,11 @@ import { Dropdown, Empty, ErrorBox, Field, MenuItem, Modal, Segmented, Select, S
 import { METRICS, loadReport, sumRows } from '../reports'
 import type { MetricKey } from '../reports'
 import { buildSearch, dimLabel } from '../filters'
-import { ratioPct } from '../format'
+import { fmtInt, ratioPct } from '../format'
 import { countryName } from '../countries'
 import { dimIcon } from '../components/icons'
-import FunnelDrawer, { FunnelSteps, useFunnel } from './FunnelDrawer'
+import { DomainsWidget } from '../components/DomainHealth'
+import FunnelDrawer, { useFunnel } from './FunnelDrawer'
 import { t, tx } from '../i18n'
 
 type WidgetType = BoardWidget['type']
@@ -25,8 +26,9 @@ const TYPES: { value: WidgetType; label: string; help: string }[] = [
   { value: 'chart', label: t('Chart'), help: t('One figure over time.') },
   { value: 'funnel', label: t('Funnel'), help: t('How far the clicks of a campaign get.') },
   { value: 'top', label: t('Top list'), help: t('The busiest values of one dimension.') },
+  { value: 'domains', label: t('Domains'), help: t('How your domains are doing: reachable, pending, unreachable or on a blocklist. It does not depend on the period.') },
 ]
-const DEFAULT_W: Record<WidgetType, number> = { stat: 3, chart: 6, funnel: 6, top: 4 }
+const DEFAULT_W: Record<WidgetType, number> = { stat: 3, chart: 6, funnel: 6, top: 4, domains: 4 }
 const WIDTHS = [
   { value: '3', label: t('Quarter') },
   { value: '4', label: t('Third') },
@@ -34,6 +36,98 @@ const WIDTHS = [
   { value: '8', label: t('Two thirds') },
   { value: '12', label: t('Full width') },
 ]
+const HEIGHTS = [
+  { value: '0', label: t('Automatic') },
+  { value: '160', label: t('Short') },
+  { value: '260', label: t('Medium') },
+  { value: '380', label: t('Tall') },
+]
+// The same limits as on the server.
+const MIN_W = 2
+const MIN_H = 100
+const MAX_H = 1200
+const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n))
+
+// A row of the board is always full: the widgets in it share the twelve
+// columns, so making one wider takes the space from its neighbour and making
+// it narrower gives the space back.
+
+/** Indexes of the widgets row by row, the way the grid wraps these widths. */
+function rowsOf(widths: number[]): number[][] {
+  const rows: number[][] = []
+  let sum = 0
+  widths.forEach((w, i) => {
+    if (!rows.length || sum + w > 12) {
+      rows.push([])
+      sum = 0
+    }
+    rows[rows.length - 1].push(i)
+    sum += w
+  })
+  return rows
+}
+
+/** Twelve columns shared in proportion to the weights, nobody narrower than the minimum. */
+function share(weights: number[]): number[] {
+  const sum = weights.reduce((a, b) => a + b, 0)
+  const out = weights.map((w) => Math.max(MIN_W, Math.floor((w * 12) / sum)))
+  let left = 12 - out.reduce((a, b) => a + b, 0)
+  for (let k = 0; left !== 0 && k < 100; k++) {
+    const j = k % out.length
+    if (left > 0) {
+      out[j]++
+      left--
+    } else if (out[j] > MIN_W) {
+      out[j]--
+      left++
+    }
+  }
+  return out
+}
+
+/** The same widgets with every row stretched to the full width. */
+function fit(list: BoardWidget[]): BoardWidget[] {
+  const widths = list.map((w) => clamp(w.w || 12, MIN_W, 12))
+  for (const row of rowsOf(widths)) share(row.map((i) => widths[i])).forEach((w, k) => (widths[row[k]] = w))
+  return list.map((w, i) => (w.w === widths[i] ? w : { ...w, w: widths[i] }))
+}
+
+/**
+ * Gives widget i a new width. The difference comes from, or goes to, its
+ * neighbour in the row; a widget alone in a row that gets narrower pulls the
+ * next one up beside it. With `wrap` a width the neighbour cannot make room
+ * for is still applied and the row breaks; without it the width stops there.
+ */
+function setWidth(from: BoardWidget[], i: number, to: number, wrap: boolean): BoardWidget[] {
+  const list = fit(from)
+  const widths = list.map((w) => w.w)
+  const row = rowsOf(widths).find((r) => r.includes(i)) ?? [i]
+  const at = row.indexOf(i)
+  if (row.length > 1) {
+    const other = row[at + 1] ?? row[at - 1]
+    const room = widths[i] + widths[other]
+    if (to <= room - MIN_W || !wrap) {
+      widths[i] = Math.min(to, room - MIN_W)
+      widths[other] = room - widths[i]
+    } else {
+      widths[i] = to
+    }
+  } else if (i + 1 < list.length && to <= 12 - MIN_W) {
+    widths[i] = to
+    widths[i + 1] = 12 - to
+  }
+  return fit(list.map((w, j) => (w.w === widths[j] ? w : { ...w, w: widths[j] })))
+}
+
+/** A new widget joins the last row while everything in it still fits at its usual size. */
+function withAdded(from: BoardWidget[], w: BoardWidget): BoardWidget[] {
+  const list = fit(from)
+  const last = rowsOf(list.map((x) => x.w)).pop() ?? []
+  const wants = [...last.map((j) => DEFAULT_W[list[j].type] ?? 4), w.w]
+  if (!last.length || wants.reduce((a, b) => a + b, 0) > 12) return [...list, { ...w, w: 12 }]
+  const widths = share(wants)
+  return [...list.map((x, j) => (last.includes(j) ? { ...x, w: widths[last.indexOf(j)] } : x)), { ...w, w: widths[widths.length - 1] }]
+}
 const TOP_DIMS = ['campaign', 'stream', 'country', 'device_type', 'os', 'browser', 'ref_domain', 'domain', 'keyword', 'sub1', 'sub2', 'sub3']
 const metricOf = (key: string | undefined) => METRICS.find((m) => m.key === key) ?? METRICS[0]
 // Colour follows what the figure is, as on the rest of the panel.
@@ -92,7 +186,7 @@ function ChartWidget({ w, range, tick }: WidgetProps) {
   if (rep.error) return <ErrorBox error={rep.error} retry={rep.reload} />
   if (!rep.data) return <Skeleton rows={5} />
   const data = buckets.keys.map((k, i) => ({ key: k, [m.key]: series[i]?.[m.key] ?? 0 }))
-  return <TimeChart area data={data} series={[{ key: m.key, label: m.label, color: TONE[m.key] ?? 'var(--series-1)' }]} fmt={m.fmt} height={190} />
+  return <TimeChart area data={data} series={[{ key: m.key, label: m.label, color: TONE[m.key] ?? 'var(--series-1)' }]} fmt={m.fmt} height={190} fill={!!w.h} />
 }
 
 function TopWidget({ w, range, tick, campaigns }: WidgetProps) {
@@ -104,7 +198,8 @@ function TopWidget({ w, range, tick, campaigns }: WidgetProps) {
   const name = (k: string) => (dim === 'campaign' ? (campaigns.find((c) => String(c.id) === k)?.name ?? `#${k}`) : dim === 'country' ? (k ? countryName(k) : t('(unknown)')) : k === '' ? t('(empty)') : dim === 'stream' ? `#${k}` : k)
   const items = [...rep.data]
     .sort((a, b) => b.clicks - a.clicks)
-    .slice(0, 7)
+    // A widget of a set height scrolls, so it can hold more than fits at a glance.
+    .slice(0, w.h ? 50 : 7)
     .map((r: ReportRow) => ({
       key: r.key || '-',
       label: (
@@ -119,22 +214,30 @@ function TopWidget({ w, range, tick, campaigns }: WidgetProps) {
   return <BarList items={items} />
 }
 
-function FunnelWidget({ w, range, campaigns, open }: WidgetProps & { open: () => void }) {
+function FunnelWidget({ w, range, campaigns }: WidgetProps) {
   const campaign = campaigns.find((c) => c.id === w.campaign_id)
   if (!campaign) return <div className="muted pad-s">{t('This campaign is not available to you any more.')}</div>
-  return <FunnelBody campaign={campaign} w={w} range={range} open={open} />
+  return <FunnelBody campaign={campaign} w={w} range={range} />
 }
 
-function FunnelBody({ campaign, w, range, open }: { campaign: Campaign; w: BoardWidget; range: DateRange; open: () => void }) {
+// Only the bars: the drops, events and links live in the full funnel, one click away in the header.
+function FunnelBody({ campaign, w, range }: { campaign: Campaign; w: BoardWidget; range: DateRange }) {
   const f = useFunnel(campaign, range, { streamId: w.stream_id || undefined })
   if (f.error) return <ErrorBox error={f.error} retry={f.reload} />
   if (!f.loaded) return <Skeleton rows={4} />
+  const rows = [{ key: '#clicks', name: t('Clicks'), reached: f.clicks, goal: false }, ...f.steps.map((s) => ({ key: s.key, name: s.name, reached: s.reached, goal: !!s.goal }))]
   return (
-    <div className="wfunnel">
-      <FunnelSteps compact clicks={f.clicks} steps={f.steps} currency={campaign.currency} />
-      <button className="btn small ghost" onClick={open}>
-        <Maximize2 size={12} /> {t('Open the full funnel')}
-      </button>
+    <div className="wbars">
+      {rows.map((r, i) => (
+        <div key={r.key} className={'wbar' + (r.goal ? ' goal' : '')}>
+          <span className="ellipsis">{r.name}</span>
+          <b>{fmtInt(r.reached)}</b>
+          <small>{i === 0 ? (f.clicks > 0 ? '100%' : '—') : ratioPct(r.reached, f.clicks)}</small>
+          <div className="wbar-track">
+            <div style={{ width: f.clicks > 0 ? `${Math.min(100, (r.reached / f.clicks) * 100)}%` : 0 }} />
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
@@ -146,6 +249,8 @@ function widgetTitle(w: BoardWidget): string {
       return t('Funnel')
     case 'top':
       return t('Top: {dim}', { dim: dimLabel(w.dim || 'country').toLowerCase() })
+    case 'domains':
+      return t('Domain health')
     default:
       return metricOf(w.metric).label
   }
@@ -160,11 +265,60 @@ export function BoardView({ board, range, setRange, tick, onChange, onDeleted }:
   const [renaming, setRenaming] = useState<string | null>(null)
   const [funnelFor, setFunnelFor] = useState<BoardWidget | null>(null)
   const [busy, run] = useBusy()
-  const widgets = board.widgets ?? []
+  const grid = useRef<HTMLDivElement>(null)
+  // The size under the pointer while a widget is being dragged; saved on release.
+  const [drag, setDrag] = useState<{ index: number; list: BoardWidget[] } | null>(null)
+  const stored = useMemo(() => fit(board.widgets ?? []), [board.widgets])
+  const widgets = drag ? drag.list : stored
+  // The order shown while a widget is being carried to a new place; saved on release.
+  const [carry, setCarry] = useState<{ key: string; order: number[] } | null>(null)
+  const keyOf = (i: number) => stored[i].id || String(i)
+  const order = carry && carry.order.length === stored.length ? carry.order : stored.map((_, i) => i)
+  // Fitted again in the order being tried, as the rows change with it.
+  const shown = carry ? fit(order.map((i) => widgets[i])) : widgets
+  const view = order.map((i, at) => ({ i, w: shown[at] }))
+  const els = useRef(new Map<string, HTMLElement>())
+  const places = useRef(new Map<string, { x: number; y: number }>())
+  // The carried widget follows the pointer without a render per move.
+  const carried = useRef<{ key: string; x: number; y: number; gx: number; gy: number } | null>(null)
+  const dropped = useRef('')
+  const follow = () => {
+    const c = carried.current
+    const el = c && els.current.get(c.key)
+    const box = grid.current?.getBoundingClientRect()
+    if (c && el && box) el.style.transform = `translate(${c.x - box.left - c.gx - el.offsetLeft}px, ${c.y - box.top - c.gy - el.offsetTop}px)`
+  }
+  // In edit mode a widget that ends up somewhere else slides there from
+  // where it was instead of jumping. Offsets are used because they ignore the
+  // transform of a slide still in progress.
+  useLayoutEffect(() => {
+    const now = new Map<string, { x: number; y: number }>()
+    els.current.forEach((el, key) => {
+      const at = { x: el.offsetLeft, y: el.offsetTop }
+      const was = places.current.get(key)
+      now.set(key, at)
+      if (key === carried.current?.key) return follow()
+      if (key === dropped.current) {
+        // Released: glide from under the pointer into the slot.
+        dropped.current = ''
+        el.getBoundingClientRect()
+        el.style.transform = ''
+        return
+      }
+      if (!arranging || !was || (was.x === at.x && was.y === at.y)) return
+      el.style.transition = 'none'
+      el.style.transform = `translate(${was.x - at.x}px, ${was.y - at.y}px)`
+      el.getBoundingClientRect()
+      el.style.transition = ''
+      el.style.transform = ''
+    })
+    places.current = now
+  })
 
   const save = (next: BoardWidget[]) =>
     run(async () => {
       // Shown at once; the server's answer (with ids for new widgets) replaces it.
+      next = fit(next)
       onChange({ ...board, widgets: next })
       try {
         onChange(await put<Board>(`dashboards/${board.id}`, { widgets: next }))
@@ -181,7 +335,88 @@ export function BoardView({ board, range, setRange, tick, onChange, onDeleted }:
   const resize = (i: number) => {
     const sizes = [3, 4, 6, 8, 12]
     const at = sizes.indexOf(widgets[i].w)
-    save(widgets.map((w, j) => (j === i ? { ...w, w: sizes[(at + 1) % sizes.length] } : w)))
+    save(setWidth(stored, i, sizes[(at + 1) % sizes.length], true))
+  }
+  const startResize = (e: ReactPointerEvent<HTMLElement>, i: number, axis: 'x' | 'y' | 'xy') => {
+    const handle = e.currentTarget
+    const box = handle.parentElement?.getBoundingClientRect()
+    if (!box || !grid.current || busy || e.button !== 0) return
+    e.preventDefault()
+    const from = stored[i]
+    const gap = parseFloat(getComputedStyle(grid.current).columnGap) || 0
+    const column = (grid.current.clientWidth + gap) / 12
+    const x0 = e.clientX
+    const y0 = e.clientY
+    let next = { index: i, list: stored }
+    const onMove = (ev: PointerEvent) => {
+      const w = axis === 'y' ? from.w : clamp(Math.round((box.width + ev.clientX - x0 + gap) / column), MIN_W, 12)
+      const h = axis === 'x' ? (from.h ?? 0) : clamp(Math.round((box.height + ev.clientY - y0) / 10) * 10, MIN_H, MAX_H)
+      next = { index: i, list: (w === from.w ? stored : setWidth(stored, i, w, false)).map((x, j) => (j === i ? { ...x, h } : x)) }
+      setDrag(next)
+    }
+    const onEnd = () => {
+      handle.removeEventListener('pointermove', onMove)
+      handle.removeEventListener('pointerup', onEnd)
+      handle.removeEventListener('pointercancel', onEnd)
+      setDrag(null)
+      if (next.list.some((w, j) => w.w !== stored[j].w || (w.h ?? 0) !== (stored[j].h ?? 0))) save(next.list)
+    }
+    // Captured, so the drag goes on when the pointer leaves the thin handle.
+    handle.setPointerCapture(e.pointerId)
+    handle.addEventListener('pointermove', onMove)
+    handle.addEventListener('pointerup', onEnd)
+    handle.addEventListener('pointercancel', onEnd)
+  }
+  const startCarry = (e: ReactPointerEvent<HTMLElement>, i: number) => {
+    const el = e.currentTarget.parentElement
+    if (!el || busy || e.button !== 0 || (e.target as HTMLElement).closest('button, a')) return
+    e.preventDefault()
+    const key = keyOf(i)
+    const box = el.getBoundingClientRect()
+    let order = stored.map((_, j) => j)
+    // The widget just swapped with: it is skipped until the pointer leaves it,
+    // or two widgets of different sizes would trade places on every move.
+    let last = -1
+    carried.current = { key, x: e.clientX, y: e.clientY, gx: e.clientX - box.left, gy: e.clientY - box.top }
+    setCarry({ key, order })
+    const onMove = (ev: PointerEvent) => {
+      const c = carried.current
+      const board = grid.current?.getBoundingClientRect()
+      if (!c || !board) return
+      c.x = ev.clientX
+      c.y = ev.clientY
+      follow()
+      const x = ev.clientX - board.left
+      const y = ev.clientY - board.top
+      const over = order.find((j) => {
+        const o = j === i ? undefined : els.current.get(keyOf(j))
+        return o && x >= o.offsetLeft && x < o.offsetLeft + o.offsetWidth && y >= o.offsetTop && y < o.offsetTop + o.offsetHeight
+      })
+      if (over === undefined) last = -1
+      if (over === undefined || over === last) return
+      last = over
+      const to = order.indexOf(over)
+      order = order.filter((j) => j !== i)
+      order.splice(to, 0, i)
+      setCarry({ key, order })
+    }
+    const onEnd = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onEnd)
+      window.removeEventListener('pointercancel', onEnd)
+      carried.current = null
+      dropped.current = key
+      setCarry(null)
+      if (order.some((j, at) => j !== at)) save(order.map((j) => stored[j]))
+    }
+    // On the window, not captured by the header: reordering moves the header in
+    // the DOM, and a node that is moved loses its pointer capture.
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onEnd)
+    window.addEventListener('pointercancel', onEnd)
+  }
+  const autoHeight = (i: number) => {
+    if (!busy && stored[i].h) save(stored.map((w, j) => (j === i ? { ...w, h: 0 } : w)))
   }
   const remove = async () => {
     if (!(await confirmDialog({ title: t('Delete dashboard?'), message: tx('Dashboard <b>{name}</b> and its widgets will be deleted. No statistics are lost.', { b: (c) => <b>{c}</b>, name: board.name }) }))) return
@@ -204,7 +439,7 @@ export function BoardView({ board, range, setRange, tick, onChange, onDeleted }:
     }
   }
   const add = () => setEditing({ index: -1, draft: { id: '', type: 'stat', metric: 'clicks', w: DEFAULT_W.stat } })
-  const scopeName = (w: BoardWidget) => (w.campaign_id ? (campaigns.find((c) => c.id === w.campaign_id)?.name ?? `#${w.campaign_id}`) : t('All campaigns'))
+  const scopeName = (w: BoardWidget) => (w.type === 'domains' ? t('Your domains') : w.campaign_id ? (campaigns.find((c) => c.id === w.campaign_id)?.name ?? `#${w.campaign_id}`) : t('All campaigns'))
   const funnelCampaign = funnelFor && campaigns.find((c) => c.id === funnelFor.campaign_id)
 
   return (
@@ -214,7 +449,7 @@ export function BoardView({ board, range, setRange, tick, onChange, onDeleted }:
           <input className="input board-rename" autoFocus value={renaming} maxLength={64} onChange={(e) => setRenaming(e.target.value)} onBlur={rename} onKeyDown={(e) => (e.key === 'Enter' ? rename() : e.key === 'Escape' ? setRenaming(null) : undefined)} />
         ) : (
           <span className="muted small">
-            {widgets.length === 0 ? t('Empty dashboard') : arranging ? t('Arrange mode: move, resize, change or remove the widgets.') : t('Your own dashboard — only you see it.')}
+            {widgets.length === 0 ? t('Empty dashboard') : arranging ? t('Edit mode: move, resize, change or remove the widgets.') : t('Your own dashboard — only you see it.')}
           </span>
         )}
         <span className="grow" />
@@ -222,8 +457,8 @@ export function BoardView({ board, range, setRange, tick, onChange, onDeleted }:
           <Plus size={14} /> {t('Add widget')}
         </button>
         {widgets.length > 0 && (
-          <button className={'btn' + (arranging ? ' primary' : '')} onClick={() => setArranging((a) => !a)} title={t('Move, resize and remove widgets')}>
-            <LayoutGrid size={14} /> {arranging ? t('Done') : t('Arrange')}
+          <button className={'btn ' + (arranging ? 'ok' : 'accent')} onClick={() => setArranging((a) => !a)} title={t('Move, resize and remove widgets')}>
+            {arranging ? <Check size={14} /> : <Pencil size={14} />} {arranging ? t('Done') : t('Edit@@dashboard')}
           </button>
         )}
         <Dropdown align="right" className="btn" chevron={false} label={<Settings2 size={14} />} title={t('Dashboard settings')}>
@@ -266,19 +501,29 @@ export function BoardView({ board, range, setRange, tick, onChange, onDeleted }:
           </Empty>
         </div>
       ) : (
-        <div className={'board' + (arranging ? ' arranging' : '')}>
-          {widgets.map((w, i) => {
+        <div ref={grid} className={'board' + (arranging ? ' arranging' : '')}>
+          {view.map(({ w, i }) => {
+            const key = keyOf(i)
             const props: WidgetProps = { w, range, tick, campaigns }
             let body: ReactNode
             if (camps.loading && !camps.data) body = <Skeleton rows={3} />
             else if (w.type === 'chart') body = <ChartWidget {...props} />
-            else if (w.type === 'funnel') body = <FunnelWidget {...props} open={() => setFunnelFor(w)} />
+            else if (w.type === 'funnel') body = <FunnelWidget {...props} />
             else if (w.type === 'top') body = <TopWidget {...props} />
+            else if (w.type === 'domains') body = <DomainsWidget tick={tick} tall={!!w.h} />
             else body = <StatWidget {...props} />
             const filters = scopeOf(w)
             return (
-              <section key={w.id || i} className={'wdg wdg-' + w.type} style={{ gridColumn: `span ${w.w}` }}>
-                <header className="wdg-head">
+              <section
+                key={key}
+                ref={(el) => {
+                  if (el) els.current.set(key, el)
+                  else els.current.delete(key)
+                }}
+                className={'wdg wdg-' + w.type + (w.h ? ' sized' : '') + (drag?.index === i ? ' resizing' : '') + (carry?.key === key ? ' carried' : '')}
+                style={{ gridColumn: `span ${w.w}`, height: w.h || undefined, ['--metric' as string]: (w.type === 'stat' || w.type === 'chart') && TONE[metricOf(w.metric).key] ? TONE[metricOf(w.metric).key] : undefined }}>
+                <header className="wdg-head" onPointerDown={arranging ? (e) => startCarry(e, i) : undefined} title={arranging ? t('Drag to move the widget') : undefined}>
+                  {arranging && <GripVertical className="wdg-grip" size={14} />}
                   <div className="wdg-title">
                     <b className="ellipsis">{widgetTitle(w)}</b>
                     <span className="ellipsis">{scopeName(w)}</span>
@@ -301,15 +546,31 @@ export function BoardView({ board, range, setRange, tick, onChange, onDeleted }:
                         <Trash2 size={13} />
                       </button>
                     </div>
+                  ) : w.type === 'domains' ? (
+                    <Link className="wdg-link" to="/domains" title={t('Open Domains')}>
+                      <Globe size={13} />
+                    </Link>
+                  ) : w.type !== 'funnel' ? (
+                    <Link className="wdg-link" to={'/reports' + buildSearch({ range, group: w.type === 'top' ? w.dim || 'country' : undefined, filters })} title={t('Open in Reports')}>
+                      <BarChart3 size={13} />
+                    </Link>
                   ) : (
-                    w.type !== 'funnel' && (
-                      <Link className="wdg-link" to={'/reports' + buildSearch({ range, group: w.type === 'top' ? w.dim || 'country' : undefined, filters })} title={t('Open in Reports')}>
-                        <BarChart3 size={13} />
-                      </Link>
+                    campaigns.some((c) => c.id === w.campaign_id) && (
+                      <button className="wdg-link" onClick={() => setFunnelFor(w)} title={t('Open the full funnel')}>
+                        <Maximize2 size={13} />
+                      </button>
                     )
                   )}
                 </header>
                 <div className="wdg-body">{body}</div>
+                {arranging && (
+                  <>
+                    <div className="wdg-rs x" onPointerDown={(e) => startResize(e, i, 'x')} title={t('Drag to change the width')} />
+                    <div className="wdg-rs y" onPointerDown={(e) => startResize(e, i, 'y')} onDoubleClick={() => autoHeight(i)} title={t('Drag to change the height; double-click to fit the content')} />
+                    <div className="wdg-rs xy" onPointerDown={(e) => startResize(e, i, 'xy')} title={t('Drag to resize')} />
+                    {drag?.index === i && <span className="wdg-size">{`${w.w}/12` + (w.h ? ` × ${w.h}` : '')}</span>}
+                  </>
+                )}
               </section>
             )
           })}
@@ -323,7 +584,16 @@ export function BoardView({ board, range, setRange, tick, onChange, onDeleted }:
           campaigns={campaigns}
           onClose={() => setEditing(null)}
           onSave={(w) => {
-            save(editing.index < 0 ? [...widgets, w] : widgets.map((x, j) => (j === editing.index ? w : x)))
+            save(
+              editing.index < 0
+                ? withAdded(stored, w)
+                : setWidth(
+                    stored.map((x, j) => (j === editing.index ? { ...w, w: x.w } : x)),
+                    editing.index,
+                    w.w,
+                    true,
+                  ),
+            )
             setEditing(null)
           }}
         />
@@ -335,6 +605,11 @@ export function BoardView({ board, range, setRange, tick, onChange, onDeleted }:
   )
 }
 
+/** The presets, plus the current size when it was set by dragging and matches none of them. */
+function withCustom(presets: { value: string; label: string }[], n: number, label: string) {
+  return presets.some((p) => p.value === String(n)) ? presets : [...presets, { value: String(n), label }]
+}
+
 function WidgetEditor({ draft, isNew, campaigns, onClose, onSave }: { draft: BoardWidget; isNew: boolean; campaigns: Campaign[]; onClose: () => void; onSave: (w: BoardWidget) => void }) {
   const [w, setW] = useState<BoardWidget>(draft)
   const [error, setError] = useState('')
@@ -342,7 +617,7 @@ function WidgetEditor({ draft, isNew, campaigns, onClose, onSave }: { draft: Boa
   const type = TYPES.find((x) => x.value === w.type) ?? TYPES[0]
   const submit = () => {
     if (w.type === 'funnel' && !w.campaign_id) return setError(t('Choose the campaign whose funnel to show.'))
-    onSave({ ...w, title: (w.title ?? '').trim(), metric: w.type === 'stat' || w.type === 'chart' ? w.metric || 'clicks' : '', dim: w.type === 'top' ? w.dim || 'country' : '', stream_id: w.type === 'funnel' && w.campaign_id === draft.campaign_id ? w.stream_id : 0 })
+    onSave({ ...w, campaign_id: w.type === 'domains' ? 0 : w.campaign_id, title: (w.title ?? '').trim(), metric: w.type === 'stat' || w.type === 'chart' ? w.metric || 'clicks' : '', dim: w.type === 'top' ? w.dim || 'country' : '', stream_id: w.type === 'funnel' && w.campaign_id === draft.campaign_id ? w.stream_id : 0 })
   }
   return (
     <Modal
@@ -374,22 +649,28 @@ function WidgetEditor({ draft, isNew, campaigns, onClose, onSave }: { draft: Boa
           <Select value={w.dim || 'country'} onChange={(dim) => set({ dim })} options={TOP_DIMS.map((d) => ({ value: d, label: dimLabel(d) }))} />
         </Field>
       )}
-      <Field label={t('Campaign')} help={w.type === 'funnel' ? t('A funnel always belongs to one campaign.') : t('Leave on “All campaigns” for everything you can see.')}>
-        <Select
-          value={w.campaign_id ? String(w.campaign_id) : ''}
-          onChange={(v) => set({ campaign_id: v ? Number(v) : 0 })}
-          placeholder={w.type === 'funnel' ? t('Choose a campaign…') : undefined}
-          options={[...(w.type === 'funnel' ? [] : [{ value: '', label: t('All campaigns') }]), ...campaigns.map((c) => ({ value: String(c.id), label: c.name }))]}
-        />
-      </Field>
-      <div className="row gap">
-        <Field label={t('Title')} className="grow" help={t('Optional: the widget names itself otherwise.')}>
-          <input className="input" value={w.title ?? ''} maxLength={80} onChange={(e) => set({ title: e.target.value })} />
+      {w.type !== 'domains' && (
+        <Field label={t('Campaign')} help={w.type === 'funnel' ? t('A funnel always belongs to one campaign.') : t('Leave on “All campaigns” for everything you can see.')}>
+          <Select
+            value={w.campaign_id ? String(w.campaign_id) : ''}
+            onChange={(v) => set({ campaign_id: v ? Number(v) : 0 })}
+            placeholder={w.type === 'funnel' ? t('Choose a campaign…') : undefined}
+            options={[...(w.type === 'funnel' ? [] : [{ value: '', label: t('All campaigns') }]), ...campaigns.map((c) => ({ value: String(c.id), label: c.name }))]}
+          />
         </Field>
-        <Field label={t('Width')} style={{ width: 150 }}>
-          <Select value={String(w.w)} onChange={(v) => set({ w: Number(v) })} options={WIDTHS} />
+      )}
+      <Field label={t('Title')} help={t('Optional: the widget names itself otherwise.')}>
+        <input className="input" value={w.title ?? ''} maxLength={80} onChange={(e) => set({ title: e.target.value })} />
+      </Field>
+      <div className="form-grid wdg-form-size">
+        <Field label={t('Width')}>
+          <Select value={String(w.w)} onChange={(v) => set({ w: Number(v) })} options={withCustom(WIDTHS, w.w, t('{n} of 12 columns', { n: w.w }))} />
+        </Field>
+        <Field label={t('Height')}>
+          <Select value={String(w.h ?? 0)} onChange={(v) => set({ h: Number(v) })} options={withCustom(HEIGHTS, w.h ?? 0, t('{n} px', { n: w.h ?? 0 }))} />
         </Field>
       </div>
+      <div className="field-help wdg-form-hint">{t('In edit mode a widget can also be resized by dragging its edges.')}</div>
     </Modal>
   )
 }

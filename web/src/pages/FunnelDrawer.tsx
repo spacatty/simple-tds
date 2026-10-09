@@ -94,7 +94,7 @@ export function useFunnel(campaign: Campaign, range: DateRange, opts: { streamId
 }
 
 /** The funnel itself: one bar per step, and what was lost between them. */
-export function FunnelSteps({ clicks, steps, currency, clicksLink, compact }: { clicks: number; steps: FunnelStepView[]; currency?: string; clicksLink?: string; compact?: boolean }) {
+export function FunnelSteps({ clicks, steps, currency, clicksLink }: { clicks: number; steps: FunnelStepView[]; currency?: string; clicksLink?: string }) {
   // The step that loses the largest share of what reached it.
   let worst = -1
   let worstRate = 0
@@ -115,7 +115,7 @@ export function FunnelSteps({ clicks, steps, currency, clicksLink, compact }: { 
       <span className="fnl-num">{fmtInt(n)}</span>
     )
   return (
-    <div className={'fnl' + (compact ? ' compact' : '')}>
+    <div className="fnl">
       <div className="fnl-step top">
         <span className="fnl-ix">
           <MousePointerClick size={12} />
@@ -133,7 +133,7 @@ export function FunnelSteps({ clicks, steps, currency, clicksLink, compact }: { 
         const prev = i === 0 ? clicks : steps[i - 1].reached
         const lost = Math.max(0, prev - s.reached)
         const meta: ReactNode[] = []
-        if (!compact && s.events !== undefined && s.events !== s.reached)
+        if (s.events !== undefined && s.events !== s.reached)
           meta.push(
             s.links?.events ? (
               <Link key="e" to={s.links.events} title={t('Events received for this stage, repeats included. Opens them in the conversion log.')}>
@@ -144,7 +144,7 @@ export function FunnelSteps({ clicks, steps, currency, clicksLink, compact }: { 
             ),
           )
         if (s.revenue) meta.push(<span key="r" className="tone-good">{fmtMoney(s.revenue, currency)}</span>)
-        if (!compact && s.reached > 0 && s.median) meta.push(<span key="m" title={t('Median time from the click to its first event of this stage')}>{t('{span} from click', { span: fmtSpan(s.median) })}</span>)
+        if (s.reached > 0 && s.median) meta.push(<span key="m" title={t('Median time from the click to its first event of this stage')}>{t('{span} from click', { span: fmtSpan(s.median) })}</span>)
         return (
           <div key={s.key} className="fnl-group">
             <div className={'fnl-drop' + (i === worst && lost > 0 ? ' worst' : '')}>
@@ -169,8 +169,8 @@ export function FunnelSteps({ clicks, steps, currency, clicksLink, compact }: { 
               <span className="fnl-ix">{s.goal ? <Star size={11} /> : i + 1}</span>
               <div className="fnl-name" title={s.key.startsWith('#') ? undefined : s.key}>
                 <b className="ellipsis">{s.name}</b>
-                {!compact && s.goal && <span className="tag info">{t('goal')}</span>}
-                {!compact && s.public && <span className="tag">{t('browser')}</span>}
+                {s.goal && <span className="tag info">{t('goal')}</span>}
+                {s.public && <span className="tag">{t('browser')}</span>}
               </div>
               <div className="fnl-track">
                 <div className="fnl-bar" style={{ width: `${Math.min(100, share(s.reached, clicks))}%` }} />
@@ -189,7 +189,7 @@ export function FunnelSteps({ clicks, steps, currency, clicksLink, compact }: { 
 }
 
 /** Funnel analysis of a campaign, or of one of its streams: the steps, the trend, and a breakdown by any dimension. */
-export function FunnelView({ campaign, stream, range, setRange, toolbarEnd }: { campaign: Campaign; stream?: StreamRef; range: DateRange; setRange: (r: DateRange) => void; toolbarEnd?: ReactNode }) {
+export function FunnelView({ campaign, stream, range, setRange, toolbarStart, toolbarEnd }: { campaign: Campaign; stream?: StreamRef; range: DateRange; setRange: (r: DateRange) => void; toolbarStart?: ReactNode; toolbarEnd?: ReactNode }) {
   const meta = useMeta()
   const [strict, setStrict] = useState('')
   const [bots, setBots] = useState('exclude')
@@ -233,17 +233,25 @@ export function FunnelView({ campaign, stream, range, setRange, toolbarEnd }: { 
     return k === '' ? t('(empty)') : k
   }
 
+  // The period leads the bar, unless the page puts its own pickers there: then it closes the bar.
+  const period = (
+    <>
+      <DateRangePicker value={range} onChange={setRange} />
+      <button className="btn" onClick={() => (f.reload(), trend.reload(), split.reload())} title={t('Refresh')} aria-label={t('Refresh')}>
+        <RefreshCw size={14} className={f.loading ? 'spin' : ''} />
+      </button>
+    </>
+  )
+
   return (
     <div className="fnv">
       <div className="toolbar wrap fnv-bar">
-        <DateRangePicker value={range} onChange={setRange} />
-        <button className="btn" onClick={() => (f.reload(), trend.reload(), split.reload())} title={t('Refresh')} aria-label={t('Refresh')}>
-          <RefreshCw size={14} className={f.loading ? 'spin' : ''} />
-        </button>
+        {toolbarStart ?? period}
         {staged && (
           <>
             <Segmented
               small
+              className="order"
               value={strict}
               onChange={setStrict}
               options={[
@@ -253,6 +261,7 @@ export function FunnelView({ campaign, stream, range, setRange, toolbarEnd }: { 
             />
             <Segmented
               small
+              className="bots"
               value={bots}
               onChange={setBots}
               options={[
@@ -264,6 +273,7 @@ export function FunnelView({ campaign, stream, range, setRange, toolbarEnd }: { 
         )}
         <span className="grow" />
         {toolbarEnd}
+        {toolbarStart && period}
       </div>
 
       <ErrorBox error={f.error} retry={f.reload} />

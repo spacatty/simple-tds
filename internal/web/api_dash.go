@@ -18,10 +18,12 @@ import (
 const (
 	maxDashboards  = 20
 	maxDashWidgets = 40
+	minDashHeight  = 100
+	maxDashHeight  = 1200
 )
 
 var (
-	dashWidths = map[string]int{"stat": 3, "chart": 6, "funnel": 6, "top": 4}
+	dashWidths = map[string]int{"stat": 3, "chart": 6, "funnel": 6, "top": 4, "domains": 4}
 	reDashWord = regexp.MustCompile(`^[a-z0-9_]{0,32}$`)
 )
 
@@ -50,6 +52,9 @@ func validateDashboard(d *model.Dashboard) error {
 		}
 		if w.W < 2 || w.W > 12 {
 			w.W = def
+		}
+		if w.H != 0 {
+			w.H = min(max(w.H, minDashHeight), maxDashHeight)
 		}
 		if len(w.ID) > 24 || w.ID == "" || seen[w.ID] {
 			w.ID = randToken(6)

@@ -41,11 +41,11 @@ func TestReadPatchLeavesStoredRowAlone(t *testing.T) {
 }
 
 func TestValidateDashboard(t *testing.T) {
-	d := model.Dashboard{Name: " board ", Widgets: []model.DashWidget{{Type: "stat", Metric: "clicks"}, {ID: "x", Type: "funnel", W: 99}, {ID: "x", Type: "top", Dim: "country", W: 4}}}
+	d := model.Dashboard{Name: " board ", Widgets: []model.DashWidget{{Type: "stat", Metric: "clicks"}, {ID: "x", Type: "funnel", W: 99, H: 5000}, {ID: "x", Type: "top", Dim: "country", W: 4}}}
 	if err := validateDashboard(&d); err != nil {
 		t.Fatal(err)
 	}
-	if d.Name != "board" || d.Widgets[0].W != 3 || d.Widgets[1].W != 6 || d.Widgets[0].ID == "" || d.Widgets[2].ID == "x" {
+	if d.Name != "board" || d.Widgets[0].W != 3 || d.Widgets[1].W != 6 || d.Widgets[0].H != 0 || d.Widgets[1].H != maxDashHeight || d.Widgets[0].ID == "" || d.Widgets[2].ID == "x" {
 		t.Errorf("not normalised: %+v", d)
 	}
 	for _, bad := range []model.Dashboard{

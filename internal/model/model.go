@@ -14,6 +14,9 @@ type User struct {
 	TOTPEnabled  bool   `db:"totp_enabled" json:"totp_enabled"`
 	Role         string `db:"role" json:"role"` // admin | user
 	Enabled      bool   `db:"enabled" json:"enabled"`
+	// Prefs are the user's own panel preferences (which view a list opens in,
+	// and the like). They follow the account, not the browser.
+	Prefs map[string]string `db:"prefs" json:"prefs"`
 }
 
 const (
@@ -110,6 +113,7 @@ type DashWidget struct {
 	Metric     string `json:"metric,omitempty"` // stat, chart
 	Dim        string `json:"dim,omitempty"`    // top
 	W          int    `json:"w"`                // width in twelfths of the board
+	H          int    `json:"h,omitempty"`      // height in pixels; zero fits the content
 }
 
 // Owned is implemented by every per-user entity.
@@ -164,6 +168,20 @@ type Domain struct {
 	CheckedAt    *time.Time `db:"checked_at" json:"checked_at"`
 	Note         string     `db:"note" json:"note"`
 	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
+	// Reputation is what the blocklist providers said last; RepStatus sums it
+	// up. Both are owned by the reputation checker.
+	RepStatus    string      `db:"rep_status" json:"rep_status"` // "" (not checked) | clean | listed | unknown
+	Reputation   []RepResult `db:"reputation" json:"reputation"`
+	RepCheckedAt *time.Time  `db:"rep_checked_at" json:"rep_checked_at"`
+}
+
+// RepResult is one blocklist provider's answer about a domain.
+type RepResult struct {
+	Provider  string    `json:"provider"`
+	Status    string    `json:"status"` // clean | listed | error
+	Detail    string    `json:"detail,omitempty"`
+	URL       string    `json:"url,omitempty"` // the provider's own page about the domain
+	CheckedAt time.Time `json:"checked_at"`
 }
 
 type Campaign struct {
@@ -381,6 +399,56 @@ type Settings struct {
 	// ParamAliases gives system request parameters (click_id, key, type, …)
 	// extra names: system name → names accepted next to it.
 	ParamAliases map[string][]string `json:"param_aliases"`
+
+	Reputation ReputationSettings `json:"reputation"`
+}
+
+// Suppress rule kinds.
+const (
+	SuppressIP      = "ip"      // an address or a CIDR network
+	SuppressReferer = "referer" // a referrer domain, subdomains included
+)
+
+// What a suppress rule keeps about the requests it refuses.
+const (
+	SuppressOff   = "off"   // nothing
+	SuppressCount = "count" // a daily counter (the default)
+	SuppressLog   = "log"   // the counter plus a short line per request
+)
+
+// SuppressRule names a source whose requests never reach its owner's
+// campaigns: they get a 404 and stay out of clicks, uniqueness and reports.
+type SuppressRule struct {
+	ID      int64  `db:"id" json:"id"`
+	OwnerID int64  `db:"owner_id" json:"owner_id"`
+	Kind    string `db:"kind" json:"kind"`
+	Value   string `db:"value" json:"value"`
+	// CampaignIDs narrows the rule to these campaigns; empty means every
+	// campaign the owner has.
+	CampaignIDs []int64 `db:"campaign_ids" json:"campaign_ids"`
+	// Store is what the rule keeps about the requests it refuses.
+	Store     string    `db:"store" json:"store"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+}
+
+func (r *SuppressRule) Owner() int64      { return r.OwnerID }
+func (r *SuppressRule) SetOwner(id int64) { r.OwnerID = id }
+
+// ReputationSettings configures the blocklist checks of domains. Every
+// provider is off until an administrator switches it on: a check tells the
+// provider the domain name.
+type ReputationSettings struct {
+	IntervalHours int                    `json:"interval_hours"`
+	Providers     map[string]RepProvider `json:"providers"`
+}
+
+type RepProvider struct {
+	Enabled bool   `json:"enabled"`
+	Key     string `json:"key,omitempty"`
+	// Threshold is how many votes flag a domain, for providers that count them.
+	Threshold int `json:"threshold,omitempty"`
+	// PerMinute caps the request rate, for providers with a tight quota.
+	PerMinute int `json:"per_minute,omitempty"`
 }
 
 func DefaultSettings() Settings {
@@ -402,6 +470,7 @@ func DefaultSettings() Settings {
 		GeoASNURL:      "https://download.db-ip.com/free/dbip-asn-lite-{YYYY}-{MM}.mmdb.gz",
 		GeoRefreshDays: 7,
 		RetentionDays:  180,
+		Reputation:     ReputationSettings{IntervalHours: 12},
 	}
 }
 

@@ -141,6 +141,18 @@ const ddlPostbacks = `CREATE TABLE IF NOT EXISTS postbacks (
  campaign_id UInt32, stream_id UInt32, revenue Float64, query String
 ) ENGINE = MergeTree PARTITION BY toYYYYMM(ts) ORDER BY (ts)`
 
+// Requests refused by the suppress lists live apart from clicks: a counter per
+// rule and day, and, when the log is on, a short line per request.
+const ddlSuppressedStats = `CREATE TABLE IF NOT EXISTS suppress_stats (
+ day Date, owner_id UInt32, kind LowCardinality(String), rule_id UInt64,
+ hits SimpleAggregateFunction(sum, UInt64), last SimpleAggregateFunction(max, DateTime('UTC'))
+) ENGINE = AggregatingMergeTree PARTITION BY toYYYYMM(day) ORDER BY (owner_id, kind, rule_id, day)`
+
+const ddlSuppressedLog = `CREATE TABLE IF NOT EXISTS suppress_log (
+ ts DateTime('UTC'), owner_id UInt32, kind LowCardinality(String), rule_id UInt64, rule String,
+ ip String, referer String, domain LowCardinality(String), campaign_id UInt32, ua String
+) ENGINE = MergeTree PARTITION BY toYYYYMM(ts) ORDER BY (owner_id, kind, ts)`
+
 const insertPostback = `INSERT INTO postbacks (ts, status, http_status, reason, key_id, key_prefix, sender_ip, type,
  click_id, conv_id, campaign_id, stream_id, revenue, query)`
 
@@ -172,8 +184,11 @@ type DB struct {
 	// The postback log has its own small queue and writer.
 	postbacks chan *Postback
 	pbDone    chan struct{}
-	Dropped   atomic.Int64
-	Written   atomic.Int64
+	// So do requests refused by the suppress lists.
+	suppressed chan *Suppressed
+	supDone    chan struct{}
+	Dropped    atomic.Int64
+	Written    atomic.Int64
 }
 
 const (
@@ -204,30 +219,33 @@ func Open(ctx context.Context, c Config) (*DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: %w", err)
 	}
-	for _, ddl := range append([]string{ddlClicks, ddlConversions, ddlPostbacks}, chMigrations...) {
+	for _, ddl := range append([]string{ddlClicks, ddlConversions, ddlPostbacks, ddlSuppressedStats, ddlSuppressedLog}, chMigrations...) {
 		if err := conn.Exec(ctx, ddl); err != nil {
 			return nil, fmt.Errorf("clickhouse schema: %w", err)
 		}
 	}
 	db := &DB{conn: conn, clicks: make(chan *Click, queueSize), quit: make(chan struct{}), done: make(chan struct{}),
-		postbacks: make(chan *Postback, pbQueue), pbDone: make(chan struct{})}
+		postbacks: make(chan *Postback, pbQueue), pbDone: make(chan struct{}),
+		suppressed: make(chan *Suppressed, pbQueue), supDone: make(chan struct{})}
 	go db.writer()
 	go db.postbackWriter()
+	go db.suppressedWriter()
 	return db, nil
 }
 
-// SetRetention applies the TTL of clicks, conversions and the postback log.
+// SetRetention applies the TTL of clicks, conversions, the postback log and
+// what is kept about suppressed requests.
 func (db *DB) SetRetention(ctx context.Context, days int) error {
 	if days <= 0 {
 		days = 180
 	}
-	for _, t := range []string{"clicks", "conversions", "postbacks"} {
+	for _, t := range []string{"clicks", "conversions", "postbacks", "suppress_log"} {
 		q := fmt.Sprintf("ALTER TABLE %s MODIFY TTL toDateTime(ts) + INTERVAL %d DAY", t, days)
 		if err := db.conn.Exec(ctx, q); err != nil {
 			return err
 		}
 	}
-	return nil
+	return db.conn.Exec(ctx, fmt.Sprintf("ALTER TABLE suppress_stats MODIFY TTL day + INTERVAL %d DAY", days))
 }
 
 // DeleteCampaign removes every click and conversion of a campaign, and its
@@ -488,11 +506,11 @@ func (db *DB) writePostbacks(rows []*Postback) error {
 	return batch.Send()
 }
 
-// Close flushes queued clicks and postback log entries.
+// Close flushes queued clicks, postback log entries and suppressed requests.
 func (db *DB) Close() {
 	close(db.quit)
 	timeout := time.After(20 * time.Second)
-	for _, done := range []chan struct{}{db.done, db.pbDone} {
+	for _, done := range []chan struct{}{db.done, db.pbDone, db.supDone} {
 		select {
 		case <-done:
 		case <-timeout:

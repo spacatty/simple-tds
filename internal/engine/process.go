@@ -15,6 +15,7 @@ import (
 	"simpletds/internal/events"
 	"simpletds/internal/extapi"
 	"simpletds/internal/geo"
+	"simpletds/internal/model"
 )
 
 // Input is a visit as received by one of the integrations.
@@ -169,6 +170,14 @@ func (e *Engine) jsCheck(v *Visit, snap *Snapshot) (passed bool, cookies []*http
 // Process routes one visit through its campaign and records the click.
 func (e *Engine) Process(in *Input) *Result {
 	snap := e.Snap()
+	// Before anything else: a suppressed source costs no lookups, takes no
+	// uniqueness slot and leaves no click behind.
+	if rule := in.Campaign.suppressed(in.IP.Unmap(), in.Referer); rule != nil {
+		e.suppressed(in, rule)
+		res := notFound()
+		res.NoLog = true
+		return res
+	}
 	v := e.newVisit(in, snap)
 	c := in.Campaign
 
@@ -325,6 +334,13 @@ func (e *Engine) Simulate(ctx context.Context, in SimInput) (*SimResult, error) 
 			h.Set(k, val)
 		}
 		h.Set("User-Agent", in.UserAgent)
+	}
+	if rule := c.suppressed(ip.Unmap(), in.Referer); rule != nil {
+		note := "This IP address is suppressed: the request gets a 404 and is not counted."
+		if rule.kind == model.SuppressReferer {
+			note = "This referrer is suppressed: the request gets a 404 and is not counted."
+		}
+		return &SimResult{Reasons: []string{}, Streams: []StreamTrace{}, Action: "suppressed", Note: note}, nil
 	}
 	q, _ := url.ParseQuery(strings.TrimPrefix(in.Query, "?"))
 	v := &Visit{Ctx: ctx, Now: time.Now(), Integration: "direct", Domain: in.Domain, IP: ip, Header: h, Query: q,

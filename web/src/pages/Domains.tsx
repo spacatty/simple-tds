@@ -1,11 +1,15 @@
 import { useMemo, useState } from 'react'
-import { Check, FolderCog, Pencil, Plus, RefreshCw, Trash2, X } from 'lucide-react'
+import type { ReactNode } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { Check, ExternalLink, FolderCog, LayoutList, Pencil, Plus, RefreshCw, Table2, Trash2, X } from 'lucide-react'
 import { del, errMsg, get, post, put } from '../api'
-import { canEdit, useInterval, useIsAdmin, useLoad } from '../hooks'
+import { canEdit, useInterval, useIsAdmin, useLoad, usePref } from '../hooks'
 import type { BulkAddResult, Campaign, Domain, DomainGroup, SystemInfo } from '../types'
 import { DataTable } from '../components/DataTable'
 import type { Column } from '../components/DataTable'
-import { Badge, CopyButton, Dropdown, Empty, ErrorBox, Field, MenuItem, Modal, Notice, PageHeader, SearchInput, Select, Toggle, confirmDialog, toast, useBusy } from '../components/ui'
+import { HEALTH, HealthTiles, RepBadge, RepChips, domainHealth, useProviderNames } from '../components/DomainHealth'
+import type { Health } from '../components/DomainHealth'
+import { Badge, CopyButton, Dropdown, Empty, ErrorBox, Field, MenuItem, Modal, Notice, PageHeader, SearchInput, Segmented, Select, Skeleton, Toggle, confirmDialog, toast, useBusy } from '../components/ui'
 import type { Tone } from '../components/ui'
 import { fmtAgo, fmtDateTime } from '../format'
 import { t, tn, ts, tx } from '../i18n'
@@ -26,6 +30,18 @@ const STATUS_LABEL: Record<string, string> = { ok: t('ok@@domain'), pending: t('
 /** Visible name of a domain check status. */
 export const domainStatus = (s: string) => STATUS_LABEL[s] ?? s
 
+type View = 'cards' | 'table'
+type Order = 'name' | 'state' | 'new'
+const ORDERS: { value: Order; label: string }[] = [
+  { value: 'name', label: t('By name') },
+  { value: 'state', label: t('Problems first') },
+  { value: 'new', label: t('Newest first') },
+]
+// Worst first, for the "problems first" order.
+const HEALTH_RANK: Record<Health, number> = { flagged: 0, error: 1, pending: 2, ok: 3, off: 4 }
+// How long the list keeps refreshing by itself while blocklist answers are on their way.
+const WATCH_MS = 90_000
+
 export default function Domains() {
   const list = useLoad(() => get<Domain[]>('domains'), [])
   const groups = useLoad(() => get<DomainGroup[]>('domain-groups'), [])
@@ -34,16 +50,31 @@ export default function Domains() {
   // A domain may only serve campaigns the user can edit.
   const usable = useMemo(() => (camps.data ?? []).filter(canEdit), [camps.data])
   const sys = useLoad(() => get<SystemInfo>('system'), [])
+  const [sp, setSp] = useSearchParams()
   const [q, setQ] = useState('')
   const [group, setGroup] = useState('')
-  const [status, setStatus] = useState('')
   const [sel, setSel] = useState<Set<number>>(new Set())
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<Domain | null>(null)
   const [managing, setManaging] = useState(false)
+  // Both follow the account, so the list looks the same on every device.
+  const [view, setView] = usePref<View>('domains_view', 'cards')
+  const [order, setOrder] = usePref<Order>('domains_sort', 'name')
+  // The state filter lives in the address (?show=flagged): dashboards link to it.
+  const show = (HEALTH.find((h) => h.key === sp.get('show'))?.key ?? '') as Health | ''
+  const setShow = (v: Health | '') => setSp(v ? { show: v } : {}, { replace: true })
 
   const domains = useMemo(() => list.data ?? [], [list.data])
-  useInterval(() => list.reload(), 5000, domains.some((d) => d.status === 'pending'))
+  const repOn = (sys.data?.reputation ?? []).length > 0
+  const hasRep = repOn || domains.some((d) => (d.reputation ?? []).length > 0)
+  // Set after an action that sends the checkers off: adding domains, "re-check".
+  const [watch, setWatch] = useState(0)
+  const [opened] = useState(() => Date.now())
+  const unchecked = Date.now() < opened + WATCH_MS && domains.some((d) => d.enabled && !d.rep_status)
+  const waiting = domains.some((d) => d.status === 'pending') || (repOn && (unchecked || Date.now() < watch))
+  useInterval(() => list.reload(), 5000, waiting)
+  // Checks also run on their own schedule: a page left open keeps up with them.
+  useInterval(() => list.reload(), 60_000, !waiting)
 
   const groupName = (id: number | null) => (id === null ? '' : groups.data?.find((g) => g.id === id)?.name ?? `#${id}`)
   const campName = (id: number | null) => (id === null ? '' : camps.data?.find((c) => c.id === id)?.name ?? `#${id}`)
@@ -53,14 +84,26 @@ export default function Domains() {
     return domains.filter((d) => {
       if (s && !d.name.includes(s) && !d.note.toLowerCase().includes(s)) return false
       if (group === 'none' ? d.group_id !== null : group && String(d.group_id) !== group) return false
-      if (status && d.status !== status) return false
+      if (show && domainHealth(d) !== show) return false
       return true
     })
-  }, [domains, q, group, status])
+  }, [domains, q, group, show])
+  // The table sorts by its own headers; the cards by the order picked in the toolbar.
+  const cards = useMemo(() => {
+    const byName = (a: Domain, b: Domain) => a.name.localeCompare(b.name)
+    return [...rows].sort(order === 'state' ? (a, b) => HEALTH_RANK[domainHealth(a)] - HEALTH_RANK[domainHealth(b)] || byName(a, b) : order === 'new' ? (a, b) => b.created_at.localeCompare(a.created_at) || byName(a, b) : byName)
+  }, [rows, order])
 
   const selected = rows.filter((d) => sel.has(d.id))
   const ids = selected.map((d) => d.id)
   const allChecked = rows.length > 0 && selected.length === rows.length
+  const selectAll = (on: boolean) => setSel(on ? new Set(rows.map((d) => d.id)) : new Set())
+  const select = (d: Domain, on: boolean) => {
+    const n = new Set(sel)
+    if (on) n.add(d.id)
+    else n.delete(d.id)
+    setSel(n)
+  }
 
   const patch = async (d: Domain, body: Partial<Domain>) => {
     // The switch moves at once and goes back if the server refuses; see setEnabled in Campaigns.tsx.
@@ -87,6 +130,7 @@ export default function Domains() {
       await post('domains/check', { ids: which })
       // The check runs in the background; show it as pending until the poll picks the result up.
       list.setData(domains.map((d) => (which.includes(d.id) ? { ...d, status: 'pending', status_msg: '' } : d)))
+      setWatch(Date.now() + WATCH_MS)
       toast.info(tn(which.length, 'Re-checking {n} domain…', 'Re-checking {n} domains…'))
     } catch (e) {
       toast.err(e)
@@ -114,24 +158,37 @@ export default function Domains() {
     list.reload()
   }
 
+  // Cells shared by the table and the cards.
+  const checkbox = (d: Domain) => <input type="checkbox" aria-label={t('Select {name}', { name: d.name })} checked={sel.has(d.id)} onChange={(e) => select(d, e.target.checked)} />
+  const nameLink = (d: Domain) => (
+    <a href={`https://${d.name}/`} target="_blank" rel="noreferrer noopener" className="strong">
+      {d.name}
+    </a>
+  )
+  const connTitle = (d: Domain) => (d.status_msg ? ts(d.status_msg) + '\n' : '') + (d.checked_at ? t('Checked {time}', { time: fmtDateTime(d.checked_at) }) : t('Not checked yet'))
+  const connBadge = (d: Domain) => <Badge tone={STATUS_TONE[d.status] ?? 'neutral'}>{d.status === 'pending' ? t('pending…@@domain') : domainStatus(d.status)}</Badge>
+  const panelToggle = (d: Domain, text?: ReactNode) => <Toggle checked={d.admin_enabled} onChange={(v) => patch(d, { admin_enabled: v })} label={text} title={t('Panel access on this domain')} />
+  const enabledToggle = (d: Domain, text?: ReactNode) => <Toggle checked={d.enabled} onChange={(v) => patch(d, { enabled: v })} label={text} />
+  const actions = (d: Domain) => (
+    <div className="row-actions">
+      <button className="icon-btn" title={t('Re-check now')} onClick={() => recheck([d.id])}>
+        <RefreshCw size={15} />
+      </button>
+      <button className="icon-btn" title={t('Edit')} onClick={() => setEditing(d)}>
+        <Pencil size={15} />
+      </button>
+      <button className="icon-btn danger" title={t('Delete')} onClick={() => remove([d])}>
+        <Trash2 size={15} />
+      </button>
+    </div>
+  )
+
   const columns: Column<Domain>[] = [
     {
       key: 'sel',
       width: 32,
-      title: <input type="checkbox" aria-label={t('Select all')} checked={allChecked} onChange={(e) => setSel(e.target.checked ? new Set(rows.map((d) => d.id)) : new Set())} />,
-      render: (d) => (
-        <input
-          type="checkbox"
-          aria-label={t('Select {name}', { name: d.name })}
-          checked={sel.has(d.id)}
-          onChange={(e) => {
-            const n = new Set(sel)
-            if (e.target.checked) n.add(d.id)
-            else n.delete(d.id)
-            setSel(n)
-          }}
-        />
-      ),
+      title: <input type="checkbox" aria-label={t('Select all')} checked={allChecked} onChange={(e) => selectAll(e.target.checked)} />,
+      render: checkbox,
     },
     {
       key: 'name',
@@ -139,9 +196,7 @@ export default function Domains() {
       sort: (d) => d.name,
       render: (d) => (
         <div>
-          <a href={`https://${d.name}/`} target="_blank" rel="noreferrer noopener" className="strong">
-            {d.name}
-          </a>
+          {nameLink(d)}
           {d.note && <div className="muted small">{d.note}</div>}
         </div>
       ),
@@ -149,46 +204,32 @@ export default function Domains() {
     { key: 'group', title: t('Group'), sort: (d) => groupName(d.group_id), render: (d) => (d.group_id === null ? <span className="muted">—</span> : <Badge>{groupName(d.group_id)}</Badge>) },
     {
       key: 'status',
-      title: t('Status'),
+      title: t('Connection'),
       sort: (d) => d.status,
       render: (d) => (
-        <span title={(d.status_msg ? ts(d.status_msg) + '\n' : '') + (d.checked_at ? t('Checked {time}', { time: fmtDateTime(d.checked_at) }) : t('Not checked yet'))}>
-          <Badge tone={STATUS_TONE[d.status] ?? 'neutral'}>{d.status === 'pending' ? t('pending…@@domain') : domainStatus(d.status)}</Badge>
+        <span title={connTitle(d)}>
+          {connBadge(d)}
           {d.status === 'error' && d.status_msg && <span className="status-msg ellipsis">{ts(d.status_msg)}</span>}
           <span className="muted small"> {d.checked_at ? fmtAgo(d.checked_at) : ''}</span>
         </span>
       ),
     },
+    ...(hasRep ? [{ key: 'rep', title: t('Reputation'), headTitle: t('What the blocklists say about the domain'), sort: (d: Domain) => d.rep_status, render: (d: Domain) => <RepBadge d={d} active={repOn} /> } as Column<Domain>] : []),
     { key: 'tls', title: 'TLS', sort: (d) => d.tls_mode, render: (d) => <span title={TLS_MODES.find((m) => m.value === d.tls_mode)?.help}>{d.tls_mode === 'auto' ? t('Auto') : t('Proxy')}</span> },
     { key: 'ip', title: t('Real IP'), sort: (d) => d.ip_source, render: (d) => <span title={IP_SOURCES.find((m) => m.value === d.ip_source)?.help}>{label(IP_SOURCES, d.ip_source)}</span> },
     { key: 'campaign', title: t('Default campaign'), sort: (d) => campName(d.campaign_id), render: (d) => (d.campaign_id === null ? <span className="muted">{t('— (404 on “/”)')}</span> : campName(d.campaign_id)) },
-    ...(isAdmin
-      ? [{ key: 'admin', title: t('Panel'), headTitle: t('Serve the admin panel on this domain under the admin path'), width: 70, render: (d: Domain) => <Toggle checked={d.admin_enabled} onChange={(v) => patch(d, { admin_enabled: v })} title={t('Panel access on this domain')} /> } as Column<Domain>]
-      : []),
-    { key: 'enabled', title: t('Enabled@@domain'), width: 70, render: (d) => <Toggle checked={d.enabled} onChange={(v) => patch(d, { enabled: v })} /> },
-    {
-      key: 'actions',
-      title: '',
-      align: 'right',
-      width: 110,
-      render: (d) => (
-        <div className="row-actions">
-          <button className="icon-btn" title={t('Re-check now')} onClick={() => recheck([d.id])}>
-            <RefreshCw size={15} />
-          </button>
-          <button className="icon-btn" title={t('Edit')} onClick={() => setEditing(d)}>
-            <Pencil size={15} />
-          </button>
-          <button className="icon-btn danger" title={t('Delete')} onClick={() => remove([d])}>
-            <Trash2 size={15} />
-          </button>
-        </div>
-      ),
-    },
+    ...(isAdmin ? [{ key: 'admin', title: t('Panel'), headTitle: t('Serve the admin panel on this domain under the admin path'), width: 70, render: (d: Domain) => panelToggle(d) } as Column<Domain>] : []),
+    { key: 'enabled', title: t('Enabled@@domain'), width: 70, render: (d) => enabledToggle(d) },
+    { key: 'actions', title: '', align: 'right', width: 110, render: actions },
   ]
 
   const groupOptions = [{ value: 'none', label: t('Without group') }, ...(groups.data ?? []).map((g) => ({ value: String(g.id), label: g.name }))]
   const serverIP = sys.data?.server_ip ?? ''
+  const empty = (
+    <Empty title={domains.length ? t('No domains match the filters') : t('No domains yet')} action={!domains.length && <button className="btn primary" onClick={() => setAdding(true)}><Plus size={15} /> {t('Add domains')}</button>}>
+      {!domains.length && t('Add one or many domains at once, then point their DNS at this server.')}
+    </Empty>
+  )
 
   return (
     <div className="page">
@@ -208,24 +249,39 @@ export default function Domains() {
           ok: <Badge tone="ok">{domainStatus('ok')}</Badge>,
         })}
       </Notice>
+      {isAdmin && sys.data && !repOn && domains.length > 0 && (
+        <Notice>
+          {tx('Blocklist checks are off. Switch on Google Safe Browsing, VirusTotal, Spamhaus and others under <a>Settings → Domain reputation</a> to see here when a domain gets flagged.', { a: (c) => <Link to="/settings?tab=reputation">{c}</Link> })}
+        </Notice>
+      )}
       <ErrorBox error={list.error} retry={list.reload} />
 
-      <div className="toolbar">
+      {domains.length > 0 && <HealthTiles domains={domains} value={show} onChange={setShow} />}
+
+      <div className="toolbar wrap">
         <SearchInput value={q} onChange={setQ} placeholder={t('Search domains…')} />
         <Select value={group} onChange={setGroup} placeholder={t('All groups')} options={groupOptions} />
-        <Select
-          value={status}
-          onChange={setStatus}
-          placeholder={t('Any status')}
-          options={[
-            { value: 'ok', label: 'OK' },
-            { value: 'pending', label: t('Pending@@domain') },
-            { value: 'error', label: t('Error@@domain') },
-          ]}
-        />
+        {view === 'cards' && (
+          <>
+            <Select value={order} onChange={(v) => setOrder(v as Order)} options={ORDERS} />
+            <label className="check-all">
+              <input type="checkbox" checked={allChecked} disabled={!rows.length} onChange={(e) => selectAll(e.target.checked)} /> {t('Select all')}
+            </label>
+          </>
+        )}
         <span className="muted">
           {t('{shown} of {total}', { shown: rows.length, total: domains.length })}
         </span>
+        <span className="grow" />
+        <Segmented
+          small
+          value={view}
+          onChange={setView}
+          options={[
+            { value: 'cards', label: <><LayoutList size={13} /> {t('Cards')}</>, title: t('One card per domain, with every check spelled out') },
+            { value: 'table', label: <><Table2 size={13} /> {t('Table')}</>, title: t('A compact table, sortable by any column') },
+          ]}
+        />
       </div>
 
       {selected.length > 0 && (
@@ -296,20 +352,74 @@ export default function Domains() {
         </div>
       )}
 
-      <div className="card">
-        <DataTable
-          columns={columns}
-          rows={list.data ? rows : undefined}
-          rowKey={(d) => d.id}
-          loading={list.loading}
-          rowClass={(d) => (sel.has(d.id) ? 'selected' : d.enabled ? '' : 'dim')}
-          empty={
-            <Empty title={domains.length ? t('No domains match the filters') : t('No domains yet')} action={!domains.length && <button className="btn primary" onClick={() => setAdding(true)}><Plus size={15} /> {t('Add domains')}</button>}>
-              {!domains.length && t('Add one or many domains at once, then point their DNS at this server.')}
-            </Empty>
-          }
-        />
-      </div>
+      {view === 'table' ? (
+        <div className="card">
+          <DataTable columns={columns} rows={list.data ? rows : undefined} rowKey={(d) => d.id} loading={list.loading} rowClass={(d) => (sel.has(d.id) ? 'selected' : d.enabled ? '' : 'dim')} empty={empty} />
+        </div>
+      ) : !list.data ? (
+        !list.error && (
+          <div className="card pad">
+            <Skeleton rows={6} height={18} />
+          </div>
+        )
+      ) : cards.length === 0 ? (
+        <div className="card">{empty}</div>
+      ) : (
+        <div className={'dcards' + (hasRep ? ' with-rep' : '') + (list.loading ? ' reloading' : '')}>
+          {cards.map((d) => {
+            const health = domainHealth(d)
+            return (
+              <article key={d.id} className={`dcard h-${health}` + (sel.has(d.id) ? ' selected' : '')}>
+                <div className="dcard-check">{checkbox(d)}</div>
+                <div className="dcard-main">
+                  <div className="dcard-name">
+                    {nameLink(d)}
+                    {d.group_id !== null && <Badge>{groupName(d.group_id)}</Badge>}
+                    {d.admin_enabled && !isAdmin && <Badge tone="info">{t('Panel')}</Badge>}
+                  </div>
+                  {d.note && <div className="muted small ellipsis" title={d.note}>{d.note}</div>}
+                  <dl className="dcard-meta">
+                    <div title={TLS_MODES.find((m) => m.value === d.tls_mode)?.help}>
+                      <dt>TLS</dt>
+                      <dd>{d.tls_mode === 'auto' ? t('Auto') : t('Proxy')}</dd>
+                    </div>
+                    <div title={IP_SOURCES.find((m) => m.value === d.ip_source)?.help}>
+                      <dt>{t('Real IP')}</dt>
+                      <dd>{label(IP_SOURCES, d.ip_source)}</dd>
+                    </div>
+                    <div>
+                      <dt>{t('Default campaign')}</dt>
+                      <dd className="ellipsis">{d.campaign_id === null ? <span className="muted">{t('— (404 on “/”)')}</span> : campName(d.campaign_id)}</dd>
+                    </div>
+                  </dl>
+                </div>
+                <div className="dcard-col" title={connTitle(d)}>
+                  <div className="dcard-label">{t('Connection')}</div>
+                  <div className="row gap-s">
+                    {connBadge(d)}
+                    <span className="muted small">{d.checked_at ? fmtAgo(d.checked_at) : t('Not checked yet')}</span>
+                  </div>
+                  {d.status_msg && <div className={'dcard-msg' + (d.status === 'error' ? ' err' : '')}>{ts(d.status_msg)}</div>}
+                </div>
+                {hasRep && (
+                  <div className="dcard-col">
+                    <div className="dcard-label">
+                      {t('Reputation')}
+                      {d.rep_checked_at && <span className="muted"> · {fmtAgo(d.rep_checked_at)}</span>}
+                    </div>
+                    <RepChips d={d} active={repOn} />
+                  </div>
+                )}
+                <div className="dcard-ctl">
+                  {isAdmin && panelToggle(d, t('Panel'))}
+                  {enabledToggle(d, t('Enabled@@domain'))}
+                  {actions(d)}
+                </div>
+              </article>
+            )
+          })}
+        </div>
+      )}
 
       {adding && (
         <AddDomains
@@ -320,7 +430,10 @@ export default function Domains() {
             setAdding(false)
             list.reload()
           }}
-          onAdded={() => list.reload()}
+          onAdded={() => {
+            setWatch(Date.now() + WATCH_MS)
+            list.reload()
+          }}
         />
       )}
       {editing && (
@@ -478,6 +591,8 @@ function EditDomain({ domain, isAdmin, groups, campaigns, onClose, onSaved }: { 
   const [enabled, setEnabled] = useState(domain.enabled)
   const [error, setError] = useState('')
   const [busy, run] = useBusy()
+  const names = useProviderNames()
+  const reputation = domain.reputation ?? []
   const save = () =>
     run(async () => {
       setError('')
@@ -530,6 +645,28 @@ function EditDomain({ domain, isAdmin, groups, campaigns, onClose, onSaved }: { 
           <Toggle checked={enabled} onChange={setEnabled} label={t('Enabled@@domain')} />
         </Field>
       </div>
+      {reputation.length > 0 && (
+        <>
+          <div className="section-head">
+            <h4>{t('Reputation')}</h4>
+            <span className="muted small">{t('checked {ago}', { ago: fmtAgo(domain.rep_checked_at) })}</span>
+          </div>
+          <div className="list rep-list">
+            {reputation.map((r) => (
+              <div className="list-row" key={r.provider}>
+                <span className="strong rep-list-name">{names.full(r.provider)}</span>
+                <Badge tone={r.status === 'listed' ? 'err' : r.status === 'clean' ? 'ok' : 'warn'}>{r.status === 'listed' ? t('listed') : r.status === 'clean' ? t('not listed') : t('no answer')}</Badge>
+                <span className="grow muted small">{ts(r.detail)}</span>
+                {r.url && (
+                  <a className="icon-btn" href={r.url} target="_blank" rel="noreferrer noopener" title={t('Open the provider’s page about this domain')}>
+                    <ExternalLink size={14} />
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </Modal>
   )
 }

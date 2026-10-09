@@ -19,6 +19,7 @@ import (
 	"simpletds/internal/events"
 	"simpletds/internal/extapi"
 	"simpletds/internal/model"
+	"simpletds/internal/reputation"
 	"simpletds/internal/store"
 )
 
@@ -438,6 +439,8 @@ func (s *Server) settingsSave(r *http.Request) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Taken now: decoding writes into the maps that old and st share.
+	oldReputation := string(mustMarshal(old.Reputation))
 	st := old
 	if err := readJSON(r, &st); err != nil {
 		return nil, err
@@ -481,6 +484,9 @@ func (s *Server) settingsSave(r *http.Request) (any, error) {
 	if st.ParamAliases, err = engine.CleanParamAliases(st.ParamAliases); err != nil {
 		return nil, bad(err.Error())
 	}
+	if err := cleanReputation(&st.Reputation); err != nil {
+		return nil, err
+	}
 	if err := s.st.SaveSettings(ctx, st); err != nil {
 		return nil, err
 	}
@@ -492,7 +498,15 @@ func (s *Server) settingsSave(r *http.Request) (any, error) {
 	if st.GeoCityURL != old.GeoCityURL || st.GeoASNURL != old.GeoASNURL || st.MaxMindKey != old.MaxMindKey {
 		go s.geo.Refresh(context.Background(), st, true)
 	}
-	return st, s.reload(ctx)
+	if err := s.reload(ctx); err != nil {
+		return nil, err
+	}
+	if string(mustMarshal(st.Reputation)) != oldReputation {
+		// Ask the providers that were just switched on, drop the answers of
+		// those switched off.
+		go s.checkReputation(context.Background(), nil, 0)
+	}
+	return st, nil
 }
 
 type integrationPreset struct {
@@ -519,20 +533,21 @@ var integrationPresets = []integrationPreset{
 
 func (s *Server) meta(*http.Request) (any, error) {
 	return map[string]any{
-		"system_params":       s.eng.Snap().Params.Defs(),
-		"actions":             engine.ActionDefs(),
-		"filters":             engine.FilterDefs(),
-		"macros":              engine.Macros,
-		"conversion_types":    model.ConversionTypes,
-		"cost_models":         model.CostModels,
-		"report_groups":       events.Dimensions(),
-		"report_filters":      events.FilterableDimensions(),
-		"stream_presets":      builtinPresets,
-		"integration_presets": integrationPresets,
-		"postback_path":       postbackPath,
-		"event_prefix":        eventPrefix,
-		"max_stages":          model.MaxStages,
-		"reserved_aliases":    ReservedAliases,
+		"system_params":        s.eng.Snap().Params.Defs(),
+		"actions":              engine.ActionDefs(),
+		"filters":              engine.FilterDefs(),
+		"macros":               engine.Macros,
+		"conversion_types":     model.ConversionTypes,
+		"cost_models":          model.CostModels,
+		"report_groups":        events.Dimensions(),
+		"report_filters":       events.FilterableDimensions(),
+		"stream_presets":       builtinPresets,
+		"integration_presets":  integrationPresets,
+		"postback_path":        postbackPath,
+		"event_prefix":         eventPrefix,
+		"max_stages":           model.MaxStages,
+		"reserved_aliases":     ReservedAliases,
+		"reputation_providers": reputation.Defs(),
 	}, nil
 }
 
@@ -547,8 +562,13 @@ func (s *Server) system(r *http.Request) (any, error) {
 	if err := s.ev.Ping(ctx); err != nil {
 		health["clickhouse"] = err.Error()
 	}
+	// Which blocklists domains are checked against; no keys.
+	reputations := []string{}
+	for _, d := range repActive(snap.Settings.Reputation) {
+		reputations = append(reputations, d.ID)
+	}
 	if !currentUser(r).IsAdmin() {
-		return map[string]any{"php_enabled": s.pages.FCGIAddr != "", "health": health, "server_ip": s.serverIP()}, nil
+		return map[string]any{"php_enabled": s.pages.FCGIAddr != "", "health": health, "server_ip": s.serverIP(), "reputation": reputations}, nil
 	}
 	return map[string]any{
 		"stats":  s.eng.Stats(),
@@ -562,5 +582,6 @@ func (s *Server) system(r *http.Request) (any, error) {
 		},
 		"php_enabled": s.pages.FCGIAddr != "",
 		"server_ip":   s.serverIP(),
+		"reputation":  reputations,
 	}, nil
 }

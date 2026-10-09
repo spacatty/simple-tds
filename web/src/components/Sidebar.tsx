@@ -1,18 +1,18 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
-import { Activity, BarChart3, ChevronDown, ChevronsUpDown, FileCode2, Globe, KeyRound, LayoutDashboard, Link2, LogOut, Menu, Moon, MousePointerClick, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, ShieldCheck, Split, Sun, Target, Users as UsersIcon, Webhook } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
+import { Activity, BarChart3, Check, ChevronDown, ChevronsUpDown, EyeOff, FileCode2, Globe, KeyRound, LayoutDashboard, Link2, LogOut, Menu, Moon, MousePointerClick, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, ShieldCheck, Split, Sun, Target, Unlink, UserCog, Users as UsersIcon, Webhook } from 'lucide-react'
+import type { ReactNode } from 'react'
 import type { User } from '../types'
 import type { Theme } from '../hooks'
-import { t } from '../i18n'
-import { LangSwitch } from './LangSwitch'
+import { LANGS, lang, setLang, t } from '../i18n'
+import { Flag, FunnelIcon } from './icons'
 import { APP_NAME, Logo } from './Logo'
 import { Dropdown } from './ui'
 
 interface Item {
   to: string
   label: string
-  icon: LucideIcon
+  icon: (props: { size?: number }) => ReactNode
   end?: boolean
   admin?: boolean
 }
@@ -24,6 +24,18 @@ const GROUPS: { id: string; label: string; items: Item[] }[] = [
     label: t('Traffic'),
     items: [
       { to: '/campaigns', label: t('Campaigns'), icon: Split },
+      { to: '/funnels', label: t('Funnels'), icon: FunnelIcon },
+    ],
+  },
+  {
+    id: 'conversions',
+    label: t('Conversions'),
+    items: [{ to: '/conversions/keys', label: t('Keys & postback URLs'), icon: KeyRound }],
+  },
+  {
+    id: 'resources',
+    label: t('Resources'),
+    items: [
       { to: '/domains', label: t('Domains'), icon: Globe },
       { to: '/whitepages', label: t('Whitepages'), icon: FileCode2 },
     ],
@@ -31,13 +43,8 @@ const GROUPS: { id: string; label: string; items: Item[] }[] = [
   {
     id: 'tracking',
     label: t('Tracking'),
-    items: [{ to: '/clicks', label: t('Clicks'), icon: MousePointerClick }],
-  },
-  {
-    id: 'conversions',
-    label: t('Conversions'),
     items: [
-      { to: '/conversions/keys', label: t('Keys & postback URLs'), icon: KeyRound },
+      { to: '/clicks', label: t('Click log'), icon: MousePointerClick },
       // "end": the other two pages live under /conversions/ and must not light this one up.
       { to: '/conversions', label: t('Conversion log'), icon: Target, end: true },
       { to: '/conversions/postbacks', label: t('Postback log'), icon: Webhook },
@@ -52,14 +59,21 @@ const GROUPS: { id: string; label: string; items: Item[] }[] = [
       { to: '/reports/referrers', label: t('Referrers'), icon: Link2 },
     ],
   },
-  { id: 'protection', label: t('Protection'), items: [{ to: '/antibot', label: t('Anti-bot'), icon: ShieldCheck, admin: true }] },
+  {
+    id: 'utilities',
+    label: t('Utilities'),
+    items: [
+      { to: '/antibot', label: t('Anti-bot'), icon: ShieldCheck, admin: true },
+      { to: '/suppress/ips', label: t('Suppress IPs'), icon: EyeOff },
+      { to: '/suppress/referrers', label: t('Suppress referrers'), icon: Unlink },
+    ],
+  },
   {
     id: 'system',
     label: t('System'),
     items: [
       { to: '/status', label: t('Status'), icon: Activity, admin: true },
-      { to: '/users', label: t('Users'), icon: UsersIcon, admin: true },
-      { to: '/settings', label: t('Settings'), icon: SettingsIcon },
+      { to: '/settings', label: t('Settings'), icon: SettingsIcon, admin: true },
     ],
   },
 ]
@@ -194,9 +208,33 @@ export function Sidebar({ user, theme, toggleTheme, logout }: { user: User; them
                   <small>{role}</small>
                 </div>
                 <div className="menu-sep" />
-                <Link className="menu-item" to="/settings" onClick={close}>
-                  <SettingsIcon size={15} /> {t('Settings')}
+                <Link className="menu-item" to="/account" onClick={close}>
+                  <UserCog size={15} /> {t('Account')}
                 </Link>
+                {admin && (
+                  <Link className="menu-item" to="/users" onClick={close}>
+                    <UsersIcon size={15} /> {t('Users')}
+                  </Link>
+                )}
+                <div className="menu-sep" />
+                <div className="menu-title">{t('Language')}</div>
+                {LANGS.map((l) => (
+                  <button key={l.code} className="menu-item" role="menuitemradio" aria-checked={l.code === lang} onClick={() => (close(), setLang(l.code))}>
+                    <Flag code={l.flag} /> {l.name}
+                    {l.code === lang && <Check size={14} className="menu-check" />}
+                  </button>
+                ))}
+                <div className="menu-sep" />
+                <button
+                  className="menu-item"
+                  onClick={() => {
+                    close()
+                    toggleTheme()
+                  }}
+                >
+                  {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />} {theme === 'dark' ? t('Light theme') : t('Dark theme')}
+                </button>
+                <div className="menu-sep" />
                 <button
                   className="menu-item danger"
                   onClick={() => {
@@ -209,13 +247,6 @@ export function Sidebar({ user, theme, toggleTheme, logout }: { user: User; them
               </div>
             )}
           </Dropdown>
-          <div className="foot-actions">
-            <LangSwitch tip label={!compact} />
-            <button className="foot-btn" onClick={toggleTheme} data-tip={theme === 'dark' ? t('Light theme') : t('Dark theme')} aria-label={t('Switch theme')}>
-              {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
-              {!compact && <span className="ellipsis">{theme === 'dark' ? t('Light') : t('Dark')}</span>}
-            </button>
-          </div>
         </div>
       </aside>
     </>

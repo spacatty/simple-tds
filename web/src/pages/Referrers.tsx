@@ -10,7 +10,7 @@ import type { Column } from '../components/DataTable'
 import { DateRangePicker, currentRange, rememberRange } from '../components/DateRangePicker'
 import type { DateRange } from '../components/DateRangePicker'
 import { BarList } from '../components/charts'
-import { Card, Empty, ErrorBox, PageHeader, SearchInput, Segmented, Select, Skeleton } from '../components/ui'
+import { Card, Empty, ErrorBox, FilterBar, FilterField, PageHeader, SearchInput, Segmented, Select, Skeleton } from '../components/ui'
 import { rangeParams } from '../reports'
 import { buildSearch, rangeFromSearch, writeRange } from '../filters'
 import { csvEscape, downloadText, fmtInt, fmtMoney, fmtPct, ratioPct, ymd } from '../format'
@@ -165,47 +165,51 @@ export default function Referrers() {
   return (
     <div className="page">
       <PageHeader title={t('Referrers')} sub={t('Which sites send the traffic, and how well it converts.')}>
-        <DateRangePicker value={range} onChange={setRange} />
-        <button className="btn" onClick={() => rep.reload()} title={t('Refresh')} aria-label={t('Refresh')}>
-          <RefreshCw size={14} className={rep.loading ? 'spin' : ''} />
-        </button>
-      </PageHeader>
-
-      <div className="toolbar wrap">
-        <Select
-          value={campaignId}
-          onChange={(v) =>
-            update((n) => {
-              if (v) n.set('campaign_id', v)
-              else n.delete('campaign_id')
-            })
-          }
-          placeholder={t('All campaigns')}
-          options={(camps.data ?? []).map((c) => ({ value: String(c.id), label: c.name }))}
-        />
-        <Segmented
-          small
-          value={bots}
-          onChange={(v) =>
-            update((n) => {
-              if (v) n.set('bots', v)
-              else n.delete('bots')
-            })
-          }
-          options={[
-            { value: '', label: t('All traffic') },
-            { value: 'exclude', label: t('No bots') },
-            { value: 'only', label: t('Bots only') },
-          ]}
-        />
-        <span className="grow" />
         <Link className="btn" to={links().breakdown} title={t('Open Reports with the same filters')}>
           <BarChart3 size={14} /> {t('Breakdown')}
         </Link>
         <button className="btn" disabled={!rows.length} onClick={exportCSV}>
           <Download size={14} /> {t('Export CSV')}
         </button>
-      </div>
+        <DateRangePicker value={range} onChange={setRange} />
+        <button className="btn" onClick={() => rep.reload()} title={t('Refresh')} aria-label={t('Refresh')}>
+          <RefreshCw size={14} className={rep.loading ? 'spin' : ''} />
+        </button>
+      </PageHeader>
+
+      <FilterBar>
+        <FilterField label={t('Campaign')} active={!!campaignId}>
+          <Select
+            value={campaignId}
+            onChange={(v) =>
+              update((n) => {
+                if (v) n.set('campaign_id', v)
+                else n.delete('campaign_id')
+              })
+            }
+            placeholder={t('All campaigns')}
+            options={(camps.data ?? []).map((c) => ({ value: String(c.id), label: c.name }))}
+          />
+        </FilterField>
+        <FilterField label={t('Traffic')} size="auto">
+          <Segmented
+            small
+            className="bots"
+            value={bots}
+            onChange={(v) =>
+              update((n) => {
+                if (v) n.set('bots', v)
+                else n.delete('bots')
+              })
+            }
+            options={[
+              { value: '', label: t('All traffic') },
+              { value: 'exclude', label: t('No bots') },
+              { value: 'only', label: t('Bots only') },
+            ]}
+          />
+        </FilterField>
+      </FilterBar>
 
       <ErrorBox error={rep.error} retry={rep.reload} />
 

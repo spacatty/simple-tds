@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { Columns3, Download, Filter as FilterIcon, RefreshCw, X } from 'lucide-react'
+import { Columns3, Download, RefreshCw, X } from 'lucide-react'
 import { get, qs } from '../api'
 import type { Params } from '../api'
 import { useDebounced, useLoad, useMeta } from '../hooks'
@@ -9,7 +9,7 @@ import type { Campaign, ConvKey, ConvRow, Stage } from '../types'
 import { DataTable } from '../components/DataTable'
 import type { Column } from '../components/DataTable'
 import { DateRangePicker, useDateRange } from '../components/DateRangePicker'
-import { Badge, CopyButton, Dropdown, Empty, ErrorBox, PageHeader, Pagination, Select } from '../components/ui'
+import { Badge, CopyButton, Dropdown, Empty, ErrorBox, FilterBar, FilterField, PageHeader, Pagination, Select } from '../components/ui'
 import type { Tone } from '../components/ui'
 import { rangeParams } from '../reports'
 import { fmtDateTime, fmtMoney, fmtSpan, humanize, num, secondsBetween } from '../format'
@@ -33,14 +33,12 @@ export default function Conversions() {
   if (tab === 'postbacks') {
     return (
       <div className="page">
-        <PageHeader title={t('Postback log')} sub={t('Every request to the postback URL and what became of it. Click a row for the full request.')} />
         <PostbackLog />
       </div>
     )
   }
   return (
     <div className="page">
-      <PageHeader title={t('Conversion log')} sub={t('Postbacks and funnel events received from affiliate networks, apps, installers and pages. Click a row to see everything it carried and the journey of its click.')} />
       <ConvLog />
     </div>
   )
@@ -243,15 +241,11 @@ function ConvLog() {
 
   const csvHref = 'api/conversions' + qs({ format: 'csv', ...query })
   const activeFilters = Object.entries(pf)
+  const anyFilter = activeFilters.length > 0 || Object.values(f).some(Boolean)
 
   return (
     <>
-      <div className="toolbar wrap">
-        <DateRangePicker value={range} onChange={setRange} />
-        <span className="grow" />
-        <button className="btn" onClick={() => res.reload()} title={t('Refresh')} aria-label={t('Refresh')}>
-          <RefreshCw size={14} className={res.loading ? 'spin' : ''} />
-        </button>
+      <PageHeader title={t('Conversion log')} sub={t('Postbacks and funnel events received from affiliate networks, apps, installers and pages. Click a row to see everything it carried and the journey of its click.')}>
         <Dropdown
           align="right"
           label={
@@ -280,85 +274,86 @@ function ConvLog() {
         <a className="btn" href={csvHref} download title={t('Download every matching row (not just this page) as CSV')}>
           <Download size={14} /> {t('Download CSV')}
         </a>
-      </div>
+        <DateRangePicker value={range} onChange={setRange} />
+        <button className="btn" onClick={() => res.reload()} title={t('Refresh')} aria-label={t('Refresh')}>
+          <RefreshCw size={14} className={res.loading ? 'spin' : ''} />
+        </button>
+      </PageHeader>
 
-      <div className="toolbar wrap">
-        <Select value={f.key_id} onChange={(key_id) => setF({ ...f, key_id })} placeholder={t('All keys')} options={(keys.data ?? []).map((k) => ({ value: String(k.id), label: k.name }))} />
-        <Select value={f.campaign_id} onChange={(campaign_id) => setF({ ...f, campaign_id })} placeholder={t('All campaigns')} options={(camps.data ?? []).map((c) => ({ value: String(c.id), label: c.name }))} />
-        <Select value={f.type} onChange={(type) => setF({ ...f, type })} placeholder={t('All types')} options={typeOptions} />
-        <input className="input mono" style={{ width: 220 }} placeholder={t('Click ID')} value={f.click_id} onChange={(e) => setF({ ...f, click_id: e.target.value })} />
-        <input className="input mono" style={{ width: 150 }} placeholder={t('Sender IP')} value={f.ip} onChange={(e) => setF({ ...f, ip: e.target.value })} />
-        <form
-          className="param-filter"
-          onSubmit={(e) => {
-            e.preventDefault()
-            if (newP.key.trim() && newP.value !== '') {
-              addParam(newP.key.trim(), newP.value)
-              setNewP({ key: '', value: '' })
-            }
-          }}
-        >
-          <FilterIcon size={14} />
-          <input className="input mono" list="conv-param-keys" placeholder={t('param')} value={newP.key} onChange={(e) => setNewP({ ...newP, key: e.target.value })} style={{ width: 110 }} />
-          <datalist id="conv-param-keys">
-            {paramKeys.map((k) => (
-              <option key={k} value={k} />
-            ))}
-          </datalist>
-          <span className="muted">=</span>
-          <input className="input mono" placeholder={t('value')} value={newP.value} onChange={(e) => setNewP({ ...newP, value: e.target.value })} style={{ width: 120 }} />
-          <button className="btn small" disabled={!newP.key.trim() || newP.value === ''}>
-            {t('Add')}
-          </button>
-        </form>
-      </div>
-
-      {(activeFilters.length > 0 || f.click_id || f.ip) && (
-        <div className="active-filters">
-          {f.click_id && (
-            <span className="chip">
-              click_id = {f.click_id}
-              <button onClick={() => setF({ ...f, click_id: '' })} aria-label={t('Remove filter')}>
-                <X size={12} />
-              </button>
-            </span>
-          )}
-          {f.ip && (
-            <span className="chip">
-              sender_ip = {f.ip}
-              <button onClick={() => setF({ ...f, ip: '' })} aria-label={t('Remove filter')}>
-                <X size={12} />
-              </button>
-            </span>
-          )}
-          {activeFilters.map(([k, v]) => (
-            <span className="chip accent" key={k}>
-              p.{k} = {v}
-              <button
-                aria-label={t('Remove filter')}
-                onClick={() =>
-                  setPf((x) => {
-                    const n = { ...x }
-                    delete n[k]
-                    return n
-                  })
-                }
-              >
-                <X size={12} />
-              </button>
-            </span>
-          ))}
-          <button
-            className="btn small ghost"
-            onClick={() => {
-              setPf({})
-              setF({ ...f, click_id: '', ip: '' })
+      <FilterBar
+        onReset={
+          anyFilter
+            ? () => {
+                setPf({})
+                setF({ key_id: '', campaign_id: '', type: '', click_id: '', ip: '' })
+              }
+            : undefined
+        }
+        chips={
+          activeFilters.length > 0 && (
+            <>
+              <span className="muted">{t('Filtered by')}</span>
+              {activeFilters.map(([k, v]) => (
+                <span className="crumb" key={k}>
+                  <span className="muted mono">{k}:</span> <b className="mono">{v}</b>
+                  <button
+                    aria-label={t('Remove filter {name}', { name: k })}
+                    onClick={() =>
+                      setPf((x) => {
+                        const n = { ...x }
+                        delete n[k]
+                        return n
+                      })
+                    }
+                  >
+                    <X size={12} />
+                  </button>
+                </span>
+              ))}
+            </>
+          )
+        }
+      >
+        <FilterField label={t('Key')} active={!!f.key_id}>
+          <Select value={f.key_id} onChange={(key_id) => setF({ ...f, key_id })} placeholder={t('All keys')} options={(keys.data ?? []).map((k) => ({ value: String(k.id), label: k.name }))} />
+        </FilterField>
+        <FilterField label={t('Campaign')} active={!!f.campaign_id}>
+          <Select value={f.campaign_id} onChange={(campaign_id) => setF({ ...f, campaign_id })} placeholder={t('All campaigns')} options={(camps.data ?? []).map((c) => ({ value: String(c.id), label: c.name }))} />
+        </FilterField>
+        <FilterField label={t('Type')} size="sm" active={!!f.type}>
+          <Select value={f.type} onChange={(type) => setF({ ...f, type })} placeholder={t('All types')} options={typeOptions} />
+        </FilterField>
+        <FilterField label={t('Click ID')} active={!!f.click_id}>
+          <input className="input mono" placeholder={t('Exact match')} value={f.click_id} onChange={(e) => setF({ ...f, click_id: e.target.value })} />
+        </FilterField>
+        <FilterField label={t('Sender IP')} size="sm" active={!!f.ip}>
+          <input className="input mono" placeholder={t('Exact match')} value={f.ip} onChange={(e) => setF({ ...f, ip: e.target.value })} />
+        </FilterField>
+        <FilterField label={t('Postback parameter')} size="lg">
+          <form
+            className="ff-pair"
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (newP.key.trim() && newP.value !== '') {
+                addParam(newP.key.trim(), newP.value)
+                setNewP({ key: '', value: '' })
+              }
             }}
           >
-            {t('Clear')}
-          </button>
-        </div>
-      )}
+            <input className="input mono" list="conv-param-keys" placeholder={t('param')} value={newP.key} onChange={(e) => setNewP({ ...newP, key: e.target.value })} />
+            <datalist id="conv-param-keys">
+              {paramKeys.map((k) => (
+                <option key={k} value={k} />
+              ))}
+            </datalist>
+            <span className="muted">=</span>
+            <input className="input mono" placeholder={t('value')} value={newP.value} onChange={(e) => setNewP({ ...newP, value: e.target.value })} />
+            <button className="btn" disabled={!newP.key.trim() || newP.value === ''}>
+              {t('Add')}
+            </button>
+          </form>
+        </FilterField>
+      </FilterBar>
 
       <ErrorBox error={res.error} retry={res.reload} />
       <div className="card">
@@ -367,7 +362,7 @@ function ConvLog() {
           rows={res.data ? res.data.rows ?? [] : undefined}
           rowKey={(r, i) => String(r.conv_id ?? i)}
           loading={res.loading}
-          maxHeight="calc(100vh - 330px)"
+          maxHeight="calc(100vh - 270px)"
           expand={(r) => <ConvDetail r={r} campaign={campName(r.campaign_id)} keyName={keyName} stages={stagesOf(r.campaign_id)} currency={campById(r.campaign_id)?.currency} />}
           empty={<Empty title={t('No conversions for this selection')}>{t('Check the date range and filters, or look at the postback log: it lists every request received, including the refused ones.')}</Empty>}
         />

@@ -6,6 +6,8 @@ export interface User {
   totp_enabled: boolean
   role: string
   enabled: boolean
+  /** The user's own panel preferences; see usePref. */
+  prefs?: Record<string, string> | null
 }
 
 export interface Share {
@@ -34,7 +36,7 @@ export interface GroupShare {
 /** One tile of a user's own dashboard. */
 export interface BoardWidget {
   id: string
-  type: 'stat' | 'chart' | 'funnel' | 'top'
+  type: 'stat' | 'chart' | 'funnel' | 'top' | 'domains'
   title?: string
   campaign_id?: number
   stream_id?: number
@@ -42,6 +44,8 @@ export interface BoardWidget {
   dim?: string
   /** Width in twelfths of the board. */
   w: number
+  /** Height in pixels; absent or zero fits the content. */
+  h?: number
 }
 
 /** A user's own dashboard. */
@@ -76,6 +80,41 @@ export interface Domain {
   checked_at: string | null
   note: string
   created_at: string
+  /** Sum of the blocklist answers: '' (not checked) | clean | listed | unknown */
+  rep_status: string
+  reputation: RepResult[] | null
+  rep_checked_at: string | null
+}
+
+/** One blocklist provider's answer about a domain. */
+export interface RepResult {
+  provider: string
+  status: 'clean' | 'listed' | 'error' | string
+  detail?: string
+  /** The provider's own page about the domain. */
+  url?: string
+  checked_at: string
+}
+
+/** A blocklist provider, as the server describes it. */
+export interface RepProviderDef {
+  id: string
+  name: string
+  short: string
+  description: string
+  /** '' (no key) | required | optional */
+  key: string
+  key_help?: string
+  key_url?: string
+  threshold?: boolean
+  rate?: boolean
+}
+
+export interface RepProviderConfig {
+  enabled: boolean
+  key?: string
+  threshold?: number
+  per_minute?: number
 }
 
 /** One step of a campaign's conversion funnel; `key` is the conversion type postbacks send. */
@@ -236,6 +275,20 @@ export interface Settings {
   retention_days: number
   /** Extra names of system request parameters: system name → names accepted next to it. */
   param_aliases: Record<string, string[]> | null
+  reputation?: { interval_hours: number; providers: Record<string, RepProviderConfig> | null }
+}
+
+/** A source whose requests never reach its owner's campaigns. */
+export interface SuppressRule {
+  id: number
+  owner_id: number
+  kind: 'ip' | 'referer'
+  value: string
+  /** Empty: every campaign the owner has. */
+  campaign_ids: number[] | null
+  /** What the rule keeps about the requests it refuses. */
+  store: 'off' | 'count' | 'log'
+  created_at: string
 }
 
 export interface ActionField {
@@ -309,6 +362,7 @@ export interface Meta {
   reserved_aliases: string[]
   stream_presets?: StreamPreset[] | null
   report_filters?: string[] | null
+  reputation_providers?: RepProviderDef[] | null
 }
 
 export interface GeoFileStatus {
@@ -344,6 +398,8 @@ export interface SystemInfo {
   php_enabled: boolean
   /** Public address of the server, for DNS hints; may be empty. */
   server_ip?: string
+  /** Ids of the blocklist providers domains are checked against. */
+  reputation?: string[] | null
 }
 
 export interface ReportRow {

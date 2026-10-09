@@ -11,6 +11,7 @@ import Setup from './pages/Setup'
 import Dashboard from './pages/Dashboard'
 import Campaigns from './pages/Campaigns'
 import CampaignEditor from './pages/CampaignEditor'
+import Funnels from './pages/Funnels'
 import Domains from './pages/Domains'
 import Whitepages from './pages/Whitepages'
 import Conversions from './pages/Conversions'
@@ -18,7 +19,9 @@ import Reports from './pages/Reports'
 import Referrers from './pages/Referrers'
 import Clicks from './pages/Clicks'
 import Antibot from './pages/Antibot'
+import Suppress from './pages/Suppress'
 import SettingsPage from './pages/Settings'
+import AccountPage from './pages/Account'
 import UsersPage from './pages/Users'
 import StatusPage from './pages/Status'
 
@@ -123,6 +126,7 @@ export default function App() {
             <Route path="/campaigns" element={<Campaigns />} />
             <Route path="/campaigns/:id" element={<CampaignEditor />} />
             <Route path="/campaigns/:id/:tab" element={<CampaignEditor />} />
+            <Route path="/funnels" element={<Funnels />} />
             <Route path="/domains" element={<Domains />} />
             <Route path="/whitepages" element={<Whitepages />} />
             <Route path="/conversions" element={<Conversions />} />
@@ -131,9 +135,12 @@ export default function App() {
             <Route path="/reports/referrers" element={<Referrers />} />
             <Route path="/clicks" element={<Clicks />} />
             {user.role === 'admin' && <Route path="/antibot" element={<Antibot />} />}
+            <Route path="/suppress/ips" element={<Suppress kind="ip" />} />
+            <Route path="/suppress/referrers" element={<Suppress kind="referer" />} />
             {user.role === 'admin' && <Route path="/users" element={<UsersPage />} />}
             {user.role === 'admin' && <Route path="/status" element={<StatusPage />} />}
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/account" element={<AccountPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </ErrorBoundary>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { RefreshCw, X } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import { get } from '../api'
 import type { Params } from '../api'
 import { useDebounced, useLoad, useMeta } from '../hooks'
@@ -10,7 +10,7 @@ import { DataTable } from '../components/DataTable'
 import type { Column } from '../components/DataTable'
 import { DateRangePicker, currentRange, rememberRange } from '../components/DateRangePicker'
 import type { DateRange } from '../components/DateRangePicker'
-import { Badge, CopyButton, Empty, ErrorBox, Pagination, Select } from '../components/ui'
+import { Badge, CopyButton, Empty, ErrorBox, FilterBar, FilterField, PageHeader, Pagination, Select } from '../components/ui'
 import type { Tone } from '../components/ui'
 import { rangeApiParams, rangeFromSearch, writeRange } from '../filters'
 import { fmtDateTime, fmtMoney, humanize, num } from '../format'
@@ -161,47 +161,44 @@ export default function PostbackLog() {
     },
   ]
 
-  const chips: { param: string; label: string; value: ReactNode }[] = []
-  if (urlText.click_id) chips.push({ param: 'click_id', label: t('Click ID'), value: <span className="mono">{urlText.click_id}</span> })
-  if (urlText.ip) chips.push({ param: 'ip', label: t('Sender IP'), value: <span className="mono">{urlText.ip}</span> })
-  if (urlText.q) chips.push({ param: 'q', label: t('Contains'), value: <span className="mono">{urlText.q}</span> })
+  const anyFilter = !!(status || keyId || campaignId || type || urlText.ip || urlText.click_id || urlText.q)
+  const resetFilters = () => {
+    setText({ ip: '', click_id: '', q: '' })
+    update((n) => ['status', 'key_id', 'campaign_id', 'type', ...TEXT].forEach((k) => n.delete(k)))
+  }
 
   return (
     <>
-      <div className="toolbar wrap">
+      <PageHeader title={t('Postback log')} sub={t('Every request to the postback URL and what became of it. Click a row for the full request.')}>
         <DateRangePicker value={range} onChange={setRange} />
-        <span className="grow" />
         <button className="btn" onClick={() => res.reload()} title={t('Refresh')} aria-label={t('Refresh')}>
           <RefreshCw size={14} className={res.loading ? 'spin' : ''} />
         </button>
-      </div>
+      </PageHeader>
 
-      <div className="toolbar wrap">
-        <Select value={status} onChange={(v) => setParam('status', v)} placeholder={t('Any result')} options={STATUS.map((s) => ({ value: s.value, label: s.label }))} />
-        <Select value={keyId} onChange={(v) => setParam('key_id', v)} placeholder={t('All keys')} options={(keys.data ?? []).map((k) => ({ value: String(k.id), label: k.name }))} />
-        <Select value={campaignId} onChange={(v) => setParam('campaign_id', v)} placeholder={t('All campaigns')} options={(camps.data ?? []).map((c) => ({ value: String(c.id), label: c.name }))} />
-        <Select value={type} onChange={(v) => setParam('type', v)} placeholder={t('All types')} options={typeOptions} />
-        <input className="input mono" style={{ width: 220 }} placeholder={t('Click ID')} value={text.click_id} onChange={(e) => setText({ ...text, click_id: e.target.value })} />
-        <input className="input mono" style={{ width: 150 }} placeholder={t('Sender IP')} value={text.ip} onChange={(e) => setText({ ...text, ip: e.target.value })} />
-        <input className="input" style={{ width: 240 }} placeholder={t('Search parameters and reasons')} value={text.q} onChange={(e) => setText({ ...text, q: e.target.value })} />
-      </div>
-
-      {chips.length > 0 && (
-        <nav className="crumbs" aria-label={t('Active filters')}>
-          <span className="muted">{t('Filtered by')}</span>
-          {chips.map((c) => (
-            <span className="crumb" key={c.param}>
-              <span className="muted">{c.label}:</span> <b>{c.value}</b>
-              <button aria-label={t('Remove filter {name}', { name: c.label })} onClick={() => setParam(c.param, '')}>
-                <X size={12} />
-              </button>
-            </span>
-          ))}
-          <button className="btn small ghost" onClick={() => update((n) => TEXT.forEach((k) => n.delete(k)))}>
-            {t('Clear all')}
-          </button>
-        </nav>
-      )}
+      <FilterBar onReset={anyFilter ? resetFilters : undefined}>
+        <FilterField label={t('Result')} size="sm" active={!!status}>
+          <Select value={status} onChange={(v) => setParam('status', v)} placeholder={t('Any result')} options={STATUS.map((s) => ({ value: s.value, label: s.label }))} />
+        </FilterField>
+        <FilterField label={t('Key')} active={!!keyId}>
+          <Select value={keyId} onChange={(v) => setParam('key_id', v)} placeholder={t('All keys')} options={(keys.data ?? []).map((k) => ({ value: String(k.id), label: k.name }))} />
+        </FilterField>
+        <FilterField label={t('Campaign')} active={!!campaignId}>
+          <Select value={campaignId} onChange={(v) => setParam('campaign_id', v)} placeholder={t('All campaigns')} options={(camps.data ?? []).map((c) => ({ value: String(c.id), label: c.name }))} />
+        </FilterField>
+        <FilterField label={t('Type')} size="sm" active={!!type}>
+          <Select value={type} onChange={(v) => setParam('type', v)} placeholder={t('All types')} options={typeOptions} />
+        </FilterField>
+        <FilterField label={t('Click ID')} active={!!urlText.click_id}>
+          <input className="input mono" placeholder={t('Exact match')} value={text.click_id} onChange={(e) => setText({ ...text, click_id: e.target.value })} />
+        </FilterField>
+        <FilterField label={t('Sender IP')} size="sm" active={!!urlText.ip}>
+          <input className="input mono" placeholder={t('Exact match')} value={text.ip} onChange={(e) => setText({ ...text, ip: e.target.value })} />
+        </FilterField>
+        <FilterField label={t('Contains')} size="lg" active={!!urlText.q}>
+          <input className="input" placeholder={t('Search parameters and reasons')} value={text.q} onChange={(e) => setText({ ...text, q: e.target.value })} />
+        </FilterField>
+      </FilterBar>
 
       <ErrorBox error={res.error} retry={res.reload} />
       <div className="card">
@@ -210,7 +207,7 @@ export default function PostbackLog() {
           rows={res.data ? res.data.rows ?? [] : undefined}
           rowKey={(r, i) => `${str(r.ts)}|${i}`}
           loading={res.loading}
-          maxHeight="calc(100vh - 330px)"
+          maxHeight="calc(100vh - 270px)"
           expand={(r) => <PostbackDetail r={r} keyCell={keyCell(r)} campaign={campName(r.campaign_id)} />}
           empty={<Empty title={t('No postbacks for this selection')}>{t('Requests appear here a second or two after they arrive. If the sender says it fired and nothing shows up, the request never reached this server: check the domain and the path of the postback URL.')}</Empty>}
         />

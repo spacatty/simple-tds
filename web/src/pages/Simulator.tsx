@@ -172,7 +172,7 @@ export default function Simulator({ campaign, domains, prefill, stacked }: { cam
                   </dd>
                   <dt>{t('Result')}</dt>
                   <dd>
-                    <Badge tone={res.stream_id ? 'ok' : 'err'}>{res.stream_id ? actionLabel(res.action) : t('No stream → 404')}</Badge>
+                    <Badge tone={res.stream_id ? 'ok' : 'err'}>{res.stream_id ? actionLabel(res.action) : res.action === 'suppressed' ? t('Suppressed → 404') : t('No stream → 404')}</Badge>
                   </dd>
                 </dl>
               </div>

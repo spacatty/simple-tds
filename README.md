@@ -52,6 +52,45 @@ and everyone else is rejected if they try.
 TLS fingerprint checks (JA3/JA4, GREASE) only work on `auto` domains, where the
 app sees the handshake.
 
+The Domains page opens as a list of cards, one per domain, with every check
+spelled out; the switch in its toolbar turns it into a compact sortable table.
+The choice is kept on the account, so it is the same in every browser. The
+tiles above the list count the domains by state — healthy, flagged, unreachable,
+pending, switched off — and filter the list when clicked.
+
+### Reputation checks
+
+A domain that lands on a blocklist loses traffic before anything else shows it:
+browsers put up a warning page, ad platforms reject the link, mail with the
+link goes to spam. Settings → Domain reputation asks the lists themselves:
+
+| Provider | Needs | Tells you |
+|---|---|---|
+| Google Safe Browsing | API key (free) | the red warning page in Chrome, Firefox and Safari; a Google Ads signal |
+| VirusTotal | API key (free: 4 requests a minute, 500 a day) | how many of about 90 security vendors flag the domain |
+| Spamhaus DBL | nothing, or a free DQS key | spam, phishing, malware and botnet listings |
+| SURBL, URIBL | nothing | domains seen in spam and phishing mail |
+| Cloudflare security DNS, Quad9 | nothing | whether the filtering resolvers 1.1.1.2 and 9.9.9.9 refuse the domain |
+
+Every provider is off until an administrator switches it on, because a check
+tells the provider the domain name. Once on, each enabled domain is asked about
+when it is added, on "Re-check", and then every N hours (12 by default). The
+answers are shown per domain — in the cards, in the table's Reputation column
+and in the domain's edit dialog, each with a link to the provider's own page —
+and summed up by the **Domains** widget that can be added to any personal
+dashboard. They are information only: a listed domain keeps serving traffic
+until you decide otherwise.
+
+- Spamhaus, SURBL and URIBL are asked over DNS through the server's resolver
+  and refuse public resolvers (8.8.8.8, 1.1.1.1): the provider then shows "no
+  answer" with the reason. Use the server's own or the hosting provider's
+  resolver, or a Spamhaus DQS key.
+- A provider that fails (timeout, spent quota) does not erase its last verdict
+  for three check intervals, so an outage never turns a listed domain clean.
+- With VirusTotal's free key, multiply the number of domains by the checks per
+  day before choosing the interval: 100 domains every 12 hours is 200 requests
+  a day.
+
 ### Certificates
 
 Every `auto` domain is actively managed: its certificate is requested as soon
@@ -223,6 +262,19 @@ not touched. To remove only certain visitors — your own test visits on a live
 campaign, or a spammer — use ⋯ → **Delete data by IP** with a list of
 addresses or CIDR ranges: their clicks go, together with the conversions of
 those clicks.
+
+### Suppressing sources
+
+To keep a source out for good, add it under **Utilities → Suppress IPs**
+(addresses and CIDR networks) or **Suppress referrers** (domains; a domain
+covers its subdomains). A suppressed request never reaches a campaign: it gets
+a 404, is not a click, does not use up uniqueness and shows in no report.
+
+The lists are personal. An entry applies to every campaign its owner owns, or
+only to the campaigns picked for it — any campaign the user may edit. Each
+entry also says what is kept about the requests it refuses: a counter (the
+default), the counter plus a request log (time, address, referrer, domain,
+campaign, User-Agent), or nothing. Both follow the data retention period.
 
 ## Conversions
 

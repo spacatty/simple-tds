@@ -443,9 +443,9 @@ function RecentClicks({ range, campaigns }: { range: DateRange; campaigns: Campa
                     </td>
                     <td>
                       <span className="with-icon">
-                        {dev && by('device_type', dev, <DeviceIcon type={dev} />, t('Clicks from {device} devices', { device: dev }))}
-                        {os && by('os', os, <span className="with-icon"><OsIcon os={os} />{os}</span>, t('Clicks from {name}', { name: os }))}
-                        {str(r.browser) && by('browser', str(r.browser), <span className="with-icon"><BrowserIcon browser={str(r.browser)} /><span className="c-opt">{str(r.browser)}</span></span>, t('Clicks from {name}', { name: str(r.browser) }))}
+                        {dev && by('device_type', dev, <DeviceIcon type={dev} title={humanize(dev)} />, t('Clicks from {device} devices', { device: dev }))}
+                        {os && by('os', os, <OsIcon os={os} title={os} />, t('Clicks from {name}', { name: os }))}
+                        {str(r.browser) && by('browser', str(r.browser), <BrowserIcon browser={str(r.browser)} title={str(r.browser)} />, t('Clicks from {name}', { name: str(r.browser) }))}
                         {!dev && !os && !r.browser && <span className="muted">—</span>}
                       </span>
                     </td>

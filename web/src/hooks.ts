@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import type { DependencyList, Dispatch, SetStateAction } from 'react'
 import type { Meta, User } from './types'
-import { errMsg } from './api'
+import { errMsg, put } from './api'
 import { APP_NAME } from './components/Logo'
 
 export interface Loaded<T> {
@@ -122,6 +122,24 @@ export const isOwner = (c: { access?: string } | undefined | null) => accessRank
 
 export function useMeta(): Meta {
   return useApp().meta
+}
+
+/**
+ * A preference kept on the user's account rather than in the browser, so it is
+ * the same on every device they sign in from.
+ */
+export function usePref<T extends string>(key: string, fallback: T): [T, (v: T) => void] {
+  const { user, setUser } = useApp()
+  const value = (user.prefs?.[key] as T | undefined) ?? fallback
+  const set = useCallback(
+    (v: T) => {
+      setUser({ ...user, prefs: { ...user.prefs, [key]: v } })
+      // If saving fails the choice still holds until the page is reloaded.
+      put<User>('me/prefs', { [key]: v }).catch(() => undefined)
+    },
+    [user, setUser, key],
+  )
+  return [value, set]
 }
 
 export type Theme = 'light' | 'dark'

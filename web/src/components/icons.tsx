@@ -43,9 +43,19 @@ export function FunnelIcon({ size = 14 }: { size?: number }) {
 
 const DEVICES: Record<string, LucideIcon> = { desktop: Monitor, mobile: Smartphone, tablet: Tablet, tv: Tv, bot: Bot }
 
-export function DeviceIcon({ type, size = 14 }: { type: string; size?: number }) {
+/** An icon standing in for its name: the name moves to a tooltip and to screen readers. */
+function tip(icon: ReactNode, title?: string): ReactNode {
+  if (!title || !icon) return icon
+  return (
+    <span className="ico-tip" title={title} role="img" aria-label={title}>
+      {icon}
+    </span>
+  )
+}
+
+export function DeviceIcon({ type, size = 14, title }: { type: string; size?: number; title?: string }) {
   const Icon = DEVICES[(type || '').toLowerCase()] ?? CircleHelp
-  return <Icon className="ico" size={size} aria-hidden="true" />
+  return tip(<Icon className="ico" size={size} aria-hidden="true" />, title)
 }
 
 // Brand marks as single-path 24×24 glyphs. Microsoft's are not in the icon set any more.
@@ -82,10 +92,10 @@ const OS_RULES: [string, string][] = [
   ['chrome', siGooglechrome.path],
 ]
 
-export function OsIcon({ os, size = 14 }: { os: string; size?: number }) {
+export function OsIcon({ os, size = 14, title }: { os: string; size?: number; title?: string }) {
   if (!os) return null
   const path = match(os, OS_RULES)
-  return <Glyph path={path} Icon={path ? undefined : (os || '').toLowerCase().includes('bsd') ? Terminal : CircleHelp} size={size} />
+  return tip(<Glyph path={path} Icon={path ? undefined : (os || '').toLowerCase().includes('bsd') ? Terminal : CircleHelp} size={size} />, title)
 }
 
 const BROWSER_RULES: [string, string][] = [
@@ -105,11 +115,11 @@ const BROWSER_RULES: [string, string][] = [
   ['safari', siSafari.path],
 ]
 
-export function BrowserIcon({ browser, size = 14 }: { browser: string; size?: number }) {
+export function BrowserIcon({ browser, size = 14, title }: { browser: string; size?: number; title?: string }) {
   if (!browser) return null
   const s = browser.toLowerCase()
   const path = match(browser, BROWSER_RULES)
-  return <Glyph path={path} Icon={path ? undefined : s.includes('bot') || s.includes('crawl') || s.includes('spider') ? Bot : Globe} size={size} />
+  return tip(<Glyph path={path} Icon={path ? undefined : s.includes('bot') || s.includes('crawl') || s.includes('spider') ? Bot : Globe} size={size} />, title)
 }
 
 export function Browser({ browser, version }: { browser: string; version?: string }) {

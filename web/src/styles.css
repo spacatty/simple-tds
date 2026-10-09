@@ -567,6 +567,24 @@ button {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
 }
+/* Entering and leaving a mode: tinted to start it, green to finish. */
+.btn.accent {
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--accent-text);
+}
+.btn.accent:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.btn.ok {
+  background: var(--ok-soft);
+  border-color: var(--ok);
+  color: var(--ok);
+}
+.btn.ok:hover:not(:disabled) {
+  background: var(--ok);
+  color: var(--surface);
+}
 .btn.danger {
   background: var(--err);
   border-color: var(--err);
@@ -1596,6 +1614,100 @@ fieldset.plain:disabled .chips-box {
   align-items: center;
   gap: 8px;
 }
+/* ---- filter bar ------------------------------------------------------------ */
+.filterbar {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.filterbar-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 12px 14px;
+}
+.ff {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  flex: 1 1 170px;
+  max-width: 230px;
+}
+.ff-sm {
+  flex-basis: 140px;
+  max-width: 170px;
+}
+.ff-lg {
+  flex-basis: 220px;
+  max-width: 300px;
+}
+.ff-auto {
+  flex: none;
+  max-width: 100%;
+}
+.ff-label {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.ff.on .ff-label {
+  color: var(--accent-text);
+}
+.ff .input {
+  width: 100%;
+  max-width: none;
+}
+.ff.on .input {
+  border-color: var(--accent);
+  background-color: var(--accent-soft);
+}
+/* Same height as the inputs beside it. */
+.ff .segmented {
+  align-self: flex-start;
+}
+.ff .segmented button {
+  height: 28px;
+}
+.ff-pair {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ff-pair .input {
+  flex: 1 1 0;
+}
+.filterbar-reset {
+  margin-left: auto;
+  flex: none;
+}
+.filterbar-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+@media (max-width: 700px) {
+  .ff,
+  .ff-sm,
+  .ff-lg {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+  .filterbar-reset {
+    margin-left: 0;
+  }
+}
 .bulkbar {
   display: flex;
   align-items: center;
@@ -1655,6 +1767,10 @@ fieldset.plain:disabled .chips-box {
 .ico {
   flex: none;
   color: var(--text-3);
+}
+.ico-tip {
+  display: inline-flex;
+  flex: none;
 }
 .with-icon {
   display: inline-flex;
@@ -2188,12 +2304,14 @@ fieldset.plain:disabled .chips-box {
   width: 260px;
 }
 .board {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 12px;
   align-items: start;
 }
 .wdg {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -2206,28 +2324,74 @@ fieldset.plain:disabled .chips-box {
   border-style: dashed;
   border-color: var(--border-strong);
 }
+/* Widgets slide to their new place when the layout changes (see BoardView). */
+.board.arranging .wdg {
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease;
+}
+.board.arranging .wdg-head {
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.wdg-grip {
+  flex: none;
+  margin-left: -6px;
+  color: var(--text-3);
+}
+.board.arranging .wdg.carried {
+  z-index: 5;
+  transition: none;
+  border-style: solid;
+  border-color: var(--accent);
+  box-shadow: var(--shadow-lg);
+  opacity: 0.92;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .board.arranging .wdg {
+    transition: none;
+  }
+}
 .wdg-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 38px;
-  padding: 6px 8px 0 14px;
+  min-height: 40px;
+  padding: 8px 8px 0 14px;
 }
+/* The same caption as on the overview: a swatch of the figure's colour, a small-caps name. */
 .wdg-title {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  gap: 7px;
   flex: 1;
   min-width: 0;
 }
+.wdg-title::before {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--metric, var(--series-1));
+}
 .wdg-title b {
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
 }
 .wdg-title span {
   flex: 1;
   font-size: 11.5px;
   color: var(--text-3);
+}
+.wdg-title span::before {
+  content: '·';
+  margin-right: 7px;
 }
 .wdg-tools {
   display: flex;
@@ -2236,9 +2400,14 @@ fieldset.plain:disabled .chips-box {
 .wdg-link {
   display: grid;
   place-items: center;
+  flex: none;
   width: 26px;
   height: 26px;
+  padding: 0;
+  border: 0;
   border-radius: 6px;
+  background: none;
+  cursor: pointer;
   color: var(--text-3);
   opacity: 0;
 }
@@ -2253,6 +2422,117 @@ fieldset.plain:disabled .chips-box {
 .wdg-body {
   padding: 6px 14px 14px;
   min-width: 0;
+}
+.wdg.sized .wdg-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.wdg.sized .wstat {
+  height: 100%;
+}
+.wdg.resizing {
+  border-color: var(--accent);
+  user-select: none;
+}
+/* Resize handles of the arrange mode: they straddle the right and bottom edges. */
+.wdg-rs {
+  position: absolute;
+  z-index: 1;
+  touch-action: none;
+}
+.wdg-rs.x {
+  top: 10px;
+  bottom: 10px;
+  right: -7px;
+  width: 13px;
+  cursor: ew-resize;
+}
+.wdg-rs.y {
+  left: 10px;
+  right: 10px;
+  bottom: -7px;
+  height: 13px;
+  cursor: ns-resize;
+}
+.wdg-rs.xy {
+  right: -7px;
+  bottom: -7px;
+  width: 17px;
+  height: 17px;
+  cursor: nwse-resize;
+}
+.wdg-rs::after {
+  content: '';
+  position: absolute;
+  border-radius: 2px;
+  background: var(--border-strong);
+}
+.wdg-rs.x::after {
+  top: calc(50% - 14px);
+  left: 5px;
+  width: 3px;
+  height: 28px;
+}
+.wdg-rs.y::after {
+  left: calc(50% - 14px);
+  top: 5px;
+  width: 28px;
+  height: 3px;
+}
+.wdg-rs.xy::after {
+  right: 5px;
+  bottom: 5px;
+  width: 7px;
+  height: 7px;
+  background: none;
+  border: solid var(--border-strong);
+  border-width: 0 3px 3px 0;
+  border-radius: 0 0 3px 0;
+}
+.wdg-rs:hover::after,
+.wdg.resizing .wdg-rs::after {
+  background: var(--accent);
+}
+.wdg-rs.xy:hover::after,
+.wdg.resizing .wdg-rs.xy::after {
+  background: none;
+  border-color: var(--accent);
+}
+.wdg-size {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 2;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.chart-fill {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.chart-fill-area {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.chart-fill-area > .recharts-responsive-container {
+  position: absolute;
+  inset: 0;
+}
+.wdg-form-size > .field {
+  margin-bottom: 0;
+}
+.wdg-form-hint {
+  margin-top: 6px;
 }
 .wstat {
   display: flex;
@@ -2281,13 +2561,47 @@ fieldset.plain:disabled .chips-box {
   flex: 0 1 120px;
   min-width: 40px;
 }
-.wfunnel {
+.wbars {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
+  padding-top: 4px;
 }
-.wfunnel > .btn {
-  align-self: flex-start;
+.wbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 44px;
+  align-items: baseline;
+  gap: 5px 8px;
+  font-size: 12.5px;
+}
+.wbar > span {
+  color: var(--text-2);
+}
+.wbar > b {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.wbar > small {
+  text-align: right;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+.wbar-track {
+  grid-column: 1 / -1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.wbar-track > div {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--series-1);
+  transition: width 0.25s ease;
+}
+.wbar.goal .wbar-track > div {
+  background: var(--ok);
 }
 .pin-menu {
   min-width: 250px;
@@ -2300,6 +2614,11 @@ fieldset.plain:disabled .chips-box {
   .board > .wdg-chart,
   .board > .wdg-funnel {
     grid-column: span 12 !important;
+  }
+  /* The width is fixed by the screen here, so only the height can be dragged. */
+  .wdg-rs.x,
+  .wdg-rs.xy {
+    display: none;
   }
 }
 @media (max-width: 620px) {
@@ -2947,7 +3266,7 @@ tr.camp-off .tnum {
   display: none;
 }
 .sidebar {
-  width: 224px;
+  width: 244px;
   flex: none;
   background: var(--surface);
   border-right: 1px solid var(--border);
@@ -3150,6 +3469,11 @@ tr.camp-off .tnum {
 }
 .profile-menu a.menu-item {
   text-decoration: none;
+}
+/* The tick of the language in use. */
+.menu-check {
+  margin-left: auto;
+  color: var(--accent-text);
 }
 .foot-actions {
   display: grid;
@@ -4251,30 +4575,6 @@ a.fnl-num:hover {
 .fnl-drop.worst .fnl-lost {
   color: var(--err);
 }
-.fnl.compact .fnl-step {
-  grid-template-columns: 20px minmax(70px, 30%) minmax(40px, 1fr) minmax(36px, auto) 50px;
-  column-gap: 8px;
-}
-.fnl.compact .fnl-drop {
-  display: none;
-}
-.fnl.compact .fnl-group,
-.fnl.compact .fnl-step.top {
-  padding: 4px 0;
-}
-.fnl.compact .fnl-track {
-  height: 14px;
-}
-.fnl.compact .fnl-ix {
-  width: 20px;
-  height: 20px;
-}
-.fnl.compact .fnl-num {
-  font-size: 13px;
-}
-.fnl.compact .fnl-meta {
-  display: none;
-}
 @media (max-width: 620px) {
   .fnl-step {
     grid-template-columns: 22px minmax(0, 1fr) auto 52px;
@@ -4439,8 +4739,24 @@ a.fnl-num:hover {
 .segmented.kinds button.active::before {
   opacity: 1;
 }
+/* Report switches: the chosen option is tinted, so the current mode reads at a glance. */
+.segmented.order button[data-value=''],
+.segmented.bots button[data-value=''] {
+  --opt: var(--accent);
+}
+.segmented.order button[data-value='1'] {
+  --opt: var(--forced);
+}
+.segmented.bots button[data-value='exclude'] {
+  --opt: var(--ok);
+}
+.segmented.bots button[data-value='only'] {
+  --opt: var(--warn);
+}
 .segmented.kinds button.active,
-.segmented.ops button.active {
+.segmented.ops button.active,
+.segmented.order button.active,
+.segmented.bots button.active {
   background: color-mix(in srgb, var(--opt) 16%, var(--surface));
   color: color-mix(in srgb, var(--opt) 60%, var(--text));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--opt) 55%, transparent);
@@ -5016,4 +5332,445 @@ fieldset.plain:disabled .action-card {
 }
 .ref-note {
   margin-top: 10px;
+}
+
+/* ---- domains: health tiles, cards, reputation ------------------------------ */
+/* One colour per state, wherever a domain's health is shown. */
+.ht-ok {
+  --tone: var(--ok);
+}
+.ht-err {
+  --tone: var(--err);
+}
+.ht-warn {
+  --tone: var(--warn);
+}
+.ht-info {
+  --tone: var(--info);
+}
+.ht-neutral {
+  --tone: var(--border-strong);
+}
+.health-dot {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tone, var(--text-3));
+}
+/* The filter strip: the hairlines between tiles are the grid's own background. */
+.health-tiles {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.health-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 14px 11px;
+  border: 0;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.health-tile:hover {
+  background: var(--surface-2);
+}
+.health-tile.active {
+  background: var(--accent-soft);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.health-tile:focus-visible {
+  outline-offset: -2px;
+}
+.health-tile-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.health-tile b {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.health-tile.zero b {
+  color: var(--text-3);
+  font-weight: 500;
+}
+.health-tile.ht-err:not(.zero) b {
+  color: var(--err);
+}
+.health-tile.ht-warn:not(.zero) b {
+  color: var(--warn);
+}
+.check-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* The card view: one row-card per domain, columns lined up from card to card. */
+.dcards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dcard {
+  --tone: var(--ok);
+  position: relative;
+  display: grid;
+  grid-template-columns: 18px minmax(220px, 1.5fr) minmax(200px, 1.3fr) auto;
+  gap: 8px 20px;
+  align-items: start;
+  min-width: 0;
+  padding: 12px 12px 12px 17px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.dcards.with-rep .dcard {
+  grid-template-columns: 18px minmax(220px, 1.35fr) minmax(180px, 1fr) minmax(220px, 1.25fr) auto;
+}
+/* The state at a glance: a coloured edge. */
+.dcard::before {
+  content: '';
+  position: absolute;
+  inset: -1px auto -1px -1px;
+  width: 4px;
+  border-radius: var(--radius) 0 0 var(--radius);
+  background: var(--tone);
+}
+.dcard.h-flagged {
+  --tone: var(--err);
+  border-color: color-mix(in srgb, var(--err) 40%, var(--border));
+}
+.dcard.h-error {
+  --tone: var(--warn);
+}
+.dcard.h-pending {
+  --tone: var(--info);
+}
+.dcard.h-off {
+  --tone: var(--border-strong);
+}
+.dcard.h-off .dcard-main,
+.dcard.h-off .dcard-col {
+  opacity: 0.6;
+}
+.dcard.selected {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.dcard-check {
+  padding-top: 2px;
+}
+.dcard-main,
+.dcard-col {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.dcard-name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 14px;
+  word-break: break-all;
+}
+.dcard-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 16px;
+  margin: 1px 0 0;
+  font-size: 12px;
+}
+.dcard-meta > div {
+  display: flex;
+  gap: 5px;
+  min-width: 0;
+}
+.dcard-meta dt {
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.dcard-meta dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--text-2);
+}
+.dcard-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-3);
+}
+.dcard-label .muted {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.dcard-msg {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.dcard-msg.err {
+  color: var(--err);
+}
+.dcard-ctl {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  align-self: center;
+  justify-self: end;
+}
+@media (max-width: 1280px) {
+  .dcard,
+  .dcards.with-rep .dcard {
+    grid-template-columns: 18px minmax(0, 1.2fr) minmax(0, 1fr);
+  }
+  /* Second row: the blocklists under the name, the switches under the connection. */
+  .dcard-col + .dcard-col {
+    grid-column: 2;
+  }
+  .dcard-ctl {
+    grid-column: 3;
+    align-self: end;
+  }
+  .dcards:not(.with-rep) .dcard-ctl {
+    grid-column: 2 / -1;
+  }
+}
+@media (max-width: 700px) {
+  .health-tiles {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .dcard,
+  .dcards.with-rep .dcard {
+    grid-template-columns: 18px minmax(0, 1fr);
+  }
+  .dcard-col,
+  .dcard-ctl {
+    grid-column: 2;
+  }
+  .dcard-ctl {
+    flex-wrap: wrap;
+  }
+}
+
+/* What each blocklist said about a domain. */
+.rep-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.rep-chip {
+  --tone: var(--text-3);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px 0 6px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.rep-chip.clean {
+  --tone: var(--ok);
+}
+.rep-chip.listed {
+  --tone: var(--err);
+  background: var(--err-soft);
+  color: var(--err);
+}
+/* No answer: an outline, so it reads as "nothing known" rather than as a verdict. */
+.rep-chip.error {
+  --tone: var(--warn);
+  background: none;
+  border-color: var(--border-strong);
+  border-style: dashed;
+  color: var(--text-3);
+}
+a.rep-chip:hover {
+  border-color: currentColor;
+  border-style: solid;
+}
+.rep-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.rep-badge .badge {
+  max-width: 200px;
+}
+.rep-list-name {
+  flex: none;
+  width: 190px;
+}
+
+/* Settings → Domain reputation. */
+/* One row per provider: the switch and name in a fixed column, what it is next to it. */
+.rep-providers {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.rep-provider {
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  gap: 0 20px;
+  align-items: start;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.rep-provider:last-child {
+  border-bottom: 0;
+}
+.rep-provider.on {
+  background: var(--surface-2);
+}
+.rep-provider > .field-help {
+  margin: 0;
+  padding-top: 2px;
+}
+/* The key takes the full width; the two numbers share the row under it. */
+.rep-provider-fields {
+  grid-column: 2;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 14px;
+  margin-top: 12px;
+}
+.rep-provider-fields > .field {
+  margin-bottom: 0;
+}
+.rep-provider-fields > .field:first-child {
+  grid-column: 1 / -1;
+}
+.rep-provider-fields > .field + .field {
+  margin-top: 12px;
+}
+.rep-interval {
+  max-width: 360px;
+  margin-top: 16px;
+}
+@media (max-width: 700px) {
+  .rep-provider {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+  .rep-provider-fields {
+    grid-column: 1;
+  }
+}
+
+/* The "Domains" dashboard widget. */
+.wdg-domains {
+  --metric: var(--ok);
+}
+.wdomains {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+.health-bar {
+  display: flex;
+  gap: 2px;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.health-bar i {
+  flex-basis: 0;
+  min-width: 4px;
+  background: var(--tone);
+}
+.health-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 12px;
+}
+.health-legend a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-2);
+  text-decoration: none;
+}
+.health-legend a:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+.health-legend b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.wdomains-fine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ok);
+  font-weight: 600;
+}
+.wdomains-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+}
+.wdomains-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, max-content) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin: 0 -6px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  color: inherit;
+  text-decoration: none;
+}
+.wdomains-row:hover {
+  background: var(--hover);
+  text-decoration: none;
 }

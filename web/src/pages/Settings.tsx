@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Cloud, KeyRound, ShieldCheck, Trash2 } from 'lucide-react'
+import { Navigate, useSearchParams } from 'react-router-dom'
+import { Cloud, Trash2 } from 'lucide-react'
 import { ApiError, errMsg, get, post, put } from '../api'
 import { useApp, useIsAdmin, useLoad, useMeta } from '../hooks'
-import type { Settings, SystemInfo } from '../types'
-import { Badge, Card, Chips, CodeBlock, CopyButton, ErrorBox, Field, Notice, NumberInput, PageHeader, Skeleton, Toggle, confirmDialog, toast, useBusy } from '../components/ui'
+import type { RepProviderConfig, Settings, SystemInfo } from '../types'
+import { Badge, Card, Chips, CodeBlock, ErrorBox, Field, Notice, NumberInput, PageHeader, Skeleton, Tabs, Toggle, confirmDialog, toast, useBusy } from '../components/ui'
 import { t, tn, ts, tx } from '../i18n'
 
 // Published at https://www.cloudflare.com/ips/
@@ -15,40 +16,59 @@ const RESCUE = 'docker compose exec tds tds panel-ip on\ndocker compose restart 
 const cidrCheck = (v: string) => (/^[0-9a-fA-F:.]+(\/\d{1,3})?$/.test(v) && (v.includes('.') || v.includes(':')) ? null : t('“{v}” is not an IP address or CIDR', { v }))
 
 export default function SettingsPage() {
-  // Global settings are for administrators; everyone else only manages their own account.
-  if (!useIsAdmin()) {
-    return (
-      <div className="page page-narrow">
-        <PageHeader title={t('Settings')} sub={t('Your account. Global settings are managed by administrators.')} />
-        <Account />
-      </div>
-    )
-  }
+  // Global settings are for administrators; everyone else has only their account, on its own page.
+  if (!useIsAdmin()) return <Navigate to="/account" replace />
   return <AdminSettings />
 }
+
+type Tab = 'access' | 'network' | 'tls' | 'reputation' | 'params' | 'data'
+const TABS: { value: Tab; label: string }[] = [
+  { value: 'access', label: t('Panel access') },
+  { value: 'network', label: t('Network') },
+  { value: 'tls', label: t('TLS certificates') },
+  { value: 'reputation', label: t('Domain reputation') },
+  { value: 'params', label: t('Parameter names') },
+  { value: 'data', label: t('Data') },
+]
 
 function AdminSettings() {
   const settings = useLoad(() => get<Settings>('settings'), [])
   const sys = useLoad(() => get<SystemInfo>('system'), [])
+  // The tab lives in the query (?tab=network), so reload, Back and links from other pages keep it.
+  const [sp, setSp] = useSearchParams()
+  const tab = TABS.find((x) => x.value === sp.get('tab'))?.value ?? 'access'
+  const s = settings.data
+  // Every section stays mounted, hidden when it is not the open one: switching tabs must not throw away what was typed.
+  const pane = (name: Tab) => ({ role: 'tabpanel', hidden: tab !== name })
 
   return (
     <div className="page page-narrow">
       <PageHeader title={t('Settings')} />
+      <Tabs value={tab} onChange={(v) => setSp(v === 'access' ? {} : { tab: v }, { replace: true })} tabs={TABS} />
       <ErrorBox error={settings.error} retry={settings.reload} />
-      {!settings.data ? (
-        !settings.error && <Skeleton rows={10} height={18} />
-      ) : (
-        <div className="stack">
-          <PanelAccess s={settings.data} sys={sys.data} onSaved={(s) => (settings.setData(s), sys.reload())} />
-          <Network s={settings.data} onSaved={settings.setData} />
-          <TLS s={settings.data} onSaved={settings.setData} />
-          <ParamNames s={settings.data} onSaved={settings.setData} />
-          <Data s={settings.data} onSaved={settings.setData} />
-        </div>
+      {!s && !settings.error && <Skeleton rows={10} height={18} />}
+      {s && (
+        <>
+          <div {...pane('access')}>
+            <PanelAccess s={s} sys={sys.data} onSaved={(next) => (settings.setData(next), sys.reload())} />
+          </div>
+          <div {...pane('network')}>
+            <Network s={s} onSaved={settings.setData} />
+          </div>
+          <div {...pane('tls')}>
+            <TLS s={s} onSaved={settings.setData} />
+          </div>
+          <div {...pane('reputation')}>
+            <Reputation s={s} onSaved={settings.setData} />
+          </div>
+          <div {...pane('params')}>
+            <ParamNames s={s} onSaved={settings.setData} />
+          </div>
+          <div {...pane('data')}>
+            <Data s={s} onSaved={settings.setData} />
+          </div>
+        </>
       )}
-      <div className="stack" style={{ marginTop: 16 }}>
-        <Account />
-      </div>
     </div>
   )
 }
@@ -267,6 +287,81 @@ function TLS({ s, onSaved }: SectionProps) {
   )
 }
 
+function Reputation({ s, onSaved }: SectionProps) {
+  const defs = useMeta().reputation_providers ?? []
+  const [hours, setHours] = useState<number | ''>(s.reputation?.interval_hours ?? 12)
+  const [prov, setProv] = useState<Record<string, RepProviderConfig>>(s.reputation?.providers ?? {})
+  useEffect(() => {
+    setHours(s.reputation?.interval_hours ?? 12)
+    setProv(s.reputation?.providers ?? {})
+  }, [s.reputation])
+  const { error, busy, save } = useSave(onSaved)
+  const of = (id: string): RepProviderConfig => prov[id] ?? { enabled: false }
+  const set = (id: string, p: Partial<RepProviderConfig>) => setProv((cur) => ({ ...cur, [id]: { ...(cur[id] ?? { enabled: false }), ...p } }))
+  // Every provider is sent, switched off or not: the server keeps the ones that are left out.
+  const body = { interval_hours: hours === '' ? 12 : hours, providers: Object.fromEntries(defs.map((d) => [d.id, of(d.id)])) }
+  const missing = defs.find((d) => d.key === 'required' && of(d.id).enabled && !(of(d.id).key ?? '').trim())
+  const on = defs.filter((d) => of(d.id).enabled).length
+
+  return (
+    <Card title={t('Domain reputation')} actions={on > 0 ? <Badge tone="ok">{tn(on, '{n} check on', '{n} checks on')}</Badge> : <Badge>{t('off')}</Badge>}>
+      <Notice tone="info" title={t('Find out that a domain got flagged before your traffic does')}>
+        {t('Each provider you switch on is asked about every enabled domain: when it is added, on “Re-check”, and then on the schedule below. The answers show on the Domains page and in the “Domains” dashboard widget; they never change how traffic is handled. A check tells the provider the domain name, so everything is off until you switch it on.')}
+      </Notice>
+      <div className="rep-providers">
+        {defs.map((d) => {
+          const p = of(d.id)
+          return (
+            <div key={d.id} className={'rep-provider' + (p.enabled ? ' on' : '')}>
+              <Toggle checked={p.enabled} onChange={(v) => set(d.id, { enabled: v })} label={<b>{d.name}</b>} />
+              <div className="field-help">{ts(d.description)}</div>
+              {d.key !== '' && (p.enabled || !!p.key) && (
+                <div className="rep-provider-fields">
+                  <Field
+                    label={d.key === 'required' ? t('API key') : t('API key (optional)')}
+                    help={
+                      <>
+                        {ts(d.key_help)}{' '}
+                        {d.key_url && (
+                          <a href={d.key_url} target="_blank" rel="noreferrer noopener">
+                            {t('Get a key')}
+                          </a>
+                        )}
+                      </>
+                    }
+                  >
+                    <input className="input mono" autoComplete="off" spellCheck={false} value={p.key ?? ''} onChange={(e) => set(d.id, { key: e.target.value.trim() })} />
+                  </Field>
+                  {d.threshold && (
+                    <Field label={t('Flag from, engines')} help={t('How many engines must flag the domain. One or two are often false alarms.')}>
+                      <NumberInput value={p.threshold ?? 2} min={1} max={50} onChange={(v) => set(d.id, { threshold: v === '' ? 2 : v })} />
+                    </Field>
+                  )}
+                  {d.rate && (
+                    <Field label={t('Requests per minute')} help={t('The quota of your key; checks are spread out to stay within it.')}>
+                      <NumberInput value={p.per_minute ?? 4} min={1} max={600} onChange={(v) => set(d.id, { per_minute: v === '' ? 4 : v })} />
+                    </Field>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      <Field label={t('Check every, hours')} help={t('How often each domain is asked about again. With a daily quota, multiply your domains by the checks per day first.')} className="rep-interval">
+        <NumberInput value={hours} min={1} max={720} onChange={setHours} />
+      </Field>
+      {missing && <div className="field-error">{t('{name} needs an API key to be switched on.', { name: missing.name })}</div>}
+      {error && <div className="field-error">{error}</div>}
+      <div className="form-actions">
+        <button className="btn primary" disabled={busy || !!missing || JSON.stringify(body) === JSON.stringify({ interval_hours: s.reputation?.interval_hours ?? 12, providers: Object.fromEntries(defs.map((d) => [d.id, s.reputation?.providers?.[d.id] ?? { enabled: false }])) })} onClick={() => save({ reputation: body }, t('Reputation checks saved'))}>
+          {t('Save reputation checks')}
+        </button>
+      </div>
+    </Card>
+  )
+}
+
 function ParamNames({ s, onSaved }: SectionProps) {
   const defs = useMeta().system_params ?? []
   const { reloadMeta } = useApp()
@@ -364,173 +459,6 @@ function Data({ s, onSaved }: SectionProps) {
           {t('Save retention')}
         </button>
       </div>
-    </Card>
-  )
-}
-
-function Account() {
-  const { user, setUser } = useApp()
-  const [cur, setCur] = useState('')
-  const [next, setNext] = useState('')
-  const [again, setAgain] = useState('')
-  const [pwError, setPwError] = useState('')
-  const [busy, run] = useBusy()
-
-  const [setup, setSetup] = useState<{ secret: string; url: string; qr?: string } | null>(null)
-  const [code, setCode] = useState('')
-  const [disablePw, setDisablePw] = useState('')
-  const [totpError, setTotpError] = useState('')
-
-  const pwProblem = next && next.length < 10 ? t('At least 10 characters') : again && next !== again ? t('Passwords do not match') : ''
-
-  const changePassword = () =>
-    run(async () => {
-      setPwError('')
-      try {
-        await post('me/password', { current: cur, new: next })
-        setCur('')
-        setNext('')
-        setAgain('')
-        toast.ok(t('Password changed. Your other devices were signed out.'))
-      } catch (e) {
-        setPwError(errMsg(e))
-      }
-    })
-
-  const startSetup = () =>
-    run(async () => {
-      setTotpError('')
-      try {
-        setSetup(await post<{ secret: string; url: string; qr?: string }>('me/totp/setup'))
-        setCode('')
-      } catch (e) {
-        setTotpError(errMsg(e))
-      }
-    })
-  const enable = () =>
-    run(async () => {
-      setTotpError('')
-      try {
-        await post('me/totp/enable', { code: code.trim() })
-        setUser({ ...user, totp_enabled: true })
-        setSetup(null)
-        toast.ok(t('Two-factor authentication is on'))
-      } catch (e) {
-        setTotpError(errMsg(e))
-      }
-    })
-  const disable = () =>
-    run(async () => {
-      setTotpError('')
-      try {
-        await post('me/totp/disable', { password: disablePw })
-        setUser({ ...user, totp_enabled: false })
-        setDisablePw('')
-        toast.ok(t('Two-factor authentication is off'))
-      } catch (e) {
-        setTotpError(errMsg(e))
-      }
-    })
-
-  return (
-    <Card title={t('Account: {name}', { name: user.username })}>
-      <div className="section-head first">
-        <KeyRound size={15} />
-        <h4>{t('Change password')}</h4>
-      </div>
-      <form
-        className="form-grid"
-        onSubmit={(e) => {
-          e.preventDefault()
-          if (cur && next.length >= 10 && next === again) changePassword()
-        }}
-      >
-        <Field label={t('Current password')} className="span-2" style={{ maxWidth: 360 }}>
-          <input className="input" type="password" autoComplete="current-password" value={cur} onChange={(e) => setCur(e.target.value)} />
-        </Field>
-        <Field label={t('New password')} help={t('At least 10 characters.')}>
-          <input className="input" type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />
-        </Field>
-        <Field label={t('Repeat new password')} error={pwProblem}>
-          <input className="input" type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} />
-        </Field>
-        {pwError && <div className="field-error span-2">{pwError}</div>}
-        <div className="form-actions span-2">
-          <button className="btn primary" disabled={busy || !cur || next.length < 10 || next !== again}>
-            {t('Change password')}
-          </button>
-          <span className="muted small">{t('Signs out your other devices; this session stays signed in.')}</span>
-        </div>
-      </form>
-
-      <div className="section-head">
-        <ShieldCheck size={15} />
-        <h4>{t('Two-factor authentication (TOTP)')}</h4>
-        {user.totp_enabled ? <Badge tone="ok">{t('enabled')}</Badge> : <Badge>{t('disabled')}</Badge>}
-      </div>
-
-      {user.totp_enabled ? (
-        <form
-          className="row gap wrap end"
-          onSubmit={(e) => {
-            e.preventDefault()
-            if (disablePw) disable()
-          }}
-        >
-          <Field label={t('Confirm with your password to turn it off')} style={{ width: 320, marginBottom: 0 }}>
-            <input className="input" type="password" autoComplete="current-password" value={disablePw} onChange={(e) => setDisablePw(e.target.value)} />
-          </Field>
-          <button className="btn danger-outline" disabled={busy || !disablePw}>
-            {t('Disable two-factor')}
-          </button>
-        </form>
-      ) : !setup ? (
-        <div>
-          <p className="muted">{t('Require a 6-digit code from an authenticator app (Google Authenticator, 1Password, Aegis…) in addition to the password.')}</p>
-          <button className="btn" disabled={busy} onClick={startSetup}>
-            {t('Set up two-factor authentication')}
-          </button>
-        </div>
-      ) : (
-        <div className="totp-setup">
-          <p>
-            {setup.qr
-              ? tx('1. Scan this QR code with your authenticator app, or add the account by <b>manual entry</b> with the secret below.', { b: (c) => <b>{c}</b> })
-              : tx('1. Add a new account in your authenticator app using <b>manual entry</b> with the secret below, or open the otpauth link on a device that has the app.', { b: (c) => <b>{c}</b> })}
-          </p>
-          {setup.qr && setup.qr.startsWith('data:image/') && <img className="totp-qr" src={setup.qr} width={200} height={200} alt={t('QR code for the authenticator app')} />}
-          <div className="field-label">{t('Secret')}</div>
-          <div className="url-line">
-            <code className="totp-secret">{setup.secret.replace(/(.{4})/g, '$1 ').trim()}</code>
-            <CopyButton text={setup.secret} label={t('Copy')} />
-          </div>
-          <div className="field-label" style={{ marginTop: 10 }}>
-            otpauth URL
-          </div>
-          <div className="url-line">
-            <code>{setup.url}</code>
-            <CopyButton text={setup.url} label={t('Copy')} />
-          </div>
-          <p style={{ marginTop: 14 }}>{t('2. Enter the code the app shows to confirm:')}</p>
-          <form
-            className="row gap"
-            onSubmit={(e) => {
-              e.preventDefault()
-              if (code.trim()) enable()
-            }}
-          >
-            <input className="input mono" style={{ width: 140 }} inputMode="numeric" autoComplete="one-time-code" maxLength={8} placeholder="123456" value={code} onChange={(e) => setCode(e.target.value)} autoFocus />
-            <button className="btn primary" disabled={busy || !code.trim()}>
-              {t('Enable')}
-            </button>
-            <button type="button" className="btn ghost" onClick={() => setSetup(null)}>
-              {t('Cancel')}
-            </button>
-          </form>
-          <div className="field-help">{t('Two-factor stays off until the code is confirmed. Keep the secret somewhere safe: without the app you cannot sign in (an operator can reset the password from the server CLI).')}</div>
-        </div>
-      )}
-      {totpError && <div className="field-error">{totpError}</div>}
     </Card>
   )
 }

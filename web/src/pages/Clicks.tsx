@@ -10,10 +10,10 @@ import { DataTable } from '../components/DataTable'
 import type { Column } from '../components/DataTable'
 import { DateRangePicker, currentRange, rememberRange } from '../components/DateRangePicker'
 import type { DateRange } from '../components/DateRangePicker'
-import { Badge, CopyButton, Empty, ErrorBox, PageHeader, Pagination, Segmented, Select } from '../components/ui'
+import { Badge, CopyButton, Empty, ErrorBox, FilterBar, FilterField, PageHeader, Pagination, Segmented, Select } from '../components/ui'
 import { COUNTRY_SELECT_OPTIONS } from '../components/CountrySelect'
 import { buildSearch, dimLabel, filterParams, parseFilters, rangeApiParams, rangeFromSearch, writeRange } from '../filters'
-import { fmtDateTime, num } from '../format'
+import { fmtDateTime, humanize, num } from '../format'
 import { countryName } from '../countries'
 import { Browser, BrowserIcon, Country, Device, DeviceIcon, Flag, Os, OsIcon } from '../components/icons'
 import { Journey, StagePips } from '../components/Journey'
@@ -93,10 +93,18 @@ export default function Clicks() {
 
   const crumbText = (dim: string, v: string) => (dim === 'campaign' ? campName(v) : dim === 'stream' ? streamName(v) : dim === 'country' ? (v ? `${countryName(v)} (${v})` : t('(unknown)')) : v === '' ? t('(empty)') : dim === 'action' ? ts(v) : v)
   const anyFilter = filters.crumbs.length > 0 || !!filters.bots || !!urlIP || !!urlClick || !!reached || !!notReached
+  // Filters that came with a link (a drill-down in Reports) and have no field in the bar.
+  const extraCrumbs = filters.crumbs.filter((c) => c.dim !== 'campaign' && c.dim !== 'stream' && c.dim !== 'country')
+  const resetFilters = () => {
+    setText({ ip: '', click_id: '' })
+    update((n) => {
+      filters.crumbs.forEach((c) => n.delete(c.param))
+      for (const k of ['reached', 'not_reached', 'bots', 'ip', 'click_id']) n.delete(k)
+    })
+  }
 
   // Funnel progress: "got to a stage" or "stopped right before it" (got to the one before, not to this one).
   const stages = stagesOf(campaignId)
-  const stageLabel = (key: string) => stages.find((s) => s.key === key)?.name ?? key
   const progress = notReached ? 'n:' + notReached : reached ? 'r:' + reached : ''
   const setProgress = (v: string) =>
     update((n) => {
@@ -149,13 +157,10 @@ export default function Clicks() {
     { key: 'country', title: t('Geo'), render: (r) => (r.country ? <span className="with-icon" title={`${countryName(str(r.country))} (${str(r.country)})`}><Flag code={str(r.country)} />{str(r.country)}{r.city ? ` · ${str(r.city)}` : ''}</span> : <span className="muted">—</span>) },
     { key: 'device', title: t('Device'), render: (r) =>
         str(r.device_type) || str(r.os) || str(r.browser) ? (
-          <span className="with-icon" title={[str(r.device_type), [str(r.os), str(r.os_version)].filter(Boolean).join(' '), [str(r.browser), str(r.browser_version)].filter(Boolean).join(' ')].filter(Boolean).join(' · ')}>
-            {str(r.device_type) && <DeviceIcon type={str(r.device_type)} />}
-            {str(r.os) && <OsIcon os={str(r.os)} />}
-            {str(r.os)}
-            {str(r.browser) && <BrowserIcon browser={str(r.browser)} />}
-            {str(r.browser)}
-            {!r.os && !r.browser && str(r.device_type)}
+          <span className="with-icon">
+            {str(r.device_type) && <DeviceIcon type={str(r.device_type)} title={humanize(str(r.device_type))} />}
+            {str(r.os) && <OsIcon os={str(r.os)} title={[str(r.os), str(r.os_version)].filter(Boolean).join(' ')} />}
+            {str(r.browser) && <BrowserIcon browser={str(r.browser)} title={[str(r.browser), str(r.browser_version)].filter(Boolean).join(' ')} />}
           </span>
         ) : (
           <span className="muted">—</span>
@@ -186,116 +191,80 @@ export default function Clicks() {
   return (
     <div className="page">
       <PageHeader title={t('Clicks')} sub={t('Raw click log, newest first. Click a row to see every recorded field and what the click went on to do.')}>
+        <Link className="btn" to={'/reports' + buildSearch({ range, filters: reportFilters, bots: filters.bots })} title={t('Open Reports with the same filters')}>
+          <BarChart3 size={14} /> {t('Report')}
+        </Link>
         <DateRangePicker value={range} onChange={setRange} />
         <button className="btn" onClick={() => res.reload()} title={t('Refresh')} aria-label={t('Refresh')}>
           <RefreshCw size={14} className={res.loading ? 'spin' : ''} />
         </button>
       </PageHeader>
 
-      <div className="toolbar wrap">
-        <Select
-          value={campaignId}
-          onChange={(v) =>
-            update((n) => {
-              n.delete('campaign_id')
-              n.delete('stream_id')
-              n.delete('reached')
-              n.delete('not_reached')
-              if (v) n.set('campaign_id', v)
-            })
-          }
-          placeholder={t('All campaigns')}
-          options={(camps.data ?? []).map((c) => ({ value: String(c.id), label: c.name }))}
-        />
-        <Select value={streamId} onChange={(v) => setParam('stream_id', v)} placeholder={t('All streams')} options={streamOptions} />
-        <Select value={crumb('country') ?? ''} onChange={(v) => setParam('f.country', v)} placeholder={t('All countries')} options={COUNTRY_SELECT_OPTIONS} />
-        <input className="input mono" style={{ width: 160 }} placeholder={t('IP address (exact)')} value={text.ip} onChange={(e) => setText({ ...text, ip: e.target.value })} />
-        <input className="input mono" style={{ width: 220 }} placeholder={t('Click ID')} value={text.click_id} onChange={(e) => setText({ ...text, click_id: e.target.value })} />
-        {(stages.length > 0 || progress) && <Select value={progress} onChange={setProgress} placeholder={t('Any funnel progress')} options={progressOptions} />}
-        <Segmented
-          small
-          value={filters.bots}
-          onChange={(v) => setParam('bots', v)}
-          options={[
-            { value: '', label: t('All') },
-            { value: 'exclude', label: t('Humans') },
-            { value: 'only', label: t('Bots') },
-          ]}
-        />
-        <span className="grow" />
-        <Link className="btn" to={'/reports' + buildSearch({ range, filters: reportFilters, bots: filters.bots })} title={t('Open Reports with the same filters')}>
-          <BarChart3 size={14} /> {t('Report')}
-        </Link>
-      </div>
-
-      {anyFilter && (
-        <nav className="crumbs" aria-label={t('Active filters')}>
-          <span className="muted">{t('Filtered by')}</span>
-          {filters.crumbs.map((c) => (
-            <span className="crumb" key={c.param}>
-              <span className="muted">{dimLabel(c.dim)}:</span> <b>{crumbText(c.dim, c.value)}</b>
-              <button aria-label={t('Remove filter {name}', { name: dimLabel(c.dim) })} onClick={() => update((n) => n.delete(c.param))}>
-                <X size={12} />
-              </button>
-            </span>
-          ))}
-          {filters.bots && (
-            <span className="crumb">
-              <b>{filters.bots === 'only' ? t('Bots only') : t('No bots')}</b>
-              <button aria-label={t('Remove bots filter')} onClick={() => setParam('bots', '')}>
-                <X size={12} />
-              </button>
-            </span>
-          )}
-          {urlIP && (
-            <span className="crumb">
-              <span className="muted">IP:</span> <b className="mono">{urlIP}</b>
-              <button aria-label={t('Remove IP filter')} onClick={() => setParam('ip', '')}>
-                <X size={12} />
-              </button>
-            </span>
-          )}
-          {urlClick && (
-            <span className="crumb">
-              <span className="muted">{t('Click ID')}:</span> <b className="mono">{urlClick}</b>
-              <button aria-label={t('Remove click id filter')} onClick={() => setParam('click_id', '')}>
-                <X size={12} />
-              </button>
-            </span>
-          )}
-          {reached && (
-            <span className="crumb">
-              <span className="muted">{t('Reached')}:</span> <b>{stageLabel(reached)}</b>
-              <button aria-label={t('Remove filter {name}', { name: t('Reached') })} onClick={() => setParam('reached', '')}>
-                <X size={12} />
-              </button>
-            </span>
-          )}
-          {notReached && (
-            <span className="crumb">
-              <span className="muted">{t('Did not reach')}:</span> <b>{stageLabel(notReached)}</b>
-              <button aria-label={t('Remove filter {name}', { name: t('Did not reach') })} onClick={() => setParam('not_reached', '')}>
-                <X size={12} />
-              </button>
-            </span>
-          )}
-          <button
-            className="btn small ghost"
-            onClick={() =>
+      <FilterBar
+        onReset={anyFilter ? resetFilters : undefined}
+        chips={
+          extraCrumbs.length > 0 && (
+            <>
+              <span className="muted">{t('Filtered by')}</span>
+              {extraCrumbs.map((c) => (
+                <span className="crumb" key={c.param}>
+                  <span className="muted">{dimLabel(c.dim)}:</span> <b>{crumbText(c.dim, c.value)}</b>
+                  <button aria-label={t('Remove filter {name}', { name: dimLabel(c.dim) })} onClick={() => update((n) => n.delete(c.param))}>
+                    <X size={12} />
+                  </button>
+                </span>
+              ))}
+            </>
+          )
+        }
+      >
+        <FilterField label={t('Campaign')} active={!!campaignId}>
+          <Select
+            value={campaignId}
+            onChange={(v) =>
               update((n) => {
-                filters.crumbs.forEach((c) => n.delete(c.param))
+                n.delete('campaign_id')
+                n.delete('stream_id')
                 n.delete('reached')
                 n.delete('not_reached')
-                n.delete('bots')
-                n.delete('ip')
-                n.delete('click_id')
+                if (v) n.set('campaign_id', v)
               })
             }
-          >
-            {t('Clear all')}
-          </button>
-        </nav>
-      )}
+            placeholder={t('All campaigns')}
+            options={(camps.data ?? []).map((c) => ({ value: String(c.id), label: c.name }))}
+          />
+        </FilterField>
+        <FilterField label={t('Stream')} active={!!streamId}>
+          <Select value={streamId} onChange={(v) => setParam('stream_id', v)} placeholder={t('All streams')} options={streamOptions} />
+        </FilterField>
+        {(stages.length > 0 || progress) && (
+          <FilterField label={t('Funnel')} active={!!progress}>
+            <Select value={progress} onChange={setProgress} placeholder={t('Any funnel progress')} options={progressOptions} />
+          </FilterField>
+        )}
+        <FilterField label={t('Country')} active={!!crumb('country')}>
+          <Select value={crumb('country') ?? ''} onChange={(v) => setParam('f.country', v)} placeholder={t('All countries')} options={COUNTRY_SELECT_OPTIONS} />
+        </FilterField>
+        <FilterField label={t('IP address')} size="sm" active={!!urlIP}>
+          <input className="input mono" placeholder={t('Exact match')} value={text.ip} onChange={(e) => setText({ ...text, ip: e.target.value })} />
+        </FilterField>
+        <FilterField label={t('Click ID')} active={!!urlClick}>
+          <input className="input mono" placeholder={t('Exact match')} value={text.click_id} onChange={(e) => setText({ ...text, click_id: e.target.value })} />
+        </FilterField>
+        <FilterField label={t('Traffic')} size="auto">
+          <Segmented
+            small
+            className="bots"
+            value={filters.bots}
+            onChange={(v) => setParam('bots', v)}
+            options={[
+              { value: '', label: t('All') },
+              { value: 'exclude', label: t('Humans') },
+              { value: 'only', label: t('Bots') },
+            ]}
+          />
+        </FilterField>
+      </FilterBar>
 
       <ErrorBox error={res.error} retry={res.reload} />
       <div className="card">

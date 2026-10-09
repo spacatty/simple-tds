@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -295,6 +296,44 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+var rePrefKey = regexp.MustCompile(`^[a-z0-9_.-]{1,40}$`)
+
+// prefsSave merges the given keys into the caller's panel preferences; an
+// empty value removes a key. The panel keeps here what should follow the
+// account from browser to browser.
+func (s *Server) prefsSave(r *http.Request) (any, error) {
+	var in map[string]string
+	if err := readJSON(r, &in); err != nil {
+		return nil, err
+	}
+	// From the database: the session cache may be a minute behind.
+	u, err := store.Get[model.User](r.Context(), s.st, "users", currentUser(r).ID)
+	if err != nil {
+		return nil, err
+	}
+	if u.Prefs == nil {
+		u.Prefs = map[string]string{}
+	}
+	for k, v := range in {
+		switch {
+		case !rePrefKey.MatchString(k) || len(v) > 200:
+			return nil, bad("bad preference")
+		case v == "":
+			delete(u.Prefs, k)
+		default:
+			u.Prefs[k] = v
+		}
+	}
+	if len(u.Prefs) > 100 {
+		return nil, bad("too many preferences")
+	}
+	if _, err := s.st.Pool.Exec(r.Context(), "UPDATE users SET prefs=$2 WHERE id=$1", u.ID, u.Prefs); err != nil {
+		return nil, err
+	}
+	s.dropSessions()
+	return u, nil
+}
+
 func (s *Server) changePassword(r *http.Request) (any, error) {
 	var in struct {
 		Current string `json:"current"`
@@ -456,6 +495,7 @@ func (s *Server) panelHandler() http.Handler {
 			r.Use(s.requireAuth)
 			r.Use(longTransfers)
 			r.Get("/me", handler(func(r *http.Request) (any, error) { return currentUser(r), nil }))
+			r.Put("/me/prefs", handler(s.prefsSave))
 			r.Post("/me/password", handler(s.changePassword))
 			r.Post("/me/totp/setup", handler(s.totpSetup))
 			r.Post("/me/totp/enable", handler(s.totpEnable))

@@ -49,6 +49,7 @@ cd web && npm install && npm run dev  # panel with hot reload at http://localhos
 | `internal/engine` | the click path: snapshot, filters, stream choice, actions, postbacks |
 | `internal/antibot` | IP lists, UA signatures, header/TLS checks, JS challenge |
 | `internal/geo`, `internal/extapi` | MMDB lookups; external HTTP JSON providers |
+| `internal/reputation` | blocklist providers for domain reputation checks (scheduled from `internal/web/domainrep.go`) |
 | `internal/whitepage` | whitepage storage, static serving, FastCGI client |
 | `internal/web` | listeners, TLS/ACME, public routes, panel API, embedded UI |
 | `web/` | panel sources (React + TypeScript + Vite) → built into `internal/web/ui/dist` |
@@ -95,6 +96,12 @@ cd web && npm install && npm run dev  # panel with hot reload at http://localhos
 - **Dashboards are personal** (`internal/web/api_dash.go`): a row is visible
   to its owner only, admins included, and holds no data — widgets read the
   reports, which apply the usual scope.
+- **Suppress rules are personal too** (`internal/web/suppress.go`,
+  `internal/engine/suppress.go`): a rule without campaigns covers what its
+  owner owns, a rule naming campaigns covers those its owner runs
+  (`UsableBy`). They are checked first in `Engine.Process`; a suppressed
+  request must never become a click. Its counters and log live in their own
+  ClickHouse tables, read by owner.
 - `internal/web/ui/dist` is build output and is not committed.
 
 ## Translations
