@@ -330,7 +330,7 @@ func (s *Server) changePassword(r *http.Request) (any, error) {
 
 func (s *Server) totpSetup(r *http.Request) (any, error) {
 	u := currentUser(r)
-	key, err := totp.Generate(totp.GenerateOpts{Issuer: "TDS", AccountName: u.Username})
+	key, err := totp.Generate(totp.GenerateOpts{Issuer: "Crella", AccountName: u.Username})
 	if err != nil {
 		return nil, err
 	}

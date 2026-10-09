@@ -190,7 +190,6 @@
   "Adding…": "Добавление…",
   "Admin path": "Путь к панели",
   "Administrator": "Администратор",
-  "administrator": "администратор",
   "Administrators see and change everything in the panel, including other users, anti-bot and global settings.": "Администраторы видят и изменяют в панели всё, включая других пользователей, антибот и глобальные настройки.",
   "After the click": "После клика",
   "All": "Все",
@@ -571,7 +570,11 @@
   "Forwarding headers are only trusted from the addresses listed under Settings → Network → Trusted proxies. From any other address the socket IP is used.": "Заголовкам пересылки доверяют только с адресов, перечисленных в разделе Настройки → Сеть → Доверенные прокси. Для любого другого адреса используется IP сокета.",
   "Fr": "Пт",
   "from": "от",
-  "From {n} sites": ["С {n} сайта", "С {n} сайтов", "С {n} сайтов"],
+  "From {n} sites": [
+    "С {n} сайта",
+    "С {n} сайтов",
+    "С {n} сайтов"
+  ],
   "From time": "Время начала",
   "Full log": "Весь журнал",
   "Funnel": "Воронка",
@@ -1280,7 +1283,6 @@
   "Used when the postback has no revenue / payout parameter.": "Используется, если в постбэке нет параметра revenue / payout.",
   "Used when the postback has no type parameter.": "Используется, если в постбэке нет параметра type.",
   "User": "Пользователь",
-  "user": "пользователь",
   "User {name} created": "Пользователь {name} создан",
   "Username": "Имя пользователя",
   "Users": "Пользователи",
@@ -1333,5 +1335,7 @@
   "Your account. Global settings are managed by administrators.": "Ваш аккаунт. Глобальными настройками управляют администраторы.",
   "Your own blocklist: always a bot.": "Ваш собственный чёрный список: всегда бот.",
   "Your session has ended. Sign in again to pick up where you left off.": "Сессия завершена. Войдите снова, чтобы продолжить с того же места.",
-  "YOUR-DOMAIN (no domains added)": "YOUR-DOMAIN (домены не добавлены)"
+  "YOUR-DOMAIN (no domains added)": "YOUR-DOMAIN (домены не добавлены)",
+  "Light": "Светлая",
+  "Dark": "Тёмная"
 }

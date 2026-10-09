@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { Moon, Split, Sun } from 'lucide-react'
+import { Moon, Sun } from 'lucide-react'
+import { APP_NAME, Logo } from '../components/Logo'
 import { ApiError, api, errMsg } from '../api'
 import type { User } from '../types'
 import type { Theme } from '../hooks'
@@ -44,10 +45,8 @@ export default function Login({ onLogin, notice, theme, toggleTheme }: { onLogin
       </button>
       <form className="login card" onSubmit={submit}>
         <div className="brand">
-          <span className="brand-mark">
-            <Split size={16} />
-          </span>
-          <span>TDS</span>
+          <Logo size={28} />
+          <span>{APP_NAME}</span>
         </div>
         <h1>{t('Sign in@@title')}</h1>
         {notice && <div className="field-error">{notice}</div>}

@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
-import { BarChart3, ChevronDown, FileCode2, Globe, LayoutDashboard, Link2, LogOut, Menu, Moon, MousePointerClick, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, ShieldCheck, Split, Sun, Target, Users as UsersIcon } from 'lucide-react'
+import { Link, NavLink, useLocation } from 'react-router-dom'
+import { BarChart3, ChevronDown, ChevronsUpDown, FileCode2, Globe, LayoutDashboard, Link2, LogOut, Menu, Moon, MousePointerClick, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, ShieldCheck, Split, Sun, Target, Users as UsersIcon } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { User } from '../types'
 import type { Theme } from '../hooks'
 import { t } from '../i18n'
 import { LangSwitch } from './LangSwitch'
+import { APP_NAME, Logo } from './Logo'
+import { Dropdown } from './ui'
 
 interface Item {
   to: string
@@ -76,6 +78,7 @@ export function Sidebar({ user, theme, toggleTheme, logout }: { user: User; them
   const [mobileOpen, setMobileOpen] = useState(false)
   const loc = useLocation()
   const admin = user.role === 'admin'
+  const role = admin ? t('Administrator') : t('User')
 
   // Navigating closes the overlay drawer on narrow screens.
   useEffect(() => setMobileOpen(false), [loc.pathname])
@@ -125,18 +128,14 @@ export function Sidebar({ user, theme, toggleTheme, logout }: { user: User; them
         <button className="icon-btn" onClick={() => setMobileOpen(true)} aria-label={t('Open navigation')}>
           <Menu size={20} />
         </button>
-        <span className="brand-mark">
-          <Split size={15} />
-        </span>
-        <b>TDS</b>
+        <Logo size={24} />
+        <b>{APP_NAME}</b>
       </header>
       {mobileOpen && <div className="sidebar-backdrop" onClick={() => setMobileOpen(false)} />}
       <aside className={'sidebar' + (compact ? ' rail' : '') + (mobileOpen ? ' mobile-open' : '')}>
         <div className="sidebar-head">
-          <span className="brand-mark">
-            <Split size={16} />
-          </span>
-          <span className="brand-name">TDS</span>
+          <Logo />
+          <span className="brand-name">{APP_NAME}</span>
           <button className="icon-btn rail-toggle" onClick={toggleRail} title={(rail ? t('Expand sidebar') : t('Collapse sidebar')) + ' (Ctrl+B)'} aria-label={rail ? t('Expand sidebar') : t('Collapse sidebar')}>
             {rail ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
           </button>
@@ -165,20 +164,48 @@ export function Sidebar({ user, theme, toggleTheme, logout }: { user: User; them
         </nav>
 
         <div className="sidebar-foot">
-          <div className="whoami" data-tip={`${user.username} · ${admin ? t('administrator') : t('user')}`}>
-            <span className="avatar">{user.username.slice(0, 1).toUpperCase()}</span>
-            <span className="who-text">
-              <b className="ellipsis">{user.username}</b>
-              <small>{admin ? t('Administrator') : t('User')}</small>
-            </span>
-          </div>
+          <Dropdown
+            className="profile-btn"
+            chevron={false}
+            title={compact ? `${user.username} · ${role}` : undefined}
+            label={
+              <>
+                <span className="avatar">{user.username.slice(0, 1).toUpperCase()}</span>
+                <span className="who-text">
+                  <b className="ellipsis">{user.username}</b>
+                  <small>{role}</small>
+                </span>
+                <ChevronsUpDown size={14} className="profile-chevron" />
+              </>
+            }
+          >
+            {(close) => (
+              <div className="menu profile-menu">
+                <div className="profile-menu-head">
+                  <b className="ellipsis">{user.username}</b>
+                  <small>{role}</small>
+                </div>
+                <div className="menu-sep" />
+                <Link className="menu-item" to="/settings" onClick={close}>
+                  <SettingsIcon size={15} /> {t('Settings')}
+                </Link>
+                <button
+                  className="menu-item danger"
+                  onClick={() => {
+                    close()
+                    logout()
+                  }}
+                >
+                  <LogOut size={15} /> {t('Sign out')}
+                </button>
+              </div>
+            )}
+          </Dropdown>
           <div className="foot-actions">
-            <LangSwitch tip />
-            <button className="icon-btn" onClick={toggleTheme} data-tip={theme === 'dark' ? t('Light theme') : t('Dark theme')} aria-label={t('Switch theme')}>
-              {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-            </button>
-            <button className="icon-btn" onClick={logout} data-tip={t('Sign out')} aria-label={t('Sign out')}>
-              <LogOut size={16} />
+            <LangSwitch tip label={!compact} />
+            <button className="foot-btn" onClick={toggleTheme} data-tip={theme === 'dark' ? t('Light theme') : t('Dark theme')} aria-label={t('Switch theme')}>
+              {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+              {!compact && <span className="ellipsis">{theme === 'dark' ? t('Light') : t('Dark')}</span>}
             </button>
           </div>
         </div>

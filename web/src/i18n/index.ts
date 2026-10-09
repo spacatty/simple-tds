@@ -21,9 +21,10 @@ import ruServer from './ru.server.json'
 
 export type Lang = 'en' | 'ru'
 
-export const LANGS: { code: Lang; name: string }[] = [
-  { code: 'en', name: 'English' },
-  { code: 'ru', name: 'Русский' },
+/** `flag` is the country whose flag stands for the language in the switch. */
+export const LANGS: { code: Lang; name: string; flag: string }[] = [
+  { code: 'en', name: 'English', flag: 'GB' },
+  { code: 'ru', name: 'Русский', flag: 'RU' },
 ]
 
 const STORAGE_KEY = 'tds_lang'

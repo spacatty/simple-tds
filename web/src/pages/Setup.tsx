@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { Moon, Split, Sun } from 'lucide-react'
+import { Moon, Sun } from 'lucide-react'
+import { APP_NAME, Logo } from '../components/Logo'
 import { ApiError, api, errMsg } from '../api'
 import type { User } from '../types'
 import type { Theme } from '../hooks'
@@ -41,10 +42,8 @@ export default function Setup({ onDone, onTaken, theme, toggleTheme }: { onDone:
       </button>
       <form className="login card" onSubmit={submit}>
         <div className="brand">
-          <span className="brand-mark">
-            <Split size={16} />
-          </span>
-          <span>TDS</span>
+          <Logo size={28} />
+          <span>{APP_NAME}</span>
         </div>
         <h1>{t('Create the administrator')}</h1>
         <p className="login-lead">{t('This panel has no users yet. The account you create here has full access.')}</p>

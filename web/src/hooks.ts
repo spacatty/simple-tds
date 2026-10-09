@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import type { DependencyList, Dispatch, SetStateAction } from 'react'
 import type { Meta, User } from './types'
 import { errMsg } from './api'
+import { APP_NAME } from './components/Logo'
 
 export interface Loaded<T> {
   data: T | undefined
@@ -73,9 +74,9 @@ export function useInterval(fn: () => void | Promise<void>, ms: number, active: 
 export function useTitle(title: string | undefined) {
   useEffect(() => {
     if (!title) return
-    document.title = title + ' · TDS'
+    document.title = title + ' · ' + APP_NAME
     return () => {
-      document.title = 'TDS'
+      document.title = APP_NAME
     }
   }, [title])
 }
