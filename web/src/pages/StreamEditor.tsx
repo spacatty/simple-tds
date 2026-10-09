@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Ban, BookmarkPlus, CircleSlash, Braces, Check, ChevronRight, Code2, CornerDownRight, ExternalLink, Eye, FileCode2, FileText, Pencil, Plus, Search, Split, Trash2, X } from 'lucide-react'
+import { Ban, BookmarkPlus, Braces, Check, ChevronRight, Code2, CornerDownRight, ExternalLink, Eye, FileCode2, FileText, Pencil, Plus, Search, Split, Trash2, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { del, errMsg, get, post, put } from '../api'
 import { useMeta } from '../hooks'
@@ -364,7 +364,11 @@ export default function StreamEditor({ draft: initial, campaign, campaigns, whit
                     title={f.bypass ? t('Bypassed: this filter is ignored. Click to apply it again.') : t('Bypass: keep this filter but ignore it when matching')}
                     onClick={() => setFilter(i, { bypass: !f.bypass })}
                   >
-                    <CircleSlash size={15} />
+                    {/* One drawing instead of two icons, so the knob can slide between the states. */}
+                    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <rect className="track" x={2} y={6} width={20} height={12} rx={6} />
+                      <circle className="knob" cx={16} cy={12} r={2} />
+                    </svg>
                   </button>
                   <button type="button" className="icon-btn danger" title={t('Remove filter')} onClick={() => set({ filters: d.filters.filter((_, j) => j !== i) })}>
                     <X size={15} />

@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Eye, EyeOff, KeyRound, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Eye, EyeOff, KeyRound, Pencil, Plus, Trash2 } from 'lucide-react'
 import { del, errMsg, get, post, put } from '../api'
-import { useIsAdmin, useLoad, useMeta } from '../hooks'
-import type { ConvKey, Domain, Rejected } from '../types'
+import { useLoad, useMeta } from '../hooks'
+import type { ConvKey, Domain } from '../types'
 import { DataTable } from '../components/DataTable'
 import type { Column } from '../components/DataTable'
-import { Badge, Card, Chips, CodeBlock, CopyButton, Empty, ErrorBox, Field, Modal, Notice, NumberInput, Select, Toggle, confirmDialog, toast, useBusy } from '../components/ui'
-import { fmtDateTime, fmtInt, humanize } from '../format'
+import { Badge, Chips, CodeBlock, CopyButton, Empty, ErrorBox, Field, Modal, Notice, NumberInput, Select, Toggle, confirmDialog, toast, useBusy } from '../components/ui'
+import { humanize } from '../format'
 import { t, ts, tx } from '../i18n'
 
 const ATTRIBUTION: { value: string; label: string; help: string }[] = [
@@ -30,7 +31,6 @@ const attrLabel = (v: string) => ATTRIBUTION.find((a) => a.value === v)?.label ?
 
 export default function ConvKeys() {
   const meta = useMeta()
-  const isAdmin = useIsAdmin()
   const keys = useLoad(() => get<ConvKey[]>('conversion-keys'), [])
   const domains = useLoad(() => get<Domain[]>('domains'), [])
   const [domain, setDomain] = useState('')
@@ -158,8 +158,6 @@ export default function ConvKeys() {
         />
       </div>
 
-      <RejectedTable all={isAdmin} />
-
       {editing && (
         <KeyEditor
           k={editing === 'new' ? null : editing}
@@ -218,6 +216,11 @@ file_get_contents('https://${domain}${path}?' . http_build_query($p));`
   return (
     <div className="detail">
       {!k.enabled && <Notice tone="warn">{t('This key is disabled: its postbacks are refused.')}</Notice>}
+      <div className="detail-actions">
+        <Link className="btn small" to={'/conversions/postbacks?' + new URLSearchParams({ key_id: String(k.id) }).toString()} title={t('Every request received with this key, accepted or refused')}>
+          {t('Postbacks of this key')}
+        </Link>
+      </div>
       <p className="muted">{ATTRIBUTION.find((a) => a.value === k.attribution)?.help}</p>
       {urls.map((u) => (
         <div key={u.title} className="url-block">
@@ -390,52 +393,5 @@ function KeyEditor({ k, types, onClose, onSaved }: { k: ConvKey | null; types: s
         </Field>
       </div>
     </Modal>
-  )
-}
-
-function RejectedTable({ all }: { all: boolean }) {
-  const res = useLoad(() => get<{ rows: Rejected[] | null; total: number }>('postbacks/rejected'), [])
-  const columns: Column<Rejected>[] = [
-    { key: 'at', title: t('Time'), width: 170, render: (r) => <span className="nowrap">{fmtDateTime(r.at)}</span> },
-    { key: 'ip', title: t('Sender IP'), render: (r) => <span className="mono">{r.ip}</span> },
-    {
-      key: 'key',
-      title: t('Key'),
-      render: (r) =>
-        r.key_name ? (
-          <span className="strong" title={r.key ? t('Key starts with {key}', { key: r.key }) : undefined}>
-            {r.key_name}
-          </span>
-        ) : r.key ? (
-          <span title={t('No key with this value exists (prefix shown)')}>
-            <code>{r.key}…</code> <span className="muted small">{t('unknown')}</span>
-          </span>
-        ) : (
-          <span className="muted">{t('none')}</span>
-        ),
-    },
-    { key: 'reason', title: t('Reason'), render: (r) => <Badge tone="err">{ts(r.reason)}</Badge> },
-    { key: 'query', title: t('Parameters'), render: (r) => <span className="mono small break">{r.query}</span> },
-  ]
-  return (
-    <Card
-      title={res.data ? t('Rejected postbacks ({n} since start)', { n: fmtInt(res.data.total) }) : t('Rejected postbacks')}
-      pad={false}
-      actions={
-        <button className="btn small" onClick={() => res.reload()}>
-          <RefreshCw size={14} className={res.loading ? 'spin' : ''} /> {t('Refresh')}
-        </button>
-      }
-    >
-      <ErrorBox error={res.error} />
-      <DataTable
-        columns={columns}
-        rows={res.data ? res.data.rows ?? [] : undefined}
-        rowKey={(_, i) => i}
-        loading={res.loading}
-        maxHeight={360}
-        empty={<Empty title={t('No rejected postbacks')}>{all ? t('Refused postbacks (wrong key, bad signature, missing click…) show up here with the reason. The list is kept in memory and resets on restart.') : t('Postbacks refused for your keys (bad signature, missing click, rate limit…) show up here with the reason. The list is kept in memory and resets on restart.')}</Empty>}
-      />
-    </Card>
   )
 }

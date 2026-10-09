@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Columns3, Download, Filter as FilterIcon, RefreshCw, X } from 'lucide-react'
 import { get, qs } from '../api'
 import type { Params } from '../api'
@@ -9,7 +9,7 @@ import type { Campaign, ConvKey, ConvRow, Stage } from '../types'
 import { DataTable } from '../components/DataTable'
 import type { Column } from '../components/DataTable'
 import { DateRangePicker, useDateRange } from '../components/DateRangePicker'
-import { Badge, CopyButton, Dropdown, Empty, ErrorBox, PageHeader, Pagination, Select, Tabs } from '../components/ui'
+import { Badge, CopyButton, Dropdown, Empty, ErrorBox, PageHeader, Pagination, Select } from '../components/ui'
 import type { Tone } from '../components/ui'
 import { rangeParams } from '../reports'
 import { fmtDateTime, fmtMoney, fmtSpan, humanize, num, secondsBetween } from '../format'
@@ -17,25 +17,31 @@ import { Browser, Country, Device, Os } from '../components/icons'
 import { Journey, stageName } from '../components/Journey'
 import { t, ts } from '../i18n'
 import ConvKeys from './ConvKeys'
+import PostbackLog from './Postbacks'
 
-type Tab = 'log' | 'keys'
-
+/** The three pages of the Conversions group in the sidebar: /conversions, /conversions/postbacks and /conversions/keys. */
 export default function Conversions() {
-  const params = useParams()
-  const nav = useNavigate()
-  const tab: Tab = params.tab === 'keys' ? 'keys' : 'log'
+  const { tab } = useParams()
+  if (tab === 'keys') {
+    return (
+      <div className="page">
+        <PageHeader title={t('Keys & postback URLs')} sub={t('A key authorises a sender to report conversions and sets the rules its postbacks are checked against.')} />
+        <ConvKeys />
+      </div>
+    )
+  }
+  if (tab === 'postbacks') {
+    return (
+      <div className="page">
+        <PageHeader title={t('Postback log')} sub={t('Every request to the postback URL and what became of it. Click a row for the full request.')} />
+        <PostbackLog />
+      </div>
+    )
+  }
   return (
     <div className="page">
-      <PageHeader title={t('Conversions')} sub={t('Postbacks and funnel events received from affiliate networks, apps, installers and pages. Click a row to see everything it carried and the journey of its click.')} />
-      <Tabs
-        value={tab}
-        onChange={(v) => nav(v === 'log' ? '/conversions' : '/conversions/keys', { replace: true })}
-        tabs={[
-          { value: 'log', label: t('Log') },
-          { value: 'keys', label: t('Keys & postback URLs') },
-        ]}
-      />
-      {tab === 'log' ? <ConvLog /> : <ConvKeys />}
+      <PageHeader title={t('Conversion log')} sub={t('Postbacks and funnel events received from affiliate networks, apps, installers and pages. Click a row to see everything it carried and the journey of its click.')} />
+      <ConvLog />
     </div>
   )
 }
@@ -363,7 +369,7 @@ function ConvLog() {
           loading={res.loading}
           maxHeight="calc(100vh - 330px)"
           expand={(r) => <ConvDetail r={r} campaign={campName(r.campaign_id)} keyName={keyName} stages={stagesOf(r.campaign_id)} currency={campById(r.campaign_id)?.currency} />}
-          empty={<Empty title={t('No conversions for this selection')}>{t('Check the date range and filters, or look at rejected postbacks on the Keys tab.')}</Empty>}
+          empty={<Empty title={t('No conversions for this selection')}>{t('Check the date range and filters, or look at the postback log: it lists every request received, including the refused ones.')}</Empty>}
         />
         <Pagination total={res.data?.total ?? 0} limit={LIMIT} offset={offset} onChange={setOffset} />
       </div>

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Bot, Check, CircleSlash, Play, X } from 'lucide-react'
+import { Bot, Check, Play, ToggleLeft, X } from 'lucide-react'
 import { errMsg, post } from '../api'
 import { useMeta } from '../hooks'
 import type { Campaign, Domain, SimResult } from '../types'
@@ -198,7 +198,7 @@ export default function Simulator({ campaign, domains, prefill, stacked }: { cam
                       ) : (
                         s.filters.map((ft, i) => (
                           <span key={i} className={'tf ' + (ft.bypassed ? 'bypass' : ft.passed ? 'pass' : 'fail')} title={ft.bypassed ? t('Bypassed: not taken into account') : undefined}>
-                            {ft.bypassed ? <CircleSlash size={12} /> : ft.passed ? <Check size={12} /> : <X size={12} />}
+                            {ft.bypassed ? <ToggleLeft size={14} /> : ft.passed ? <Check size={12} /> : <X size={12} />}
                             {filterLabel(ft.type)} {ft.negated ? t('is not@@filter') : t('is@@filter')}
                           </span>
                         ))

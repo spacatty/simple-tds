@@ -2880,6 +2880,9 @@ tr.camp-off .tnum {
   border-style: dashed;
   text-decoration: line-through;
 }
+.tf.bypass svg {
+  color: var(--warn);
+}
 
 /* ---- conversion stages (campaign funnel tab) --------------------------------- */
 .stg-row {
@@ -4488,11 +4491,44 @@ a.fnl-num:hover {
 .filter-row.bypass {
   border-style: dashed;
 }
+.filter-row > :not(.icon-btn) {
+  transition: opacity 0.22s ease;
+}
 .filter-row.bypass > :not(.icon-btn) {
   opacity: 0.45;
 }
-.filter-bypass.active {
+/* The button is a switch: on (green) while the filter applies, off (amber) while bypassed. */
+.icon-btn.filter-bypass,
+.icon-btn.filter-bypass:hover:not(:disabled) {
+  color: var(--ok);
+}
+.icon-btn.filter-bypass.active,
+.icon-btn.filter-bypass.active:hover:not(:disabled) {
   color: var(--warn);
+}
+.filter-bypass {
+  transition: color 0.22s ease, background-color 0.15s ease;
+}
+.filter-bypass .track {
+  fill: currentColor;
+  fill-opacity: 0.16;
+  transition: fill-opacity 0.22s ease;
+}
+.filter-bypass .knob {
+  fill: currentColor;
+  transition: transform 0.24s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+.filter-bypass.active .track {
+  fill-opacity: 0;
+}
+.filter-bypass.active .knob {
+  transform: translateX(-8px);
+}
+.filter-bypass:active .knob {
+  transform: translateX(-2px);
+}
+.filter-bypass.active:active .knob {
+  transform: translateX(-6px);
 }
 .filter-row select.input {
   height: 28px;

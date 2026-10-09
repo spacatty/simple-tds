@@ -250,6 +250,7 @@
   "click older than attribution window": "клик старше окна атрибуции",
   "unknown conversion type {1}": "неизвестный тип конверсии {1}",
   "no click from {1}": "нет клика с {1}",
+  "conversion not stored": "конверсия не сохранена",
   "Status": "HTTP-статус",
   "Text": "Текст",
   "Remote js": "JavaScript по URL",

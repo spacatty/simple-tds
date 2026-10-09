@@ -343,15 +343,22 @@ func (s *Server) dataRoutes(r chi.Router) {
 		return map[string]any{"rows": rows, "total": total}, nil
 	}))
 	r.Get("/conversions", s.conversions)
-	r.Get("/postbacks/rejected", handler(func(r *http.Request) (any, error) {
-		// Admins see every refusal, including probes with unknown keys;
-		// users see what was refused on their own keys.
-		var owner int64
-		if u := currentUser(r); !u.IsAdmin() {
-			owner = u.ID
+	r.Get("/postbacks", handler(func(r *http.Request) (any, error) {
+		q, err := parseQuery(r)
+		if err != nil {
+			return nil, err
 		}
-		items, total := s.eng.Reject.List(owner)
-		return map[string]any{"rows": items, "total": total}, nil
+		// Admins see every request, including probes with unknown keys; users
+		// see what arrived on their own keys.
+		if err := s.scope(r.Context(), &q); err != nil {
+			return nil, err
+		}
+		q.Status, q.Search = r.URL.Query().Get("status"), strings.TrimSpace(r.URL.Query().Get("q"))
+		rows, total, err := s.ev.Postbacks(r.Context(), q)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"rows": rows, "total": total}, nil
 	}))
 }
 

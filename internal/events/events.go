@@ -75,6 +75,32 @@ type Conversion struct {
 	Sub                                                                                   [5]string
 }
 
+// Postback outcomes, as stored in the postback log.
+const (
+	PostbackOK        = "ok"
+	PostbackDuplicate = "duplicate"
+	PostbackRejected  = "rejected"
+	PostbackFailed    = "failed" // accepted, but the conversion could not be stored
+)
+
+// Postback is one request to the postback URL and what became of it.
+type Postback struct {
+	TS         time.Time
+	Status     string
+	HTTPStatus uint16
+	Reason     string // why it was refused
+	KeyID      uint32 // 0 when the key is unknown
+	KeyPrefix  string // first characters of the key that was sent
+	SenderIP   string
+	Type       string
+	ClickID    string // as sent, attributed or not
+	ConvID     string // the conversion it produced
+	CampaignID uint32
+	StreamID   uint32
+	Revenue    float64
+	Query      string
+}
+
 // FromClick copies what reports group by from the attributed click.
 func (c *Conversion) FromClick(click *Click) {
 	if click == nil {
@@ -109,6 +135,15 @@ const ddlConversions = `CREATE TABLE IF NOT EXISTS conversions (
  INDEX idx_click click_id TYPE bloom_filter(0.01) GRANULARITY 4
 ) ENGINE = MergeTree PARTITION BY toYYYYMM(ts) ORDER BY (ts)`
 
+const ddlPostbacks = `CREATE TABLE IF NOT EXISTS postbacks (
+ ts DateTime64(3,'UTC'), status LowCardinality(String), http_status UInt16, reason String,
+ key_id UInt32, key_prefix String, sender_ip String, type String, click_id String, conv_id String,
+ campaign_id UInt32, stream_id UInt32, revenue Float64, query String
+) ENGINE = MergeTree PARTITION BY toYYYYMM(ts) ORDER BY (ts)`
+
+const insertPostback = `INSERT INTO postbacks (ts, status, http_status, reason, key_id, key_prefix, sender_ip, type,
+ click_id, conv_id, campaign_id, stream_id, revenue, query)`
+
 const insertClick = `INSERT INTO clicks (ts, click_id, campaign_id, stream_id, domain, ip, country, region, city, asn, isp,
  device_type, os, os_version, browser, browser_version, ua, lang, referer, ref_domain, is_bot, bot_reason, is_dc, is_unique,
  action, integration, sub1, sub2, sub3, sub4, sub5, keyword, params, ja3, ja4, cost)`
@@ -130,16 +165,20 @@ type Config struct {
 }
 
 type DB struct {
-	conn    driver.Conn
-	clicks  chan *Click
-	quit    chan struct{} // closed by Close; clicks itself never is, so a late AddClick cannot panic
-	done    chan struct{}
-	Dropped atomic.Int64
-	Written atomic.Int64
+	conn   driver.Conn
+	clicks chan *Click
+	quit   chan struct{} // closed by Close; clicks itself never is, so a late AddClick cannot panic
+	done   chan struct{}
+	// The postback log has its own small queue and writer.
+	postbacks chan *Postback
+	pbDone    chan struct{}
+	Dropped   atomic.Int64
+	Written   atomic.Int64
 }
 
 const (
 	queueSize  = 200_000
+	pbQueue    = 20_000
 	batchSize  = 10_000
 	flushEvery = time.Second
 )
@@ -165,22 +204,24 @@ func Open(ctx context.Context, c Config) (*DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: %w", err)
 	}
-	for _, ddl := range append([]string{ddlClicks, ddlConversions}, chMigrations...) {
+	for _, ddl := range append([]string{ddlClicks, ddlConversions, ddlPostbacks}, chMigrations...) {
 		if err := conn.Exec(ctx, ddl); err != nil {
 			return nil, fmt.Errorf("clickhouse schema: %w", err)
 		}
 	}
-	db := &DB{conn: conn, clicks: make(chan *Click, queueSize), quit: make(chan struct{}), done: make(chan struct{})}
+	db := &DB{conn: conn, clicks: make(chan *Click, queueSize), quit: make(chan struct{}), done: make(chan struct{}),
+		postbacks: make(chan *Postback, pbQueue), pbDone: make(chan struct{})}
 	go db.writer()
+	go db.postbackWriter()
 	return db, nil
 }
 
-// SetRetention applies the click/conversion TTL.
+// SetRetention applies the TTL of clicks, conversions and the postback log.
 func (db *DB) SetRetention(ctx context.Context, days int) error {
 	if days <= 0 {
 		days = 180
 	}
-	for _, t := range []string{"clicks", "conversions"} {
+	for _, t := range []string{"clicks", "conversions", "postbacks"} {
 		q := fmt.Sprintf("ALTER TABLE %s MODIFY TTL toDateTime(ts) + INTERVAL %d DAY", t, days)
 		if err := db.conn.Exec(ctx, q); err != nil {
 			return err
@@ -189,11 +230,12 @@ func (db *DB) SetRetention(ctx context.Context, days int) error {
 	return nil
 }
 
-// DeleteCampaign removes every click and conversion of a campaign. Clicks
-// still in the write queue land afterwards, so the caller waits out a flush.
+// DeleteCampaign removes every click and conversion of a campaign, and its
+// postback log. Clicks still in the write queue land afterwards, so the
+// caller waits out a flush.
 func (db *DB) DeleteCampaign(ctx context.Context, campaignID int64) error {
 	time.Sleep(flushEvery + 200*time.Millisecond)
-	for _, t := range []string{"clicks", "conversions"} {
+	for _, t := range []string{"clicks", "conversions", "postbacks"} {
 		if err := db.conn.Exec(ctx, fmt.Sprintf("DELETE FROM %s WHERE campaign_id = %d", t, campaignID)); err != nil {
 			return err
 		}
@@ -258,9 +300,11 @@ func (db *DB) DeleteIPs(ctx context.Context, campaignID int64, prefixes []netip.
 	if err := rows.Err(); err != nil {
 		return out, err
 	}
-	// Conversions first: they are found through the clicks.
-	if err := db.conn.Exec(ctx, "DELETE FROM conversions WHERE "+convs); err != nil {
-		return out, err
+	// Conversions and the postback log first: they are found through the clicks.
+	for _, t := range []string{"conversions", "postbacks"} {
+		if err := db.conn.Exec(ctx, "DELETE FROM "+t+" WHERE "+convs); err != nil {
+			return out, err
+		}
 	}
 	return out, db.conn.Exec(ctx, "DELETE FROM clicks WHERE "+clicks)
 }
@@ -378,12 +422,81 @@ func (db *DB) AddConversion(ctx context.Context, c *Conversion) error {
 	return batch.Send()
 }
 
-// Close flushes queued clicks.
+// AddPostback queues a postback log entry. Like clicks, the log never holds
+// a request up: when the queue is full the entry is dropped.
+func (db *DB) AddPostback(p *Postback) {
+	select {
+	case db.postbacks <- p:
+	default:
+	}
+}
+
+func (db *DB) postbackWriter() {
+	defer close(db.pbDone)
+	buf := make([]*Postback, 0, 1000)
+	tick := time.NewTicker(flushEvery)
+	defer tick.Stop()
+	flush := func() {
+		if len(buf) == 0 {
+			return
+		}
+		if err := db.writePostbacks(buf); err != nil {
+			slog.Error("postback log batch lost", "rows", len(buf), "err", err)
+		}
+		buf = buf[:0]
+	}
+	for {
+		select {
+		case p := <-db.postbacks:
+			if buf = append(buf, p); len(buf) >= cap(buf) {
+				flush()
+			}
+		case <-tick.C:
+			flush()
+		case <-db.quit:
+			for {
+				select {
+				case p := <-db.postbacks:
+					if buf = append(buf, p); len(buf) >= cap(buf) {
+						flush()
+					}
+					continue
+				default:
+				}
+				flush()
+				return
+			}
+		}
+	}
+}
+
+func (db *DB) writePostbacks(rows []*Postback) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	batch, err := db.conn.PrepareBatch(ctx, insertPostback)
+	if err != nil {
+		return err
+	}
+	for _, p := range rows {
+		err := batch.Append(p.TS, p.Status, p.HTTPStatus, p.Reason, p.KeyID, p.KeyPrefix, p.SenderIP, p.Type,
+			p.ClickID, p.ConvID, p.CampaignID, p.StreamID, p.Revenue, p.Query)
+		if err != nil {
+			batch.Abort()
+			return err
+		}
+	}
+	return batch.Send()
+}
+
+// Close flushes queued clicks and postback log entries.
 func (db *DB) Close() {
 	close(db.quit)
-	select {
-	case <-db.done:
-	case <-time.After(20 * time.Second):
+	timeout := time.After(20 * time.Second)
+	for _, done := range []chan struct{}{db.done, db.pbDone} {
+		select {
+		case <-done:
+		case <-timeout:
+		}
 	}
 	db.conn.Close()
 }

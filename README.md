@@ -233,9 +233,16 @@ https://domain/postback?key=KEY&click_id={click_id}&type=sale&revenue=10&currenc
 - Built-in types: `lead, sale, install, registration, deposit, action, rejected`.
   A campaign with a funnel (below) also accepts its stage keys.
 - Any other parameter is stored and shown as its own column in
-  Conversions → Log, filterable, and included in the CSV export.
+  Conversions → Conversion log, filterable, and included in the CSV export.
 - GET, form POST and flat JSON POST are accepted. The key may also be sent as
   an `X-TDS-Key` header.
+- Conversions → Postback log lists every request the postback URL received and
+  what became of it — accepted, duplicate, refused (with the reason) or not
+  stored — with the parameters as they arrived. Filter it by result, key,
+  campaign, type, click id, sender IP or any text. You see the requests made
+  with your own keys; administrators also see those with an unknown key. Keys
+  are cut to their first characters in the log, and it is kept as long as
+  clicks are.
 
 - Parameter names are not fixed. `click_id` is also read from `clickid`,
   `subid` and `cid`, `revenue` from `payout`, and Settings → Parameter names

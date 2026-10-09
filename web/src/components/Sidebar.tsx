@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
-import { Activity, BarChart3, ChevronDown, ChevronsUpDown, FileCode2, Globe, LayoutDashboard, Link2, LogOut, Menu, Moon, MousePointerClick, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, ShieldCheck, Split, Sun, Target, Users as UsersIcon } from 'lucide-react'
+import { Activity, BarChart3, ChevronDown, ChevronsUpDown, FileCode2, Globe, KeyRound, LayoutDashboard, Link2, LogOut, Menu, Moon, MousePointerClick, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, ShieldCheck, Split, Sun, Target, Users as UsersIcon, Webhook } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { User } from '../types'
 import type { Theme } from '../hooks'
@@ -31,9 +31,16 @@ const GROUPS: { id: string; label: string; items: Item[] }[] = [
   {
     id: 'tracking',
     label: t('Tracking'),
+    items: [{ to: '/clicks', label: t('Clicks'), icon: MousePointerClick }],
+  },
+  {
+    id: 'conversions',
+    label: t('Conversions'),
     items: [
-      { to: '/conversions', label: t('Conversions'), icon: Target },
-      { to: '/clicks', label: t('Clicks'), icon: MousePointerClick },
+      { to: '/conversions/keys', label: t('Keys & postback URLs'), icon: KeyRound },
+      // "end": the other two pages live under /conversions/ and must not light this one up.
+      { to: '/conversions', label: t('Conversion log'), icon: Target, end: true },
+      { to: '/conversions/postbacks', label: t('Postback log'), icon: Webhook },
     ],
   },
   {

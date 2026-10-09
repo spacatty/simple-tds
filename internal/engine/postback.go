@@ -80,23 +80,29 @@ func (e *Engine) Postback(in *PostbackInput) (int, string) {
 		keyStr = in.HeaderKey
 	}
 	key := snap.Keys[keyStr]
+	// Every answer below leaves a line in the postback log, filled in as the
+	// request is understood.
+	entry := &events.Postback{SenderIP: ip.String(), KeyPrefix: clip(keyStr, logKeyPrefix)}
+	answer := func(status int, outcome, reason, body string) (int, string) {
+		entry.TS, entry.Status, entry.HTTPStatus, entry.Reason = time.Now().UTC(), outcome, uint16(status), reason
+		entry.Query = logQuery(q, names)
+		e.Events.AddPostback(entry)
+		return status, body
+	}
 	reject := func(status int, reason string) (int, string) {
 		e.limits.Allow("pb-rej|"+ip.String(), 1<<30)
-		r := Rejected{At: time.Now(), IP: ip.String(), Key: clip(keyStr, 12), Reason: reason, Query: q.Encode()}
-		if key != nil {
-			r.KeyName, r.OwnerID = key.Name, key.OwnerID
-		}
-		e.Reject.add(r)
-		return status, http.StatusText(status)
+		return answer(status, events.PostbackRejected, reason, http.StatusText(status))
 	}
 
-	// A sender that keeps getting refused is guessing: stop answering it.
+	// A sender that keeps getting refused is guessing: stop answering it, and
+	// stop logging it, so a flood cannot fill the log.
 	if e.limits.Count("pb-rej|"+ip.String()) > maxRejectsPerMinute {
 		return http.StatusTooManyRequests, http.StatusText(http.StatusTooManyRequests)
 	}
 	if key == nil {
 		return reject(http.StatusForbidden, "unknown or disabled key")
 	}
+	entry.KeyID, entry.ClickID = uint32(key.ID), clip(names.Get(q, "click_id"), 128)
 	if key.allow != nil && !key.allow.Contains(ip) {
 		return reject(http.StatusForbidden, "sender IP not in allowlist")
 	}
@@ -127,6 +133,7 @@ func (e *Engine) Postback(in *PostbackInput) (int, string) {
 	if typ == "" {
 		typ = key.DefaultType
 	}
+	entry.Type = clip(typ, 32)
 	if !events.ValidStageKey(typ) {
 		return reject(http.StatusBadRequest, "unknown conversion type "+clip(typ, 32))
 	}
@@ -184,6 +191,10 @@ func (e *Engine) Postback(in *PostbackInput) (int, string) {
 		}
 	}
 
+	if conv.ClickID != "" {
+		entry.ClickID, entry.CampaignID, entry.StreamID = conv.ClickID, conv.CampaignID, conv.StreamID
+	}
+
 	// Which types exist depends on the campaign, so this waits for attribution.
 	campaign := snap.ByID[int64(conv.CampaignID)]
 	var known bool
@@ -192,7 +203,7 @@ func (e *Engine) Postback(in *PostbackInput) (int, string) {
 	}
 
 	if key.Dedupe && e.duplicate(in.Ctx, conv) {
-		return http.StatusOK, "DUPLICATE"
+		return answer(http.StatusOK, events.PostbackDuplicate, "", "DUPLICATE")
 	}
 	conv.FromClick(click)
 
@@ -230,10 +241,33 @@ func (e *Engine) Postback(in *PostbackInput) (int, string) {
 	pj, _ := json.Marshal(params)
 	conv.Params = string(pj)
 
+	entry.Revenue = conv.Revenue
 	if err := e.addConversion(in.Ctx, conv); err != nil {
-		return http.StatusServiceUnavailable, "RETRY"
+		return answer(http.StatusServiceUnavailable, events.PostbackFailed, "conversion not stored", "RETRY")
 	}
-	return http.StatusOK, "OK"
+	entry.ConvID = conv.ConvID
+	return answer(http.StatusOK, events.PostbackOK, "", "OK")
+}
+
+const (
+	logKeyPrefix = 12
+	logQueryMax  = 2000
+)
+
+// logQuery renders the parameters for the postback log. The key is cut to
+// its first characters: enough to tell which one was sent, without the log
+// holding working credentials.
+func logQuery(q url.Values, names *ParamNames) string {
+	out := make(url.Values, len(q))
+	for k, vals := range q {
+		out[k] = vals
+	}
+	for _, n := range names.Names("key") {
+		if v := out.Get(n); len(v) > logKeyPrefix {
+			out.Set(n, v[:logKeyPrefix]+"...")
+		}
+	}
+	return clip(out.Encode(), logQueryMax)
 }
 
 // conversionKind reports whether typ is a conversion type the campaign

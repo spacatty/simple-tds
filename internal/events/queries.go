@@ -30,6 +30,9 @@ type Query struct {
 	// Reached and NotReached narrow the click log to clicks that have, or do
 	// not have, an event of that type (a funnel stage).
 	Reached, NotReached string
+	// Status and Search belong to the postback log: the outcome, and a piece
+	// of text to look for in the parameters or the refusal reason.
+	Status, Search string
 	Params     map[string]string // conversion postback params, exact match
 	// Dims narrows to exact values of report dimensions ("os" → "Android"),
 	// which is what drilling into a report row does.
@@ -537,6 +540,52 @@ func (db *DB) Conversions(ctx context.Context, q Query) (rows []Row, keys []stri
 	}
 	err = db.conn.QueryRow(ctx, "SELECT count() FROM conversions WHERE "+w.sql(), w.args...).Scan(&total)
 	return
+}
+
+// Postbacks returns the postback log, newest first. Unlike conversions it is
+// scoped by key alone: a row shows the request as its sender made it, which
+// is for the key's owner to see, not for everyone the campaign is shared with.
+func (db *DB) Postbacks(ctx context.Context, q Query) ([]Row, uint64, error) {
+	w := &where{}
+	if !q.From.IsZero() {
+		w.add("ts >= ?", q.From)
+	}
+	if !q.To.IsZero() {
+		w.add("ts < ?", q.To)
+	}
+	if q.Scoped {
+		w.add("key_id IN (" + idList(q.Keys) + ")")
+	}
+	if q.KeyID != 0 {
+		w.add("key_id = ?", q.KeyID)
+	}
+	if q.CampaignID != 0 {
+		w.add("campaign_id = ?", q.CampaignID)
+	}
+	if q.Status != "" {
+		w.add("status = ?", q.Status)
+	}
+	if q.Type != "" {
+		w.add("type = ?", q.Type)
+	}
+	if q.IP != "" {
+		w.add("sender_ip = ?", q.IP)
+	}
+	if q.ClickID != "" {
+		w.add("click_id = ?", q.ClickID)
+	}
+	if q.Search != "" {
+		w.add("(positionCaseInsensitive(query, ?) > 0 OR positionCaseInsensitive(reason, ?) > 0)", q.Search, q.Search)
+	}
+	limit, offset := q.page()
+	rows, err := db.query(ctx, fmt.Sprintf(`SELECT ts, toString(status) AS status, http_status, reason, key_id, key_prefix, sender_ip, type,
+		click_id, conv_id, campaign_id, stream_id, revenue, query FROM postbacks WHERE %s ORDER BY ts DESC LIMIT %d OFFSET %d`, w.sql(), limit, offset), w.args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	var total uint64
+	err = db.conn.QueryRow(ctx, "SELECT count() FROM postbacks WHERE "+w.sql(), w.args...).Scan(&total)
+	return rows, total, err
 }
 
 const csvMaxRows = 1_000_000

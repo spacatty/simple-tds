@@ -422,16 +422,6 @@ export interface ClickEvent {
   goal: number
 }
 
-export interface Rejected {
-  at: string
-  ip: string
-  key: string
-  /** Name of the conversion key, empty when the key is unknown. */
-  key_name?: string
-  reason: string
-  query: string
-}
-
 export interface WPFile {
   name: string
   size: number

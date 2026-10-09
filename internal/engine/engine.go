@@ -97,7 +97,6 @@ type Engine struct {
 	convs  *lru.Cache[string, struct{}]
 	remote *remoteCache
 	limits *rateLimiter
-	Reject *rejectLog
 }
 
 func New(st *store.Store, ev *events.DB, g *geo.DB, det *antibot.Detector, secret []byte) *Engine {
@@ -105,7 +104,7 @@ func New(st *store.Store, ev *events.DB, g *geo.DB, det *antibot.Detector, secre
 	convs, _ := lru.New[string, struct{}](200_000)
 	e := &Engine{Store: st, Events: ev, Geo: g, Detector: det, Signer: antibot.NewSigner(secret),
 		secret: secret, uniq: newUniqStore(), recent: recent, convs: convs,
-		remote: newRemoteCache(), limits: newRateLimiter(), Reject: &rejectLog{}}
+		remote: newRemoteCache(), limits: newRateLimiter()}
 	e.snap.Store(&Snapshot{Settings: model.DefaultSettings()})
 	return e
 }
