@@ -93,6 +93,8 @@ export interface AppCtx {
   user: User
   setUser: (u: User) => void
   meta: Meta
+  /** Fetches the metadata again after a setting that it reflects has changed. */
+  reloadMeta: () => void
   logout: () => void
 }
 

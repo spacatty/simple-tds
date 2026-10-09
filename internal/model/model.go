@@ -325,6 +325,10 @@ type Settings struct {
 	GeoRefreshDays int    `json:"geo_refresh_days"`
 
 	RetentionDays int `json:"retention_days"`
+
+	// ParamAliases gives system request parameters (click_id, key, type, …)
+	// extra names: system name → names accepted next to it.
+	ParamAliases map[string][]string `json:"param_aliases"`
 }
 
 func DefaultSettings() Settings {

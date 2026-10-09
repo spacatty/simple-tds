@@ -44,6 +44,10 @@ func TestServerTextIsTranslated(t *testing.T) {
 		check("filter "+f.Type, f.Group)
 		check("filter "+f.Type, f.Help)
 	}
+	for _, p := range (*engine.ParamNames)(nil).Defs() {
+		check("system parameter "+p.Name, p.Group)
+		check("system parameter "+p.Name, p.Label)
+	}
 	for _, p := range builtinPresets {
 		check("stream preset", p.Name)
 	}

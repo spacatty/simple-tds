@@ -278,6 +278,25 @@ func (s *Server) dataRoutes(r chi.Router) {
 		}
 		return map[string]any{"rows": rows}, nil
 	}))
+	// Referrer analytics: sites by default, the pages of the selection with /urls.
+	referrers := func(load func(context.Context, events.Query) ([]events.ReferrerRow, error)) http.HandlerFunc {
+		return handler(func(r *http.Request) (any, error) {
+			q, err := parseQuery(r)
+			if err != nil {
+				return nil, err
+			}
+			if err := s.scope(r.Context(), &q); err != nil {
+				return nil, err
+			}
+			rows, err := load(r.Context(), q)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"rows": rows}, nil
+		})
+	}
+	r.Get("/reports/referrers", referrers(s.ev.Referrers))
+	r.Get("/reports/referrers/urls", referrers(s.ev.ReferrerURLs))
 	r.Get("/reports/funnel", handler(func(r *http.Request) (any, error) {
 		q, err := parseQuery(r)
 		if err != nil {
@@ -309,6 +328,13 @@ func (s *Server) dataRoutes(r chi.Router) {
 		}
 		if err := s.scope(r.Context(), &q); err != nil {
 			return nil, err
+		}
+		// reached / not_reached: clicks that did, or did not, get to a funnel stage.
+		q.Reached, q.NotReached = r.URL.Query().Get("reached"), r.URL.Query().Get("not_reached")
+		for _, k := range []string{q.Reached, q.NotReached} {
+			if k != "" && !events.ValidStageKey(k) {
+				return nil, bad("bad stage key")
+			}
 		}
 		rows, total, err := s.ev.Clicks(r.Context(), q)
 		if err != nil {
@@ -443,6 +469,11 @@ func (s *Server) settingsSave(r *http.Request) (any, error) {
 			return nil, bad("User-Agent pattern is too long")
 		}
 	}
+	// Decoding merged the body into the stored map, so a parameter keeps its
+	// names unless the body lists it; an empty list clears them.
+	if st.ParamAliases, err = engine.CleanParamAliases(st.ParamAliases); err != nil {
+		return nil, bad(err.Error())
+	}
 	if err := s.st.SaveSettings(ctx, st); err != nil {
 		return nil, err
 	}
@@ -481,6 +512,7 @@ var integrationPresets = []integrationPreset{
 
 func (s *Server) meta(*http.Request) (any, error) {
 	return map[string]any{
+		"system_params":       s.eng.Snap().Params.Defs(),
 		"actions":             engine.ActionDefs(),
 		"filters":             engine.FilterDefs(),
 		"macros":              engine.Macros,

@@ -14,6 +14,9 @@ type FunnelStep struct {
 	Reached int64   `json:"reached"` // clicks that got this far
 	Events  int64   `json:"events"`  // events received, repeats included
 	Revenue float64 `json:"revenue"`
+	// MedianSec is the typical time from the click to its first event of
+	// this stage; zero when nothing reached it.
+	MedianSec float64 `json:"median_sec"`
 }
 
 type FunnelRow struct {
@@ -96,8 +99,11 @@ func (db *DB) Funnel(ctx context.Context, group string, stages []string, strict 
 		if strict {
 			reached = fmt.Sprintf("lvl >= %d", i+1)
 		}
-		inner = append(inner, fmt.Sprintf("%s AS s%d, countIf(%s) AS e%d, sumIf(revenue, %s) AS r%d", reached, i, cond, i, cond, i))
-		outer = append(outer, fmt.Sprintf("sum(s%d) AS s%d, sum(e%d) AS e%d, sum(r%d) AS r%d", i, i, i, i, i, i))
+		// Inner aliases differ from the outer ones: ClickHouse would otherwise
+		// read s0 inside quantileIf as the outer sum.
+		inner = append(inner, fmt.Sprintf("%s AS is%d, countIf(%s) AS ie%d, sumIf(revenue, %s) AS ir%d, minIf(toUnixTimestamp64Milli(ts), %s) - min(toUnixTimestamp64Milli(cts)) AS id%d",
+			reached, i, cond, i, cond, i, cond, i))
+		outer = append(outer, fmt.Sprintf("sum(is%d) AS s%d, sum(ie%d) AS e%d, sum(ir%d) AS r%d, ifNotFinite(quantileIf(0.5)(id%d, is%d > 0 AND ie%d > 0), 0) / 1000 AS m%d", i, i, i, i, i, i, i, i, i, i))
 	}
 	lvl := ""
 	if strict {
@@ -118,7 +124,7 @@ func (db *DB) Funnel(ctx context.Context, group string, stages []string, strict 
 		row.Cost += num(r["cost"])
 		for i := range stages {
 			n := strconv.Itoa(i)
-			row.Steps[i] = FunnelStep{Reached: int64(num(r["s"+n])), Events: int64(num(r["e"+n])), Revenue: num(r["r"+n])}
+			row.Steps[i] = FunnelStep{Reached: int64(num(r["s"+n])), Events: int64(num(r["e"+n])), Revenue: num(r["r"+n]), MedianSec: num(r["m"+n])}
 		}
 	}
 

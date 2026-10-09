@@ -66,7 +66,9 @@ type Snapshot struct {
 	Keys          map[string]*KeyRT
 	KeyNames      map[uint32]string
 	Trusted       *antibot.Set
-	geoProviders  []*extapi.Provider
+	// Params knows every name the system request parameters go by.
+	Params       *ParamNames
+	geoProviders []*extapi.Provider
 	// AdminDomainOK: at least one verified domain serves the panel.
 	AdminDomainOK bool
 }
@@ -156,6 +158,7 @@ func (e *Engine) Reload(ctx context.Context) error {
 		trusted = append(trusted, antibot.ParsePrefixes([]byte(t))...)
 	}
 	s.Trusted = antibot.NewSet(trusted)
+	s.Params = NewParamNames(st.ParamAliases)
 
 	for i := range pages {
 		s.Whitepages[pages[i].ID] = &pages[i]
@@ -265,7 +268,8 @@ type Visit struct {
 	// Body is the request body for whitepages that handle form posts.
 	Body []byte
 
-	depth int
+	params *ParamNames
+	depth  int
 }
 
 // Result is an integration-neutral response.

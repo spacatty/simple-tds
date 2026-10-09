@@ -147,9 +147,9 @@ func (v *Visit) macro(name string) (string, bool) {
 	case "referer":
 		return v.Referer, true
 	case "keyword":
-		return v.Query.Get("keyword"), true
+		return v.params.Get(v.Query, "keyword"), true
 	case "sub1", "sub2", "sub3", "sub4", "sub5":
-		return subParam(v.Query, int(name[3]-'0')), true
+		return v.params.Get(v.Query, name), true
 	case "query":
 		return v.Query.Encode(), true
 	}
@@ -167,18 +167,11 @@ func (v *Visit) macro(name string) (string, bool) {
 			return scheme + "://" + v.Domain + EventPrefix + st.Key + "?cid=" + url.QueryEscape(v.ClickID), true
 		}
 	}
-	return "", false
-}
-
-// subParam reads sub-id N, accepting the common spellings.
-func subParam(q url.Values, n int) string {
-	s := strconv.Itoa(n)
-	for _, k := range []string{"sub" + s, "sub_id_" + s, "subid" + s, "sub_id" + s} {
-		if v := q.Get(k); v != "" {
-			return v
-		}
+	// A name given to a system parameter in the settings is a macro as well.
+	if canon, ok := v.params.Macro(name); ok {
+		return v.macro(canon)
 	}
-	return ""
+	return "", false
 }
 
 func htmlResult(body string) *Result {

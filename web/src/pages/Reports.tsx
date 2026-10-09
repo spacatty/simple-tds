@@ -200,7 +200,7 @@ export default function Reports() {
 
   return (
     <div className="page">
-      <PageHeader title={t('Reports')} sub={t('Click any row to drill into it.')}>
+      <PageHeader title={t('Breakdown')} sub={t('Click any row to drill into it.')}>
         <DateRangePicker value={range} onChange={setRange} />
         <button className="btn" onClick={() => rep.reload()} title={t('Refresh')} aria-label={t('Refresh')}>
           <RefreshCw size={14} className={rep.loading ? 'spin' : ''} />

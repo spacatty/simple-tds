@@ -15,6 +15,7 @@ import Domains from './pages/Domains'
 import Whitepages from './pages/Whitepages'
 import Conversions from './pages/Conversions'
 import Reports from './pages/Reports'
+import Referrers from './pages/Referrers'
 import Clicks from './pages/Clicks'
 import Antibot from './pages/Antibot'
 import SettingsPage from './pages/Settings'
@@ -84,7 +85,7 @@ export default function App() {
       })
   }, [])
 
-  const ctx = useMemo(() => (user && meta ? { user, setUser, meta, logout } : null), [user, meta, logout])
+  const ctx = useMemo(() => (user && meta ? { user, setUser, meta, reloadMeta: loadMeta, logout } : null), [user, meta, loadMeta, logout])
 
   if (user === undefined) return <div className="boot">{t('Loading…')}</div>
 
@@ -126,6 +127,7 @@ export default function App() {
             <Route path="/conversions" element={<Conversions />} />
             <Route path="/conversions/:tab" element={<Conversions />} />
             <Route path="/reports" element={<Reports />} />
+            <Route path="/reports/referrers" element={<Referrers />} />
             <Route path="/clicks" element={<Clicks />} />
             {user.role === 'admin' && <Route path="/antibot" element={<Antibot />} />}
             {user.role === 'admin' && <Route path="/users" element={<UsersPage />} />}

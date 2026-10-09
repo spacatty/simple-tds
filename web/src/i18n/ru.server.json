@@ -226,6 +226,7 @@
   "unknown grouping \"{1}\"": "неизвестная группировка «{1}»",
   "the campaign has no stages": "у кампании нет этапов",
   "bad stage key \"{1}\"": "некорректный ключ этапа «{1}»",
+  "bad stage key": "некорректный ключ этапа",
 
   "only administrators can change panel access on a domain": "менять доступ к панели на домене могут только администраторы",
   "already added": "уже добавлен",
@@ -300,5 +301,26 @@
   "South-East Asia": "Юго-Восточная Азия",
   "South Asia": "Южная Азия",
   "East Asia": "Восточная Азия",
-  "Africa (top)": "Африка (топ)"
+  "Africa (top)": "Африка (топ)",
+
+  "Postback": "Постбэк",
+  "Campaign URL": "URL кампании",
+  "Click ID, also on browser event URLs": "ID клика, в том числе в URL браузерных событий",
+  "Postback key": "Ключ постбэка",
+  "Conversion type or funnel stage key": "Тип конверсии или ключ этапа воронки",
+  "Revenue": "Доход",
+  "Currency": "Валюта",
+  "Visitor IP, for keys attributed by IP": "IP посетителя — для ключей с атрибуцией по IP",
+  "Signature": "Подпись",
+  "Signature timestamp": "Время подписи",
+  "Sub ID 1": "Sub ID 1",
+  "Sub ID 2": "Sub ID 2",
+  "Sub ID 3": "Sub ID 3",
+  "Sub ID 4": "Sub ID 4",
+  "Sub ID 5": "Sub ID 5",
+  "unknown system parameter \"{1}\"": "неизвестный системный параметр «{1}»",
+  "parameter name \"{1}\": 1-40 letters, digits, _ - or .": "имя параметра «{1}»: 1–40 латинских букв, цифр, _ - или .",
+  "parameter name \"{1}\" is already taken by {2}": "имя параметра «{1}» уже занято: {2}",
+  "the tracker itself": "сам трекер",
+  "{1}: at most {2} extra names": "{1}: не больше {2} дополнительных имён"
 }

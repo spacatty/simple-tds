@@ -177,6 +177,8 @@ export default function ConvKeys() {
 
 function PostbackInfo({ k, domain, path }: { k: ConvKey; domain: string; path: string }) {
   const [show, setShow] = useState(false)
+  const clickParam = useMeta().system_params?.find((p) => p.name === 'click_id')
+  const clickNames = [...(clickParam?.builtin ?? []), ...(clickParam?.aliases ?? [])].join(', ')
   const base = `https://${domain}${path}?key=${k.key}`
   const sigTail = k.require_sig ? '&ts=UNIX_TIME&sig=SIGNATURE' : ''
   const urls: { title: string; url: string; note: string }[] = []
@@ -184,7 +186,7 @@ function PostbackInfo({ k, domain, path }: { k: ConvKey; domain: string; path: s
     urls.push({
       title: t('Postback URL (click ID)'),
       url: `${base}&click_id={click_id}&type=sale&revenue=10&currency=USD&any_param=value${sigTail}`,
-      note: t('Replace {click_id} with the network’s own macro for the value you passed from the tracker (the {click_id} macro in your offer URL). clickid, subid and cid are accepted as synonyms.'),
+      note: t('Replace {click_id} with the network’s own macro for the value you passed from the tracker (the {click_id} macro in your offer URL). The parameter is also accepted under these names: {names}.', { names: clickNames }),
     })
   } else if (k.attribution === 'ip') {
     urls.push({

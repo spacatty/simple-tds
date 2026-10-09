@@ -216,6 +216,13 @@ https://domain/postback?key=KEY&click_id={click_id}&type=sale&revenue=10&currenc
 - GET, form POST and flat JSON POST are accepted. The key may also be sent as
   an `X-TDS-Key` header.
 
+- Parameter names are not fixed. `click_id` is also read from `clickid`,
+  `subid` and `cid`, `revenue` from `payout`, and Settings → Parameter names
+  adds more for any of them (`key`, `type`, `currency`, `ip`, `sig`, `ts`, and
+  on campaign URLs `keyword` and `sub1`–`sub5`) — for a network that can only
+  send `sub_id=` or `status=`. A name added for `click_id`, `keyword` or a sub
+  id works as a macro too: `{sub_id}`.
+
 Keys are named, and each has its own rules:
 
 | Rule | |

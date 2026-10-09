@@ -27,6 +27,9 @@ type Query struct {
 	IP         string
 	ClickID    string
 	Bots       string            // "" | only | exclude
+	// Reached and NotReached narrow the click log to clicks that have, or do
+	// not have, an event of that type (a funnel stage).
+	Reached, NotReached string
 	Params     map[string]string // conversion postback params, exact match
 	// Dims narrows to exact values of report dimensions ("os" → "Android"),
 	// which is what drilling into a report row does.
@@ -340,6 +343,63 @@ func (db *DB) Report(ctx context.Context, group string, q Query) ([]ReportRow, e
 	return out, nil
 }
 
+// ReferrerRow is a report row for one referring site (or, in the page list,
+// one referring URL) with its clicks split by device class.
+type ReferrerRow struct {
+	ReportRow
+	Mobile  int64 `json:"mobile"` // phones and tablets
+	Desktop int64 `json:"desktop"`
+}
+
+const deviceSplit = "countIf(device_type IN ('mobile', 'tablet')) AS mobile, countIf(device_type = 'desktop') AS desktop"
+
+// Referrers is the report by referrer domain plus the device split. Clicks
+// that came without a referrer are the row with an empty key.
+func (db *DB) Referrers(ctx context.Context, q Query) ([]ReferrerRow, error) {
+	rows, err := db.Report(ctx, "ref_domain", q)
+	if err != nil {
+		return nil, err
+	}
+	w := q.clickWhere()
+	split, err := db.query(ctx, "SELECT ref_domain AS k, "+deviceSplit+" FROM clicks WHERE "+w.sql()+" GROUP BY k", w.args...)
+	if err != nil {
+		return nil, err
+	}
+	byKey := make(map[string]Row, len(split))
+	for _, r := range split {
+		byKey[fmt.Sprint(r["k"])] = r
+	}
+	out := make([]ReferrerRow, len(rows))
+	for i, r := range rows {
+		out[i] = ReferrerRow{ReportRow: r}
+		if s := byKey[r.Key]; s != nil {
+			out[i].Mobile, out[i].Desktop = int64(num(s["mobile"])), int64(num(s["desktop"]))
+		}
+	}
+	return out, nil
+}
+
+const referrerURLLimit = 50
+
+// ReferrerURLs lists the referring pages that sent the most clicks. Only
+// clicks keep the full referrer, so the rows carry no conversions.
+func (db *DB) ReferrerURLs(ctx context.Context, q Query) ([]ReferrerRow, error) {
+	w := q.clickWhere()
+	rows, err := db.query(ctx, fmt.Sprintf("SELECT referer AS k, count() AS clicks, sum(is_unique) AS uniques, sum(is_bot) AS bots, %s FROM clicks WHERE %s GROUP BY k ORDER BY clicks DESC, k LIMIT %d",
+		deviceSplit, w.sql(), referrerURLLimit), w.args...)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ReferrerRow, len(rows))
+	for i, r := range rows {
+		out[i] = ReferrerRow{
+			ReportRow: ReportRow{Key: fmt.Sprint(r["k"]), Clicks: int64(num(r["clicks"])), Uniques: int64(num(r["uniques"])), Bots: int64(num(r["bots"]))},
+			Mobile:    int64(num(r["mobile"])), Desktop: int64(num(r["desktop"])),
+		}
+	}
+	return out, nil
+}
+
 const clickCols = `ts, click_id, campaign_id, stream_id, domain, ip, country, region, city, asn, isp, device_type, os, os_version,
  browser, browser_version, ua, lang, referer, ref_domain, is_bot, bot_reason, is_dc, is_unique, action, integration,
  sub1, sub2, sub3, sub4, sub5, keyword, params, ja3, ja4, cost`
@@ -355,9 +415,36 @@ func (q *Query) page() (int, int) {
 	return limit, q.Offset
 }
 
-// Clicks returns the raw click log, newest first.
+// stageClicks selects the ids of clicks that have an event of one type. An
+// event cannot predate its click, so conversions are read from the start of
+// the period onwards.
+func (q *Query) stageClicks(w *where, not bool, typ string) {
+	sub := &where{}
+	sub.add("type = ?", typ)
+	sub.add("click_id != ''")
+	if !q.From.IsZero() {
+		sub.add("ts >= ?", q.From)
+	}
+	if q.CampaignID != 0 {
+		sub.add("campaign_id = ?", q.CampaignID)
+	}
+	op := "IN"
+	if not {
+		op = "NOT IN"
+	}
+	w.add("click_id "+op+" (SELECT click_id FROM conversions WHERE "+sub.sql()+")", sub.args...)
+}
+
+// Clicks returns the raw click log, newest first. Every row carries the
+// events received for that click so far, oldest first.
 func (db *DB) Clicks(ctx context.Context, q Query) ([]Row, uint64, error) {
 	w := q.clickWhere()
+	if q.Reached != "" {
+		q.stageClicks(w, false, q.Reached)
+	}
+	if q.NotReached != "" {
+		q.stageClicks(w, true, q.NotReached)
+	}
 	limit, offset := q.page()
 	rows, err := db.query(ctx, fmt.Sprintf("SELECT %s FROM clicks WHERE %s ORDER BY ts DESC LIMIT %d OFFSET %d", clickCols, w.sql(), limit, offset), w.args...)
 	if err != nil {
@@ -367,11 +454,53 @@ func (db *DB) Clicks(ctx context.Context, q Query) ([]Row, uint64, error) {
 	if err := db.conn.QueryRow(ctx, "SELECT count() FROM clicks WHERE "+w.sql(), w.args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
+	if err := db.attachEvents(ctx, rows); err != nil {
+		return nil, 0, err
+	}
 	return rows, total, nil
 }
 
+// attachEvents puts under "events" what each click of a log page went on to
+// do: one short entry per event, in the order they arrived.
+func (db *DB) attachEvents(ctx context.Context, clicks []Row) error {
+	if len(clicks) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(clicks))
+	var first time.Time
+	for _, c := range clicks {
+		c["events"] = []Row{}
+		if id, _ := c["click_id"].(string); id != "" {
+			ids = append(ids, id)
+		}
+		if ts, ok := c["ts"].(time.Time); ok && (first.IsZero() || ts.Before(first)) {
+			first = ts
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	evs, err := db.query(ctx, "SELECT click_id, ts, toString(type) AS type, revenue, goal FROM conversions WHERE ts >= ? AND click_id IN (?) ORDER BY ts",
+		first.Add(-time.Minute), ids)
+	if err != nil {
+		return err
+	}
+	byClick := map[string][]Row{}
+	for _, e := range evs {
+		id, _ := e["click_id"].(string)
+		delete(e, "click_id")
+		byClick[id] = append(byClick[id], e)
+	}
+	for _, c := range clicks {
+		if id, _ := c["click_id"].(string); byClick[id] != nil {
+			c["events"] = byClick[id]
+		}
+	}
+	return nil
+}
+
 const convCols = `ts, conv_id, click_id, key_id, type, revenue, cost, currency, sender_ip, params, campaign_id, stream_id,
- domain, country, city, device_type, os, browser, sub1, sub2, sub3, sub4, sub5`
+ domain, country, city, device_type, os, browser, sub1, sub2, sub3, sub4, sub5, goal, is_bot, click_ts`
 
 func decodeParams(rows []Row) {
 	for _, r := range rows {

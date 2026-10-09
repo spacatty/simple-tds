@@ -163,3 +163,46 @@ func TestConversionKind(t *testing.T) {
 		}
 	}
 }
+
+func TestParamAliases(t *testing.T) {
+	names := NewParamNames(map[string][]string{"click_id": {"sub_id", " cid "}, "type": {"stage"}, "sub1": {"source"}})
+	if got := names.Get(url.Values{"sub_id": {"X"}}, "click_id"); got != "X" {
+		t.Errorf("click_id under its extra name: got %q", got)
+	}
+	if got := names.Get(url.Values{"subid": {"Y"}}, "click_id"); got != "Y" {
+		t.Errorf("built-in names must keep working: got %q", got)
+	}
+	if !names.Stored("stage") || !names.Stored("payout") || names.Stored("source") {
+		t.Error("only names of parameters with their own column are left out of the stored ones")
+	}
+
+	v := visit("RU", "desktop", false)
+	v.ClickID, v.params = "CID", names
+	v.Query = url.Values{"source": {"fb"}}
+	if got, want := v.expand("{sub_id}|{sub1}|{source}|{stage}", false), "CID|fb|fb|{stage}"; got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+
+	// The signature covers everything but itself, whatever it is called.
+	q := url.Values{"a": {"1"}, "signature": {"zz"}}
+	if SignPostback("s", q, "signature") != SignPostback("s", url.Values{"a": {"1"}}) {
+		t.Error("a renamed sig must not be part of the signed string")
+	}
+
+	for _, bad := range []map[string][]string{
+		{"nope": {"x"}},              // not a system parameter
+		{"click_id": {"a b"}},        // not a parameter name
+		{"click_id": {"key"}},        // another system parameter
+		{"type": {"payout"}},         // built-in name of another one
+		{"key": {"k"}, "sig": {"k"}}, // used twice
+		{"keyword": {"_url"}},        // used by the integrations
+	} {
+		if _, err := CleanParamAliases(bad); err == nil {
+			t.Errorf("%v accepted", bad)
+		}
+	}
+	clean, err := CleanParamAliases(map[string][]string{"click_id": {"cid", "x", "x", ""}, "key": {}})
+	if err != nil || len(clean) != 1 || len(clean["click_id"]) != 1 {
+		t.Errorf("got %v, %v", clean, err)
+	}
+}

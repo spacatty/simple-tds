@@ -1,18 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import type { ReactNode } from 'react'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Columns3, Download, Filter as FilterIcon, RefreshCw, X } from 'lucide-react'
 import { get, qs } from '../api'
 import type { Params } from '../api'
 import { useDebounced, useLoad, useMeta } from '../hooks'
-import type { Campaign, ConvKey, ConvRow } from '../types'
+import type { Campaign, ConvKey, ConvRow, Stage } from '../types'
 import { DataTable } from '../components/DataTable'
 import type { Column } from '../components/DataTable'
 import { DateRangePicker, useDateRange } from '../components/DateRangePicker'
-import { Badge, Dropdown, Empty, ErrorBox, PageHeader, Pagination, Select, Tabs } from '../components/ui'
+import { Badge, CopyButton, Dropdown, Empty, ErrorBox, PageHeader, Pagination, Select, Tabs } from '../components/ui'
 import type { Tone } from '../components/ui'
 import { rangeParams } from '../reports'
-import { fmtDateTime, fmtMoney, humanize } from '../format'
+import { fmtDateTime, fmtMoney, fmtSpan, humanize, num, secondsBetween } from '../format'
 import { Browser, Country, Device, Os } from '../components/icons'
+import { Journey, stageName } from '../components/Journey'
 import { t, ts } from '../i18n'
 import ConvKeys from './ConvKeys'
 
@@ -24,7 +26,7 @@ export default function Conversions() {
   const tab: Tab = params.tab === 'keys' ? 'keys' : 'log'
   return (
     <div className="page">
-      <PageHeader title={t('Conversions')} sub={t('Postbacks received from affiliate networks, apps and installers.')} />
+      <PageHeader title={t('Conversions')} sub={t('Postbacks and funnel events received from affiliate networks, apps, installers and pages. Click a row to see everything it carried and the journey of its click.')} />
       <Tabs
         value={tab}
         onChange={(v) => nav(v === 'log' ? '/conversions' : '/conversions/keys', { replace: true })}
@@ -52,6 +54,7 @@ const FIXED: { key: string; label: string; def: boolean }[] = [
   { key: 'key_id', label: t('Key'), def: true },
   { key: 'campaign_id', label: t('Campaign'), def: true },
   { key: 'click_id', label: t('Click ID'), def: true },
+  { key: 'since', label: t('After the click'), def: true },
   { key: 'revenue', label: t('Revenue'), def: true },
   { key: 'cost', label: t('Cost'), def: false },
   { key: 'currency', label: t('Currency'), def: true },
@@ -87,8 +90,8 @@ function ConvLog() {
   const meta = useMeta()
   const [range, setRange] = useDateRange()
   const [search] = useSearchParams()
-  // The click log links here with ?click_id=… to show the conversions of one click.
-  const [f, setF] = useState({ key_id: '', campaign_id: search.get('campaign_id') ?? '', type: '', click_id: search.get('click_id') ?? '', ip: '' })
+  // The click log links here with ?click_id=… to show the conversions of one click, the funnel with ?type=… for one stage.
+  const [f, setF] = useState({ key_id: '', campaign_id: search.get('campaign_id') ?? '', type: search.get('type') ?? '', click_id: search.get('click_id') ?? '', ip: '' })
   const [pf, setPf] = useState<Record<string, string>>({})
   const [offset, setOffset] = useState(0)
   const [cols, setCols] = useState<Record<string, boolean>>(loadCols)
@@ -133,6 +136,8 @@ function ConvLog() {
     const extra = new Map(stages.filter((s) => !meta.conversion_types.includes(s.key)).map((s) => [s.key, s.key]))
     return [...meta.conversion_types.map((ty) => ({ value: ty, label: ts(humanize(ty)) })), ...[...extra.keys()].sort().map((k) => ({ value: k, label: k }))]
   }, [camps.data, f.campaign_id, meta.conversion_types])
+  const campById = (id: unknown) => camps.data?.find((c) => c.id === Number(id))
+  const stagesOf = (id: unknown): Stage[] => campById(id)?.stages ?? []
   const campName = (id: unknown) => camps.data?.find((c) => c.id === Number(id))?.name ?? (Number(id) ? `#${id}` : '—')
 
   const cell = (key: string, r: ConvRow) => {
@@ -141,14 +146,29 @@ function ConvLog() {
       case 'ts':
         return <span className="nowrap">{fmtDateTime(v)}</span>
       case 'type':
-        return <Badge tone={TYPE_TONE[String(v)] ?? 'neutral'}>{ts(String(v))}</Badge>
+        return (
+          <Badge tone={TYPE_TONE[String(v)] ?? (num(r.goal) ? 'ok' : 'neutral')} title={String(v)}>
+            {stageName(stagesOf(r.campaign_id), String(v))}
+          </Badge>
+        )
+      case 'since': {
+        const after = r.click_id ? secondsBetween(r.click_ts, r.ts) : null
+        return after === null ? <span className="muted">—</span> : <span className="nowrap">{fmtSpan(after)}</span>
+      }
       case 'key_id':
         return keyName(v)
       case 'campaign_id':
         return campName(v)
       case 'click_id':
         return v ? (
-          <button className="link mono" title={t('Filter by this click')} onClick={() => setF((x) => ({ ...x, click_id: String(v) }))}>
+          <button
+            className="link mono"
+            title={t('Filter by this click')}
+            onClick={(e) => {
+              e.stopPropagation()
+              setF((x) => ({ ...x, click_id: String(v) }))
+            }}
+          >
             {String(v)}
           </button>
         ) : (
@@ -161,7 +181,14 @@ function ConvLog() {
         return fmtMoney(v)
       case 'sender_ip':
         return (
-          <button className="link mono" title={t('Filter by this sender')} onClick={() => setF((x) => ({ ...x, ip: String(v) }))}>
+          <button
+            className="link mono"
+            title={t('Filter by this sender')}
+            onClick={(e) => {
+              e.stopPropagation()
+              setF((x) => ({ ...x, ip: String(v) }))
+            }}
+          >
             {String(v)}
           </button>
         )
@@ -195,7 +222,11 @@ function ConvLog() {
             const v = r.params?.[k]
             if (v === undefined || v === '') return <span className="muted">—</span>
             return (
-              <button className="link ellipsis" style={{ maxWidth: 220 }} title={v + '\n' + t('Click to filter by {param}', { param: `${k}=${v}` })} onClick={() => addParam(k, v)}>
+              <button className="link ellipsis" style={{ maxWidth: 220 }} title={v + '\n' + t('Click to filter by {param}', { param: `${k}=${v}` })} onClick={(e) => {
+                  e.stopPropagation()
+                  addParam(k, v)
+                }}
+              >
                 {v}
               </button>
             )
@@ -331,10 +362,88 @@ function ConvLog() {
           rowKey={(r, i) => String(r.conv_id ?? i)}
           loading={res.loading}
           maxHeight="calc(100vh - 330px)"
+          expand={(r) => <ConvDetail r={r} campaign={campName(r.campaign_id)} keyName={keyName} stages={stagesOf(r.campaign_id)} currency={campById(r.campaign_id)?.currency} />}
           empty={<Empty title={t('No conversions for this selection')}>{t('Check the date range and filters, or look at rejected postbacks on the Keys tab.')}</Empty>}
         />
         <Pagination total={res.data?.total ?? 0} limit={LIMIT} offset={offset} onChange={setOffset} />
       </div>
     </>
+  )
+}
+
+/** Everything one event carried, and where it sits in the journey of its click. */
+function ConvDetail({ r, campaign, keyName, stages, currency }: { r: ConvRow; campaign: string; keyName: (id: unknown) => string; stages: Stage[]; currency?: string }) {
+  const str = (v: unknown) => (v === null || v === undefined ? '' : String(v))
+  const item = (label: string, value: ReactNode, mono?: boolean) => (
+    <>
+      <dt>{label}</dt>
+      <dd className={mono ? 'mono break' : 'break'}>{value === '' || value === undefined || value === null ? <span className="muted">—</span> : value}</dd>
+    </>
+  )
+  const clickId = str(r.click_id)
+  const after = clickId ? secondsBetween(r.click_ts, r.ts) : null
+  const stage = stages.find((s) => s.key === r.type)
+  const subs = [1, 2, 3, 4, 5].map((n) => [`sub${n}`, str(r[`sub${n}`])] as const).filter(([, v]) => v)
+  const params = Object.keys(r.params ?? {}).length ? JSON.stringify(r.params, null, 2) : ''
+
+  // The click log, narrowed to this click: its id plus the minute it happened in.
+  const at = Math.floor(new Date(str(r.click_ts)).getTime() / 1000)
+  const clickLink = new URLSearchParams({ click_id: clickId })
+  if (Number(r.campaign_id) > 0) clickLink.set('campaign_id', str(r.campaign_id))
+  if (at > 86400) {
+    clickLink.set('from', String(at - 60))
+    clickLink.set('to', String(at + 60))
+  }
+
+  return (
+    <div className="detail">
+      {clickId ? (
+        <div className="detail-actions">
+          <Link className="btn small" to={'/clicks?' + clickLink.toString()} title={t('Every field recorded for the click this event belongs to')}>
+            {t('Open the click')}
+          </Link>
+        </div>
+      ) : (
+        <div className="field-help" style={{ margin: '0 0 12px' }}>
+          {t('This event is not attributed to a click, so it has no journey and does not count in a funnel.')}
+        </div>
+      )}
+      <div className="detail-cols">
+        <dl className="kv">
+          {item(t('Conversion ID'), <span className="row gap-s">{str(r.conv_id)} <CopyButton text={str(r.conv_id)} className="icon-btn" /></span>, true)}
+          {item(t('Time'), fmtDateTime(r.ts))}
+          {item(t('Type'), str(r.type), true)}
+          {item(t('Funnel stage'), stage ? `${stage.name}${stage.goal ? ' ★' : ''}` : '')}
+          {item(t('Counts as a conversion'), num(r.goal) ? t('yes') : t('no'))}
+          {item(t('Revenue'), num(r.revenue) ? fmtMoney(r.revenue, str(r.currency)) : '')}
+          {item(t('Cost'), num(r.cost) ? fmtMoney(r.cost) : '')}
+        </dl>
+        <dl className="kv">
+          {item(t('Key'), keyName(r.key_id))}
+          {item(t('Sender IP'), str(r.sender_ip), true)}
+          {item(t('Campaign'), Number(r.campaign_id) ? `${campaign} (#${str(r.campaign_id)})` : '')}
+          {item(t('Stream ID'), Number(r.stream_id) ? str(r.stream_id) : '')}
+          {item(t('Click ID'), clickId, true)}
+          {item(t('Click time'), clickId ? fmtDateTime(r.click_ts) : '')}
+          {item(t('After the click'), after === null ? '' : fmtSpan(after))}
+          {item(t('Click flagged as bot'), clickId ? num(r.is_bot) ? <Badge tone="err">{t('yes')}</Badge> : t('no') : '')}
+        </dl>
+        <dl className="kv">
+          {item(t('Domain'), str(r.domain), true)}
+          {item(t('Country'), r.country ? <Country code={str(r.country)} show="both" /> : '')}
+          {item(t('City'), str(r.city))}
+          {item(t('Device'), r.device_type ? <Device type={str(r.device_type)} /> : '')}
+          {item(t('OS'), r.os ? <Os os={str(r.os)} /> : '')}
+          {item(t('Browser'), r.browser ? <Browser browser={str(r.browser)} /> : '')}
+          {subs.map(([k, v]) => (
+            <span key={k} style={{ display: 'contents' }}>
+              {item(k, v, true)}
+            </span>
+          ))}
+        </dl>
+        <dl className="kv wide">{item(t('Postback parameters'), params ? <pre className="params-json">{params}</pre> : '')}</dl>
+      </div>
+      {clickId && <Journey clickId={clickId} clickTs={r.click_ts} campaignId={Number(r.campaign_id)} stages={stages} currency={currency} keyName={keyName} current={str(r.conv_id)} />}
+    </div>
   )
 }

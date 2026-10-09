@@ -367,18 +367,14 @@ func (s *Server) servePostback(w http.ResponseWriter, r *http.Request, ip netip.
 }
 
 // serveEvent records a public funnel stage reported by the visitor's browser:
-// /_e/<stage>?cid=<click id>, as a beacon, a pixel or a fetch from any origin.
+// /_e/<stage>?cid=<click id> (or any other name of click_id), as a beacon, a pixel or a fetch from any origin.
 // The answer never tells whether the event was accepted.
 func (s *Server) serveEvent(w http.ResponseWriter, r *http.Request, d *engine.DomainRT, snap *engine.Snapshot) {
 	h := w.Header()
 	h.Set("Access-Control-Allow-Origin", "*")
 	h.Set("Cache-Control", "no-store")
 	if r.Method == http.MethodGet || r.Method == http.MethodPost {
-		q := r.URL.Query()
-		id := q.Get("cid")
-		if id == "" {
-			id = q.Get("click_id")
-		}
+		id := snap.Params.Get(r.URL.Query(), "click_id")
 		s.eng.Event(&engine.EventInput{Ctx: r.Context(), IP: clientIP(r, d.IPSource, snap), OwnerID: d.OwnerID,
 			ClickID: id, Stage: strings.TrimPrefix(r.URL.Path, eventPrefix)})
 	}

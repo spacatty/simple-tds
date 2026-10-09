@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { BarChart3, ChevronDown, FileCode2, Globe, LayoutDashboard, LogOut, Menu, Moon, MousePointerClick, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, ShieldCheck, Split, Sun, Target, Users as UsersIcon } from 'lucide-react'
+import { BarChart3, ChevronDown, FileCode2, Globe, LayoutDashboard, Link2, LogOut, Menu, Moon, MousePointerClick, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, ShieldCheck, Split, Sun, Target, Users as UsersIcon } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { User } from '../types'
 import type { Theme } from '../hooks'
@@ -31,8 +31,16 @@ const GROUPS: { id: string; label: string; items: Item[] }[] = [
     label: t('Tracking'),
     items: [
       { to: '/conversions', label: t('Conversions'), icon: Target },
-      { to: '/reports', label: t('Reports'), icon: BarChart3 },
       { to: '/clicks', label: t('Clicks'), icon: MousePointerClick },
+    ],
+  },
+  {
+    id: 'reports',
+    label: t('Reports'),
+    items: [
+      // "end": the other reports live under /reports/ and must not light this one up.
+      { to: '/reports', label: t('Breakdown'), icon: BarChart3, end: true },
+      { to: '/reports/referrers', label: t('Referrers'), icon: Link2 },
     ],
   },
   { id: 'protection', label: t('Protection'), items: [{ to: '/antibot', label: t('Anti-bot'), icon: ShieldCheck, admin: true }] },

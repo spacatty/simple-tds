@@ -3873,3 +3873,166 @@ fieldset.plain:disabled .action-card {
   flex-wrap: wrap;
   margin-bottom: 12px;
 }
+
+/* ---- funnel progress of a click, and its journey ---------------------------- */
+.pips {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.pip {
+  width: 14px;
+  height: 8px;
+  border-radius: 3px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+}
+.pip.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.pip.goal.on {
+  background: var(--ok);
+  border-color: var(--ok);
+}
+.pip-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 400;
+  color: var(--text-2);
+  background: var(--surface-3);
+}
+.pips .pip-tag {
+  margin-left: 0;
+}
+.pip-tag.err {
+  color: var(--err);
+  background: var(--err-soft);
+}
+.pip-rev {
+  margin-left: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.funnel-steps {
+  margin-top: 16px;
+}
+.journey {
+  margin: 4px 0 16px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.detail-cols + .journey {
+  margin: 16px 0 0;
+}
+.journey-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+.journey-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.journey-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(140px, 240px) minmax(0, 1fr);
+  gap: 2px 16px;
+  padding: 0 0 12px 22px;
+}
+.journey-step:last-child {
+  padding-bottom: 0;
+}
+/* The line that joins a step to the next one. */
+.journey-step::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 14px;
+  bottom: -4px;
+  width: 1px;
+  background: var(--border-strong);
+}
+.journey-step:last-child::before {
+  display: none;
+}
+.journey-dot {
+  position: absolute;
+  left: 0;
+  top: 4px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 2px solid var(--border-strong);
+}
+.journey-step.on .journey-dot {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.journey-step.err .journey-dot {
+  background: var(--err);
+  border-color: var(--err);
+}
+.journey-step.current .journey-name {
+  color: var(--accent-text);
+}
+.journey-step.current .journey-dot {
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.journey-name {
+  font-weight: 600;
+  min-width: 0;
+}
+.journey-meta,
+.journey-params {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-2);
+  min-width: 0;
+  word-break: break-all;
+}
+@media (max-width: 760px) {
+  .journey-step {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .journey-meta,
+  .journey-params {
+    grid-column: 1;
+  }
+}
+.ref-pages {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px 12px 38px;
+  cursor: default;
+}
+.ref-url {
+  max-width: 0;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.ref-note {
+  margin-top: 10px;
+}

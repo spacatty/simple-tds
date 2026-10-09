@@ -81,6 +81,22 @@ export function fmtAgo(v: unknown): string {
   return t('{n}d ago', { n: Math.floor(s / 86400) })
 }
 
+/** A length of time in seconds: "42s", "3m 5s", "2h 14m", "5d 3h". */
+export function fmtSpan(v: unknown): string {
+  const s = Math.max(0, Math.round(num(v)))
+  if (s < 60) return t('{s}s', { s })
+  if (s < 3600) return t('{m}m {s}s', { m: Math.floor(s / 60), s: s % 60 })
+  if (s < 86400) return t('{h}h {m}m', { h: Math.floor(s / 3600), m: Math.floor((s % 3600) / 60) })
+  return t('{d}d {h}h', { d: Math.floor(s / 86400), h: Math.floor((s % 86400) / 3600) })
+}
+
+/** Seconds between two timestamps, or null when either is missing. */
+export function secondsBetween(from: unknown, to: unknown): number | null {
+  const a = parseDate(from)
+  const b = parseDate(to)
+  return a && b ? (b.getTime() - a.getTime()) / 1000 : null
+}
+
 export function ymd(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }

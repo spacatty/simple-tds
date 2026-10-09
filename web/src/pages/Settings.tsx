@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Cloud, KeyRound, ShieldCheck, Trash2 } from 'lucide-react'
 import { ApiError, errMsg, get, post, put } from '../api'
-import { useApp, useIsAdmin, useLoad } from '../hooks'
+import { useApp, useIsAdmin, useLoad, useMeta } from '../hooks'
 import type { Settings, SystemInfo } from '../types'
 import { Badge, Card, Chips, CodeBlock, CopyButton, ErrorBox, Field, Notice, NumberInput, PageHeader, Skeleton, Toggle, confirmDialog, toast, useBusy } from '../components/ui'
-import { t, tn, tx } from '../i18n'
+import { t, tn, ts, tx } from '../i18n'
 
 // Published at https://www.cloudflare.com/ips/
 const CLOUDFLARE_V4 = ['173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22', '103.31.4.0/22', '141.101.64.0/18', '108.162.192.0/18', '190.93.240.0/20', '188.114.96.0/20', '197.234.240.0/22', '198.41.128.0/17', '162.158.0.0/15', '104.16.0.0/13', '104.24.0.0/14', '172.64.0.0/13', '131.0.72.0/22']
@@ -42,6 +42,7 @@ function AdminSettings() {
           <PanelAccess s={settings.data} sys={sys.data} onSaved={(s) => (settings.setData(s), sys.reload())} />
           <Network s={settings.data} onSaved={settings.setData} />
           <TLS s={settings.data} onSaved={settings.setData} />
+          <ParamNames s={settings.data} onSaved={settings.setData} />
           <Data s={settings.data} onSaved={settings.setData} />
         </div>
       )}
@@ -260,6 +261,67 @@ function TLS({ s, onSaved }: SectionProps) {
       <div className="form-actions">
         <button className="btn primary" disabled={busy || (email === s.acme_email && staging === s.acme_staging)} onClick={() => save({ acme_email: email, acme_staging: staging }, t('TLS settings saved'))}>
           {t('Save TLS settings')}
+        </button>
+      </div>
+    </Card>
+  )
+}
+
+function ParamNames({ s, onSaved }: SectionProps) {
+  const defs = useMeta().system_params ?? []
+  const { reloadMeta } = useApp()
+  const [names, setNames] = useState<Record<string, string[]>>(s.param_aliases ?? {})
+  useEffect(() => setNames(s.param_aliases ?? {}), [s.param_aliases])
+  const { error, busy, save } = useSave(onSaved)
+
+  const check = (param: string) => (v: string) => {
+    if (!/^[A-Za-z0-9_.-]{1,40}$/.test(v)) return t('“{v}” is not a parameter name: 1–40 letters, digits, _ - or .', { v })
+    const owner = defs.find((d) => d.name !== param && (d.name === v || d.builtin.includes(v) || (names[d.name] ?? []).includes(v)))
+    return owner ? t('“{v}” is already a name of {param}', { v, param: owner.name }) : null
+  }
+  const submit = async () => {
+    // Every parameter is sent, an empty list included: the server keeps the ones that are left out.
+    const next = await save({ param_aliases: Object.fromEntries(defs.map((d) => [d.name, names[d.name] ?? []])) }, t('Parameter names saved'))
+    if (next) reloadMeta()
+  }
+  const dirty = defs.some((d) => (names[d.name] ?? []).join(',') !== (s.param_aliases?.[d.name] ?? []).join(','))
+
+  return (
+    <Card title={t('Parameter names')}>
+      <p className="muted">
+        {tx('The tracker reads these parameters from postbacks and campaign URLs. Give one more names to accept it under whatever the other side sends — for example <code>sub_id</code> for <code>click_id</code>, or <code>status</code> for <code>type</code>. The standard names keep working.', { code: (c) => <code>{c}</code> })}
+      </p>
+      {[...new Set(defs.map((d) => d.group))].map((group) => (
+        <div key={group}>
+          <div className="section-head">
+            <h4>{ts(group)}</h4>
+          </div>
+          {defs
+            .filter((d) => d.group === group)
+            .map((d) => (
+              <Field
+                key={d.name}
+                label={
+                  <>
+                    <code>{d.name}</code> <span className="muted">— {ts(d.label)}</span>
+                  </>
+                }
+                help={
+                  <>
+                    {d.builtin.length > 0 && <>{t('Always accepted: {names}.', { names: d.builtin.join(', ') })} </>}
+                    {d.macro && (names[d.name] ?? []).length > 0 && t('Also works as a macro: {macros}.', { macros: (names[d.name] ?? []).map((n) => `{${n}}`).join(' ') })}
+                  </>
+                }
+              >
+                <Chips mono values={names[d.name] ?? []} onChange={(v) => setNames((cur) => ({ ...cur, [d.name]: v }))} validate={check(d.name)} placeholder={t('Add a name and press Enter')} />
+              </Field>
+            ))}
+        </div>
+      ))}
+      {error && <div className="field-error">{error}</div>}
+      <div className="form-actions">
+        <button className="btn primary" disabled={busy || !dirty} onClick={submit}>
+          {t('Save parameter names')}
         </button>
       </div>
     </Card>

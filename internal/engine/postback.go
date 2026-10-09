@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -32,12 +33,6 @@ type PostbackInput struct {
 	HeaderSig string     // X-TDS-Signature, as an alternative to &sig=
 }
 
-// Parameters with a meaning to the tracker; everything else is stored as data.
-var clickIDParams = []string{"click_id", "clickid", "subid", "cid"}
-var hiddenParams = map[string]bool{"key": true, "sig": true, "ts": true, "type": true,
-	"click_id": true, "clickid": true, "subid": true, "cid": true,
-	"revenue": true, "payout": true, "currency": true} // these have columns of their own
-
 const (
 	maxPostbackParams = 60
 	sigMaxSkew        = 10 * time.Minute
@@ -47,11 +42,12 @@ const (
 
 // SignPostback computes the signature a sender must supply when the key
 // requires one: hex(HMAC-SHA256(secret, "k1=v1&k2=v2...")) over every
-// parameter except sig, sorted by name.
-func SignPostback(secret string, params url.Values) string {
+// parameter except sig, sorted by name. sigNames are the other names the
+// signature itself may arrive under.
+func SignPostback(secret string, params url.Values, sigNames ...string) string {
 	keys := make([]string, 0, len(params))
 	for k := range params {
-		if k != "sig" {
+		if k != "sig" && !slices.Contains(sigNames, k) {
 			keys = append(keys, k)
 		}
 	}
@@ -70,22 +66,16 @@ func SignPostback(secret string, params url.Values) string {
 	return hex.EncodeToString(m.Sum(nil))
 }
 
-func first(q url.Values, names ...string) string {
-	for _, n := range names {
-		if v := q.Get(n); v != "" {
-			return v
-		}
-	}
-	return ""
-}
-
 // Postback validates and stores a conversion. It returns the HTTP status and
 // a short body. Refusals are deliberately terse so probing reveals nothing.
 func (e *Engine) Postback(in *PostbackInput) (int, string) {
 	snap := e.Snap()
 	q := in.Params
 	ip := in.IP.Unmap()
-	keyStr := first(q, "key")
+	// Parameters with a meaning to the tracker are read through names, under
+	// whatever name the sender uses; everything else is stored as data.
+	names := snap.Params
+	keyStr := names.Get(q, "key")
 	if keyStr == "" {
 		keyStr = in.HeaderKey
 	}
@@ -117,23 +107,23 @@ func (e *Engine) Postback(in *PostbackInput) (int, string) {
 		return reject(http.StatusBadRequest, "too many parameters")
 	}
 	if key.RequireSig {
-		sig := first(q, "sig")
+		sig := names.Get(q, "sig")
 		if sig == "" {
 			sig = in.HeaderSig
 		}
-		ts, err := strconv.ParseInt(q.Get("ts"), 10, 64)
+		ts, err := strconv.ParseInt(names.Get(q, "ts"), 10, 64)
 		if err != nil {
 			return reject(http.StatusForbidden, "missing ts")
 		}
 		if d := time.Since(time.Unix(ts, 0)); d > sigMaxSkew || d < -sigMaxSkew {
 			return reject(http.StatusForbidden, "stale ts")
 		}
-		if !hmac.Equal([]byte(strings.ToLower(sig)), []byte(SignPostback(key.Secret, q))) {
+		if !hmac.Equal([]byte(strings.ToLower(sig)), []byte(SignPostback(key.Secret, q, names.Names("sig")...))) {
 			return reject(http.StatusForbidden, "bad signature")
 		}
 	}
 
-	typ := strings.ToLower(first(q, "type"))
+	typ := strings.ToLower(names.Get(q, "type"))
 	if typ == "" {
 		typ = key.DefaultType
 	}
@@ -151,7 +141,7 @@ func (e *Engine) Postback(in *PostbackInput) (int, string) {
 
 	switch key.Attribution {
 	case model.AttrClickID:
-		id := first(q, clickIDParams...)
+		id := names.Get(q, "click_id")
 		ref, err := e.parseClickID(id)
 		// A key only converts clicks of campaigns its owner runs: a click id
 		// lifted from someone else's traffic is as good as forged.
@@ -173,7 +163,7 @@ func (e *Engine) Postback(in *PostbackInput) (int, string) {
 		}
 	case model.AttrIP:
 		target := ip
-		if reported, err := netip.ParseAddr(q.Get("ip")); err == nil {
+		if reported, err := netip.ParseAddr(names.Get(q, "ip")); err == nil {
 			target = reported.Unmap()
 		}
 		var mine []uint32
@@ -208,7 +198,7 @@ func (e *Engine) Postback(in *PostbackInput) (int, string) {
 
 	if typ != model.TypeRejected {
 		conv.Revenue = key.DefaultRevenue
-		if s := first(q, "revenue", "payout"); s != "" {
+		if s := names.Get(q, "revenue"); s != "" {
 			if f, err := strconv.ParseFloat(s, 64); err == nil && f >= 0 && f < 1e12 {
 				conv.Revenue = f
 			}
@@ -225,14 +215,14 @@ func (e *Engine) Postback(in *PostbackInput) (int, string) {
 			}
 		}
 	}
-	conv.Currency = strings.ToUpper(clip(q.Get("currency"), 8))
+	conv.Currency = strings.ToUpper(clip(names.Get(q, "currency"), 8))
 	if conv.Currency == "" && campaign != nil {
 		conv.Currency = campaign.Currency
 	}
 
 	params := map[string]string{}
 	for k, vals := range q {
-		if hiddenParams[k] || len(vals) == 0 || len(k) > 64 {
+		if names.Stored(k) || len(vals) == 0 || len(k) > 64 {
 			continue
 		}
 		params[k] = clip(vals[0], 1000)

@@ -58,7 +58,7 @@ export interface FunnelRow {
   bots: number
   cost: number
   /** One entry per stage, in funnel order. */
-  steps: { reached: number; events: number; revenue: number }[]
+  steps: { reached: number; events: number; revenue: number; median_sec?: number }[]
 }
 
 export interface Campaign {
@@ -193,6 +193,8 @@ export interface Settings {
   maxmind_key: string
   geo_refresh_days: number
   retention_days: number
+  /** Extra names of system request parameters: system name → names accepted next to it. */
+  param_aliases: Record<string, string[]> | null
 }
 
 export interface ActionField {
@@ -239,7 +241,18 @@ export interface StreamPreset {
   builtin?: boolean
 }
 
+/** A request parameter the tracker gives a meaning to, with every name it is accepted under. */
+export interface SystemParam {
+  name: string
+  group: string
+  label: string
+  builtin: string[]
+  aliases: string[]
+  macro: boolean
+}
+
 export interface Meta {
+  system_params?: SystemParam[] | null
   actions: ActionDef[]
   filters: FilterDef[]
   macros: string[]
@@ -306,6 +319,12 @@ export interface ReportRow {
   types: Record<string, number> | null
 }
 
+export interface ReferrerRow extends ReportRow {
+  /** Clicks from phones and tablets. */
+  mobile: number
+  desktop: number
+}
+
 export interface GeoInfo {
   country: string
   region: string
@@ -349,6 +368,14 @@ export type Row = Record<string, unknown>
 
 export interface ConvRow extends Row {
   params: Record<string, string>
+}
+
+/** What a click went on to do, as the click log carries it. */
+export interface ClickEvent {
+  ts: string
+  type: string
+  revenue: number
+  goal: number
 }
 
 export interface Rejected {

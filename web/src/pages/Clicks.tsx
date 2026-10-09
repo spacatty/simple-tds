@@ -5,7 +5,7 @@ import { BarChart3, Bot, FlaskConical, RefreshCw, X } from 'lucide-react'
 import { get } from '../api'
 import type { Params } from '../api'
 import { canRead, useDebounced, useLoad } from '../hooks'
-import type { Campaign, Row, Stream } from '../types'
+import type { Campaign, ClickEvent, ConvKey, Row, Stage, Stream } from '../types'
 import { DataTable } from '../components/DataTable'
 import type { Column } from '../components/DataTable'
 import { DateRangePicker, currentRange, rememberRange } from '../components/DateRangePicker'
@@ -16,6 +16,7 @@ import { buildSearch, dimLabel, filterParams, parseFilters, rangeApiParams, rang
 import { fmtDateTime, num } from '../format'
 import { countryName } from '../countries'
 import { Browser, BrowserIcon, Country, Device, DeviceIcon, Flag, Os, OsIcon } from '../components/icons'
+import { Journey, StagePips } from '../components/Journey'
 import { t, ts } from '../i18n'
 
 const LIMIT = 100
@@ -34,6 +35,8 @@ export default function Clicks() {
   const filters = useMemo(() => parseFilters(sp), [spKey])
   const urlIP = sp.get('ip') ?? ''
   const urlClick = sp.get('click_id') ?? ''
+  const reached = sp.get('reached') ?? ''
+  const notReached = sp.get('not_reached') ?? ''
 
   const update = (fn: (n: URLSearchParams) => void, replace = false) => {
     const n = new URLSearchParams(sp)
@@ -68,8 +71,9 @@ export default function Clicks() {
 
   const camps = useLoad(() => get<Campaign[]>('campaigns'), [])
   const streams = useLoad(() => get<Stream[]>('streams'), [])
+  const keys = useLoad(() => get<ConvKey[]>('conversion-keys'), [])
 
-  const query: Params = useMemo(() => ({ ...rangeApiParams(range), ...filterParams(filters), ip: urlIP, click_id: urlClick }), [range, filters, urlIP, urlClick])
+  const query: Params = useMemo(() => ({ ...rangeApiParams(range), ...filterParams(filters), ip: urlIP, click_id: urlClick, reached, not_reached: notReached }), [range, filters, urlIP, urlClick, reached, notReached])
   const queryKey = JSON.stringify(query)
   useEffect(() => setOffset(0), [queryKey])
 
@@ -77,6 +81,9 @@ export default function Clicks() {
 
   const campById = (id: unknown) => camps.data?.find((c) => c.id === Number(id))
   const campName = (id: unknown) => campById(id)?.name ?? (Number(id) ? `#${id}` : '—')
+  const keyName = (id: unknown) => keys.data?.find((k) => k.id === Number(id))?.name ?? `#${id}`
+  const stagesOf = (id: unknown): Stage[] => campById(id)?.stages ?? []
+  const eventsOf = (r: Row) => (Array.isArray(r.events) ? (r.events as ClickEvent[]) : [])
   const streamName = (id: unknown) => streams.data?.find((s) => s.id === Number(id))?.name ?? (Number(id) ? `#${id}` : '—')
 
   const crumb = (dim: string) => filters.crumbs.find((c) => c.dim === dim)?.value
@@ -85,12 +92,44 @@ export default function Clicks() {
   const streamOptions = (streams.data ?? []).filter((s) => !campaignId || String(s.campaign_id) === campaignId).map((s) => ({ value: String(s.id), label: campaignId ? s.name : `${s.name} · ${campName(s.campaign_id)}` }))
 
   const crumbText = (dim: string, v: string) => (dim === 'campaign' ? campName(v) : dim === 'stream' ? streamName(v) : dim === 'country' ? (v ? `${countryName(v)} (${v})` : t('(unknown)')) : v === '' ? t('(empty)') : dim === 'action' ? ts(v) : v)
-  const anyFilter = filters.crumbs.length > 0 || !!filters.bots || !!urlIP || !!urlClick
+  const anyFilter = filters.crumbs.length > 0 || !!filters.bots || !!urlIP || !!urlClick || !!reached || !!notReached
+
+  // Funnel progress: "got to a stage" or "stopped right before it" (got to the one before, not to this one).
+  const stages = stagesOf(campaignId)
+  const stageLabel = (key: string) => stages.find((s) => s.key === key)?.name ?? key
+  const progress = notReached ? 'n:' + notReached : reached ? 'r:' + reached : ''
+  const setProgress = (v: string) =>
+    update((n) => {
+      n.delete('reached')
+      n.delete('not_reached')
+      const key = v.slice(2)
+      if (v.startsWith('r:')) n.set('reached', key)
+      if (v.startsWith('n:')) {
+        n.set('not_reached', key)
+        const i = stages.findIndex((s) => s.key === key)
+        if (i > 0) n.set('reached', stages[i - 1].key)
+      }
+    })
+  const progressOptions = [
+    ...stages.map((s) => ({ value: 'r:' + s.key, label: t('Reached: {stage}', { stage: s.name }) })),
+    ...stages.map((s) => ({ value: 'n:' + s.key, label: t('Stopped before: {stage}', { stage: s.name }) })),
+  ]
+  const showFunnel = (res.data?.rows ?? []).some((r) => stagesOf(r.campaign_id).length > 0 || eventsOf(r).length > 0)
 
   const columns: Column<Row>[] = [
     { key: 'ts', title: t('Time'), render: (r) => <span className="nowrap">{fmtDateTime(r.ts)}</span> },
     { key: 'campaign', title: t('Campaign'), render: (r) => <span className="ellipsis cell-w">{campName(r.campaign_id)}</span> },
     { key: 'stream', title: t('Stream'), render: (r) => <span className="ellipsis cell-w">{streamName(r.stream_id)}</span> },
+    ...(showFunnel
+      ? [
+          {
+            key: 'funnel',
+            title: t('Funnel'),
+            headTitle: t('How far the click got: one mark per stage of its campaign, filled once an event of that stage arrived'),
+            render: (r: Row) => <StagePips stages={stagesOf(r.campaign_id)} events={eventsOf(r)} clickTs={r.ts} />,
+          },
+        ]
+      : []),
     {
       key: 'ip',
       title: 'IP',
@@ -146,7 +185,7 @@ export default function Clicks() {
 
   return (
     <div className="page">
-      <PageHeader title={t('Clicks')} sub={t('Raw click log, newest first. Click a row to see every recorded field.')}>
+      <PageHeader title={t('Clicks')} sub={t('Raw click log, newest first. Click a row to see every recorded field and what the click went on to do.')}>
         <DateRangePicker value={range} onChange={setRange} />
         <button className="btn" onClick={() => res.reload()} title={t('Refresh')} aria-label={t('Refresh')}>
           <RefreshCw size={14} className={res.loading ? 'spin' : ''} />
@@ -160,6 +199,8 @@ export default function Clicks() {
             update((n) => {
               n.delete('campaign_id')
               n.delete('stream_id')
+              n.delete('reached')
+              n.delete('not_reached')
               if (v) n.set('campaign_id', v)
             })
           }
@@ -170,6 +211,7 @@ export default function Clicks() {
         <Select value={crumb('country') ?? ''} onChange={(v) => setParam('f.country', v)} placeholder={t('All countries')} options={COUNTRY_SELECT_OPTIONS} />
         <input className="input mono" style={{ width: 160 }} placeholder={t('IP address (exact)')} value={text.ip} onChange={(e) => setText({ ...text, ip: e.target.value })} />
         <input className="input mono" style={{ width: 220 }} placeholder={t('Click ID')} value={text.click_id} onChange={(e) => setText({ ...text, click_id: e.target.value })} />
+        {(stages.length > 0 || progress) && <Select value={progress} onChange={setProgress} placeholder={t('Any funnel progress')} options={progressOptions} />}
         <Segmented
           small
           value={filters.bots}
@@ -221,11 +263,29 @@ export default function Clicks() {
               </button>
             </span>
           )}
+          {reached && (
+            <span className="crumb">
+              <span className="muted">{t('Reached')}:</span> <b>{stageLabel(reached)}</b>
+              <button aria-label={t('Remove filter {name}', { name: t('Reached') })} onClick={() => setParam('reached', '')}>
+                <X size={12} />
+              </button>
+            </span>
+          )}
+          {notReached && (
+            <span className="crumb">
+              <span className="muted">{t('Did not reach')}:</span> <b>{stageLabel(notReached)}</b>
+              <button aria-label={t('Remove filter {name}', { name: t('Did not reach') })} onClick={() => setParam('not_reached', '')}>
+                <X size={12} />
+              </button>
+            </span>
+          )}
           <button
             className="btn small ghost"
             onClick={() =>
               update((n) => {
                 filters.crumbs.forEach((c) => n.delete(c.param))
+                n.delete('reached')
+                n.delete('not_reached')
                 n.delete('bots')
                 n.delete('ip')
                 n.delete('click_id')
@@ -245,7 +305,7 @@ export default function Clicks() {
           rowKey={(r, i) => str(r.click_id) || i}
           loading={res.loading}
           maxHeight="calc(100vh - 250px)"
-          expand={(r) => <ClickDetail r={r} campaign={campName(r.campaign_id)} stream={streamName(r.stream_id)} canSimulate={canRead(campById(r.campaign_id))} />}
+          expand={(r) => <ClickDetail r={r} campaign={campName(r.campaign_id)} stream={streamName(r.stream_id)} canSimulate={canRead(campById(r.campaign_id))} stages={stagesOf(r.campaign_id)} currency={campById(r.campaign_id)?.currency} keyName={keyName} />}
           empty={<Empty title={t('No clicks for this selection')}>{t('Clicks appear here a few seconds after they happen.')}</Empty>}
         />
         <Pagination total={res.data?.total ?? 0} limit={LIMIT} offset={offset} onChange={setOffset} />
@@ -254,7 +314,7 @@ export default function Clicks() {
   )
 }
 
-function ClickDetail({ r, campaign, stream, canSimulate }: { r: Row; campaign: string; stream: string; canSimulate: boolean }) {
+function ClickDetail({ r, campaign, stream, canSimulate, stages, currency, keyName }: { r: Row; campaign: string; stream: string; canSimulate: boolean; stages: Stage[]; currency?: string; keyName: (id: unknown) => string }) {
   let params: Record<string, string> = {}
   let paramsRaw = str(r.params)
   try {
@@ -297,6 +357,7 @@ function ClickDetail({ r, campaign, stream, canSimulate }: { r: Row; campaign: s
           {t('Conversions of this click')}
         </Link>
       </div>
+      {str(r.click_id) && <Journey clickId={str(r.click_id)} clickTs={r.ts} campaignId={Number(r.campaign_id)} stages={stages} currency={currency} keyName={keyName} />}
       <div className="detail-cols">
         <dl className="kv">
           {item(t('Click ID'), <span className="row gap-s">{str(r.click_id)} <CopyButton text={str(r.click_id)} className="icon-btn" /></span>, true)}

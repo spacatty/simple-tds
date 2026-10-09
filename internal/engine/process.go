@@ -100,7 +100,7 @@ func (e *Engine) lookupGeo(ctx context.Context, snap *Snapshot, ip netip.Addr, u
 func (e *Engine) newVisit(in *Input, snap *Snapshot) *Visit {
 	v := &Visit{Ctx: in.Ctx, Now: time.Now(), Integration: in.Integration, Domain: in.Domain, Path: in.Path, Method: in.Method,
 		IP: in.IP.Unmap(), Header: in.Header, Query: in.Query, Referer: clip(in.Referer, 1000), Proto: in.Proto,
-		Secure: in.Secure, TLS: in.TLS, Campaign: in.Campaign, Cookie: in.Cookie, Body: in.Body}
+		Secure: in.Secure, TLS: in.TLS, Campaign: in.Campaign, Cookie: in.Cookie, Body: in.Body, params: snap.Params}
 	if v.Query == nil {
 		v.Query = url.Values{}
 	}
@@ -263,10 +263,10 @@ func (e *Engine) record(v *Visit, c *CampaignRT, streamID int64, action string) 
 		DeviceType: v.UA.DeviceType, OS: v.UA.OS, OSVersion: v.UA.OSVersion, Browser: v.UA.Browser, BrowserVersion: v.UA.BrowserVersion,
 		UA: v.UA.Raw, Lang: v.Lang, Referer: v.Referer, RefDomain: v.RefDomain,
 		IsBot: v.Verdict.Bot, BotReason: clip(v.Verdict.Reason(), 200), IsDC: v.Verdict.Datacenter, IsUnique: v.Unique,
-		Action: action, Integration: v.Integration, Keyword: clip(v.Query.Get("keyword"), 500), Params: string(pj), Cost: cost,
+		Action: action, Integration: v.Integration, Keyword: clip(v.params.Get(v.Query, "keyword"), 500), Params: string(pj), Cost: cost,
 	}
 	for i := range click.Sub {
-		click.Sub[i] = clip(subParam(v.Query, i+1), 500)
+		click.Sub[i] = clip(v.params.Get(v.Query, "sub"+strconv.Itoa(i+1)), 500)
 	}
 	if v.TLS != nil {
 		click.JA3, click.JA4 = v.TLS.JA3, v.TLS.JA4
@@ -328,7 +328,7 @@ func (e *Engine) Simulate(ctx context.Context, in SimInput) (*SimResult, error) 
 	}
 	q, _ := url.ParseQuery(strings.TrimPrefix(in.Query, "?"))
 	v := &Visit{Ctx: ctx, Now: time.Now(), Integration: "direct", Domain: in.Domain, IP: ip, Header: h, Query: q,
-		Referer: in.Referer, RefDomain: hostOf(in.Referer), Lang: strings.ToLower(in.Language), Campaign: c, Unique: true}
+		Referer: in.Referer, RefDomain: hostOf(in.Referer), Lang: strings.ToLower(in.Language), Campaign: c, Unique: true, params: snap.Params}
 	v.UA = e.Detector.ParseUA(in.UserAgent)
 	v.Geo = e.lookupGeo(ctx, snap, ip, in.UserAgent)
 	if in.Country != "" {
