@@ -218,6 +218,51 @@ type Stage struct {
 	// Public stages can be reported from the visitor's browser with nothing
 	// but the click id. They never carry revenue or cost.
 	Public bool `json:"public"`
+	// Outcomes are the ways the stage can end ("sent", "error"). An event
+	// names one with its outcome parameter and still belongs to this stage, so
+	// a failure is told apart from an event that never came.
+	Outcomes []Outcome `json:"outcomes,omitempty"`
+}
+
+// Outcome kinds.
+const (
+	OutcomeOK      = "ok"
+	OutcomeFail    = "fail"
+	OutcomeNeutral = ""
+)
+
+// Outcome is one result of a stage.
+type Outcome struct {
+	Key  string `json:"key"`
+	Name string `json:"name"`
+	Kind string `json:"kind"` // ok | fail | "" (neither)
+}
+
+// Outcome returns the stage's outcome with this key, or nil.
+func (s *Stage) Outcome(key string) *Outcome {
+	for i := range s.Outcomes {
+		if s.Outcomes[i].Key == key {
+			return &s.Outcomes[i]
+		}
+	}
+	return nil
+}
+
+// Succeeded reports whether an event of the stage with this outcome ("" for
+// none) is the stage done rather than tried: a failure never is, and once the
+// stage names a successful outcome only that one is.
+func (s *Stage) Succeeded(outcome string) bool {
+	kind, named := OutcomeNeutral, false
+	for _, o := range s.Outcomes {
+		if o.Key == outcome {
+			kind = o.Kind
+		}
+		named = named || o.Kind == OutcomeOK
+	}
+	if named {
+		return kind == OutcomeOK
+	}
+	return kind != OutcomeFail
 }
 
 // Stage returns the campaign's stage with this key, or nil.
@@ -479,6 +524,9 @@ const TypeRejected = "rejected"
 
 // MaxStages caps a campaign's conversion funnel.
 const MaxStages = 12
+
+// MaxOutcomes caps the outcomes of one stage.
+const MaxOutcomes = 6
 
 // ConversionTypes are the built-in conversion kinds, accepted by every
 // postback. Campaigns add their own on top by defining stages.

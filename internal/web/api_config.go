@@ -501,6 +501,29 @@ func validateStages(c *model.Campaign) error {
 		if st.Name == "" {
 			st.Name = st.Key
 		}
+		if len(st.Outcomes) > model.MaxOutcomes {
+			return bad(fmt.Sprintf("stage %q: at most %d outcomes", st.Key, model.MaxOutcomes))
+		}
+		outs := map[string]bool{}
+		for j := range st.Outcomes {
+			o := &st.Outcomes[j]
+			o.Key = strings.ToLower(strings.TrimSpace(o.Key))
+			o.Name = strings.TrimSpace(o.Name)
+			switch {
+			case !events.ValidStageKey(o.Key):
+				return bad(fmt.Sprintf("stage %q: an outcome key is 1-32 lowercase letters, digits or _", st.Key))
+			case outs[o.Key]:
+				return bad(fmt.Sprintf("stage %q: outcome key %q is used twice", st.Key, o.Key))
+			case len(o.Name) > 64:
+				return bad(fmt.Sprintf("stage %q: the name of outcome %q is too long", st.Key, o.Key))
+			case !oneOf(o.Kind, model.OutcomeOK, model.OutcomeFail, model.OutcomeNeutral):
+				return bad(fmt.Sprintf("stage %q: outcome %q must be a success, a failure or neither", st.Key, o.Key))
+			}
+			if o.Name == "" {
+				o.Name = o.Key
+			}
+			outs[o.Key] = true
+		}
 		seen[st.Key] = true
 		if st.Goal {
 			goals++

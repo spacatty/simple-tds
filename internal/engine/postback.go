@@ -201,13 +201,27 @@ func (e *Engine) Postback(in *PostbackInput) (int, string) {
 	if conv.Goal, known = conversionKind(campaign, typ); !known {
 		return reject(http.StatusBadRequest, "unknown conversion type "+clip(typ, 32))
 	}
+	// A stage that defines outcomes takes the one the postback names; for any
+	// other stage the parameter is plain data, as it was before outcomes.
+	failed := false
+	if st := stageOf(campaign, typ); st != nil && len(st.Outcomes) > 0 {
+		if name := strings.ToLower(names.Get(q, "outcome")); name != "" {
+			o := st.Outcome(name)
+			if o == nil {
+				return reject(http.StatusBadRequest, "unknown outcome "+clip(name, 32)+" of stage "+typ)
+			}
+			conv.Outcome, failed = o.Key, o.Kind == model.OutcomeFail
+		}
+		conv.Goal = st.Goal && st.Succeeded(conv.Outcome)
+	}
 
 	if key.Dedupe && e.duplicate(in.Ctx, conv) {
 		return answer(http.StatusOK, events.PostbackDuplicate, "", "DUPLICATE")
 	}
 	conv.FromClick(click)
 
-	if typ != model.TypeRejected {
+	// A failed attempt earns nothing, the key's default revenue included.
+	if typ != model.TypeRejected && !failed {
 		conv.Revenue = key.DefaultRevenue
 		if s := names.Get(q, "revenue"); s != "" {
 			if f, err := strconv.ParseFloat(s, 64); err == nil && f >= 0 && f < 1e12 {
@@ -234,6 +248,10 @@ func (e *Engine) Postback(in *PostbackInput) (int, string) {
 	params := map[string]string{}
 	for k, vals := range q {
 		if names.Stored(k) || len(vals) == 0 || len(k) > 64 {
+			continue
+		}
+		// An outcome the stage took has its own column.
+		if conv.Outcome != "" && slices.Contains(names.Names("outcome"), k) {
 			continue
 		}
 		params[k] = clip(vals[0], 1000)
@@ -289,19 +307,33 @@ func conversionKind(c *CampaignRT, typ string) (goal, known bool) {
 	return false, false
 }
 
-// duplicate reports whether the click already has an event of this type, and
-// remembers this one otherwise.
+// stageOf returns the campaign's funnel stage with this key, or nil.
+func stageOf(c *CampaignRT, typ string) *model.Stage {
+	if c == nil {
+		return nil
+	}
+	return c.Stage(typ)
+}
+
+// dedupeKey identifies what a click may have only one of: an event of a type
+// and outcome. A failure followed by a success is two events, not a repeat.
+func dedupeKey(conv *events.Conversion) string {
+	return conv.ClickID + "|" + conv.Type + "|" + conv.Outcome
+}
+
+// duplicate reports whether the click already has an event of this type and
+// outcome, and remembers this one otherwise.
 func (e *Engine) duplicate(ctx context.Context, conv *events.Conversion) bool {
 	if conv.ClickID == "" {
 		return false
 	}
-	dk := conv.ClickID + "|" + conv.Type
+	dk := dedupeKey(conv)
 	// Check and claim in one step: two copies of a postback arriving together
 	// must not both get through.
 	if seen, _ := e.convs.ContainsOrAdd(dk, struct{}{}); seen {
 		return true
 	}
-	dup, err := e.Events.ConversionExists(ctx, conv.ClickID, conv.Type, conv.ClickTS)
+	dup, err := e.Events.ConversionExists(ctx, conv.ClickID, conv.Type, conv.Outcome, conv.ClickTS)
 	return err == nil && dup
 }
 
@@ -312,7 +344,7 @@ func (e *Engine) addConversion(ctx context.Context, conv *events.Conversion) err
 	err := e.Events.AddConversion(ctx, conv)
 	if err != nil {
 		slog.Error("conversion not stored", "err", err)
-		e.convs.Remove(conv.ClickID + "|" + conv.Type) // let the sender retry
+		e.convs.Remove(dedupeKey(conv)) // let the sender retry
 	}
 	return err
 }
@@ -328,12 +360,19 @@ type EventInput struct {
 	OwnerID int64 // owner of the domain the event arrived on
 	ClickID string
 	Stage   string
+	// Params is the query of the request: the outcome is read from it, and a
+	// few of the others are kept with the event (an error message, say).
+	Params url.Values
 }
 
 const (
 	// A browser reports its stages while the visitor is still on the page.
 	publicEventWindow = 7 * 24 * time.Hour
 	maxEventsPerMin   = 60 // per IP
+	// What a browser may attach to an event. Anyone holding a click id can
+	// send these, so they are kept small.
+	maxEventParams   = 8
+	maxEventParamLen = 200
 )
 
 // Event stores a public stage event and reports whether it was accepted.
@@ -358,6 +397,15 @@ func (e *Engine) Event(in *EventInput) bool {
 	}
 	conv := &events.Conversion{TS: now.UTC(), Type: st.Key, SenderIP: ip.String(), Params: "{}",
 		ClickID: in.ClickID, CampaignID: ref.CampaignID, StreamID: ref.StreamID, ClickTS: ref.At, Currency: c.Currency}
+	names := e.Snap().Params
+	if name := strings.ToLower(names.Get(in.Params, "outcome")); name != "" && len(st.Outcomes) > 0 {
+		o := st.Outcome(name)
+		if o == nil {
+			return false
+		}
+		conv.Outcome = o.Key
+	}
+	conv.Params = eventParams(in.Params, names, conv.Outcome != "")
 	if e.duplicate(in.Ctx, conv) {
 		return false
 	}
@@ -367,4 +415,30 @@ func (e *Engine) Event(in *EventInput) bool {
 	}
 	conv.FromClick(click)
 	return e.addConversion(in.Ctx, conv) == nil
+}
+
+// eventParams renders what a browser event carried besides the click id, as
+// the JSON kept with the event.
+func eventParams(q url.Values, names *ParamNames, outcomeTaken bool) string {
+	keys := make([]string, 0, len(q))
+	for k, vals := range q {
+		if names.Stored(k) || len(vals) == 0 || vals[0] == "" || len(k) > 64 {
+			continue
+		}
+		if outcomeTaken && slices.Contains(names.Names("outcome"), k) {
+			continue
+		}
+		keys = append(keys, k)
+	}
+	// Sorted, so which ones survive the cap does not depend on map order.
+	sort.Strings(keys)
+	if len(keys) > maxEventParams {
+		keys = keys[:maxEventParams]
+	}
+	params := make(map[string]string, len(keys))
+	for _, k := range keys {
+		params[k] = clip(q.Get(k), maxEventParamLen)
+	}
+	pj, _ := json.Marshal(params)
+	return string(pj)
 }

@@ -378,5 +378,12 @@
   "unknown kind of suppress rule": "неизвестный вид правила игнорирования",
   "pick campaigns you can edit": "выберите кампании, которые вам разрешено редактировать",
   "a user can keep at most 20000 suppress rules": "у пользователя может быть не больше 20000 правил игнорирования",
-  "unknown way to keep suppressed requests": "неизвестный способ хранения игнорируемых запросов"
+  "unknown way to keep suppressed requests": "неизвестный способ хранения игнорируемых запросов",
+  "Outcome of a funnel stage, also on browser event URLs": "Исход этапа воронки, также в URL браузерных событий",
+  "stage \"{1}\": at most {2} outcomes": "этап «{1}»: не больше {2} исходов",
+  "stage \"{1}\": an outcome key is 1-32 lowercase letters, digits or _": "этап «{1}»: ключ исхода — 1–32 строчные латинские буквы, цифры или _",
+  "stage \"{1}\": outcome key \"{2}\" is used twice": "этап «{1}»: ключ исхода «{2}» используется дважды",
+  "stage \"{1}\": the name of outcome \"{2}\" is too long": "этап «{1}»: слишком длинное название исхода «{2}»",
+  "stage \"{1}\": outcome \"{2}\" must be a success, a failure or neither": "этап «{1}»: исход «{2}» должен быть успехом, неудачей или нейтральным",
+  "unknown outcome {1} of stage {2}": "неизвестный исход {1} этапа {2}"
 }

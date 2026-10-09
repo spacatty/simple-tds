@@ -24,11 +24,13 @@ type Query struct {
 	Country    string
 	Domain     string
 	Type       string
+	Outcome    string // with Type: events of the stage that ended this way
 	IP         string
 	ClickID    string
 	Bots       string            // "" | only | exclude
 	// Reached and NotReached narrow the click log to clicks that have, or do
-	// not have, an event of that type (a funnel stage).
+	// not have, an event of that type (a funnel stage). Reached may name an
+	// outcome of the stage as well: "stage:outcome".
 	Reached, NotReached string
 	// Status and Search belong to the postback log: the outcome, and a piece
 	// of text to look for in the parameters or the refusal reason.
@@ -231,6 +233,9 @@ func (q *Query) convWhereAt(ts string) *where {
 	if q.Type != "" {
 		w.add("type = ?", q.Type)
 	}
+	if q.Outcome != "" {
+		w.add("outcome = ?", q.Outcome)
+	}
 	if q.IP != "" {
 		w.add("sender_ip = ?", q.IP)
 	}
@@ -423,7 +428,11 @@ func (q *Query) page() (int, int) {
 // the period onwards.
 func (q *Query) stageClicks(w *where, not bool, typ string) {
 	sub := &where{}
+	typ, outcome, _ := strings.Cut(typ, ":")
 	sub.add("type = ?", typ)
+	if outcome != "" {
+		sub.add("outcome = ?", outcome)
+	}
 	sub.add("click_id != ''")
 	if !q.From.IsZero() {
 		sub.add("ts >= ?", q.From)
@@ -483,7 +492,7 @@ func (db *DB) attachEvents(ctx context.Context, clicks []Row) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	evs, err := db.query(ctx, "SELECT click_id, ts, toString(type) AS type, revenue, goal FROM conversions WHERE ts >= ? AND click_id IN (?) ORDER BY ts",
+	evs, err := db.query(ctx, "SELECT click_id, ts, toString(type) AS type, toString(outcome) AS outcome, revenue, goal FROM conversions WHERE ts >= ? AND click_id IN (?) ORDER BY ts",
 		first.Add(-time.Minute), ids)
 	if err != nil {
 		return err
@@ -503,7 +512,7 @@ func (db *DB) attachEvents(ctx context.Context, clicks []Row) error {
 }
 
 const convCols = `ts, conv_id, click_id, key_id, type, revenue, cost, currency, sender_ip, params, campaign_id, stream_id,
- domain, country, city, device_type, os, browser, sub1, sub2, sub3, sub4, sub5, goal, is_bot, click_ts`
+ domain, country, city, device_type, os, browser, sub1, sub2, sub3, sub4, sub5, goal, is_bot, click_ts, outcome`
 
 func decodeParams(rows []Row) {
 	for _, r := range rows {
@@ -599,7 +608,7 @@ func (db *DB) ConversionsCSV(ctx context.Context, out io.Writer, q Query, keyNam
 		return err
 	}
 	rows, err := db.conn.Query(ctx, fmt.Sprintf(`SELECT ts, conv_id, click_id, key_id, type, revenue, cost, currency, sender_ip,
-		campaign_id, stream_id, domain, country, city, device_type, os, browser, sub1, sub2, sub3, sub4, sub5, params
+		campaign_id, stream_id, domain, country, city, device_type, os, browser, sub1, sub2, sub3, sub4, sub5, outcome, params
 		FROM conversions WHERE %s ORDER BY ts DESC LIMIT %d`, w.sql(), csvMaxRows), w.args...)
 	if err != nil {
 		return err
@@ -607,7 +616,7 @@ func (db *DB) ConversionsCSV(ctx context.Context, out io.Writer, q Query, keyNam
 	defer rows.Close()
 	cw := csv.NewWriter(out)
 	head := []string{"time", "conversion_id", "click_id", "key", "type", "revenue", "cost", "currency", "sender_ip",
-		"campaign_id", "stream_id", "domain", "country", "city", "device_type", "os", "browser", "sub1", "sub2", "sub3", "sub4", "sub5"}
+		"campaign_id", "stream_id", "domain", "country", "city", "device_type", "os", "browser", "sub1", "sub2", "sub3", "sub4", "sub5", "outcome"}
 	fixed := map[string]bool{}
 	for _, h := range head {
 		fixed[h] = true
@@ -627,9 +636,10 @@ func (db *DB) ConversionsCSV(ctx context.Context, out io.Writer, q Query, keyNam
 			rev, cost                       float64
 			domain, country, city, dev, osn string
 			browser, s1, s2, s3, s4, s5, pj string
+			outcome                         string
 		)
 		if err := rows.Scan(&ts, &convID, &clickID, &keyID, &typ, &rev, &cost, &cur, &sip, &campID, &streamID,
-			&domain, &country, &city, &dev, &osn, &browser, &s1, &s2, &s3, &s4, &s5, &pj); err != nil {
+			&domain, &country, &city, &dev, &osn, &browser, &s1, &s2, &s3, &s4, &s5, &outcome, &pj); err != nil {
 			return err
 		}
 		keyName := keyNames[keyID]
@@ -639,7 +649,7 @@ func (db *DB) ConversionsCSV(ctx context.Context, out io.Writer, q Query, keyNam
 		rec := []string{ts.UTC().Format(time.RFC3339), convID, clickID, csvSafe(keyName), typ,
 			strconv.FormatFloat(rev, 'f', -1, 64), strconv.FormatFloat(cost, 'f', -1, 64), csvSafe(cur), sip,
 			strconv.FormatUint(uint64(campID), 10), strconv.FormatUint(uint64(streamID), 10),
-			domain, country, csvSafe(city), dev, osn, browser, csvSafe(s1), csvSafe(s2), csvSafe(s3), csvSafe(s4), csvSafe(s5)}
+			domain, country, csvSafe(city), dev, osn, browser, csvSafe(s1), csvSafe(s2), csvSafe(s3), csvSafe(s4), csvSafe(s5), outcome}
 		params := map[string]string{}
 		json.Unmarshal([]byte(pj), &params)
 		for _, k := range keys {
@@ -703,11 +713,11 @@ func (db *DB) LastClickByIP(ctx context.Context, ip string, since time.Time, cam
 }
 
 // ConversionExists reports whether a click already has a conversion of this
-// type. A conversion cannot predate its click, so the table, which is ordered
+// type and outcome. A conversion cannot predate its click, so the table, which is ordered
 // by time, is only read from the click onwards.
-func (db *DB) ConversionExists(ctx context.Context, clickID, typ string, clickAt time.Time) (bool, error) {
+func (db *DB) ConversionExists(ctx context.Context, clickID, typ, outcome string, clickAt time.Time) (bool, error) {
 	var n uint64
-	err := db.conn.QueryRow(ctx, "SELECT count() FROM conversions WHERE ts >= ? AND click_id = ? AND type = ?",
-		clickAt.Add(-time.Minute), clickID, typ).Scan(&n)
+	err := db.conn.QueryRow(ctx, "SELECT count() FROM conversions WHERE ts >= ? AND click_id = ? AND type = ? AND outcome = ?",
+		clickAt.Add(-time.Minute), clickID, typ, outcome).Scan(&n)
 	return n > 0, err
 }

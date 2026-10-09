@@ -2561,23 +2561,29 @@ fieldset.plain:disabled .chips-box {
   flex: 0 1 120px;
   min-width: 40px;
 }
+.wbars-box {
+  container-type: inline-size;
+}
+/* Name, numbers, then the bar — on tracks shared by every row. */
 .wbars {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 32%) auto minmax(40px, auto) minmax(0, 1fr);
+  gap: 10px 8px;
   padding-top: 4px;
 }
 .wbar {
+  grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto 44px;
-  align-items: baseline;
-  gap: 5px 8px;
+  grid-template-columns: subgrid;
+  align-items: center;
+  row-gap: 5px;
   font-size: 12.5px;
 }
 .wbar > span {
   color: var(--text-2);
 }
 .wbar > b {
+  text-align: right;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
 }
@@ -2588,11 +2594,21 @@ fieldset.plain:disabled .chips-box {
   color: var(--text-3);
 }
 .wbar-track {
-  grid-column: 1 / -1;
-  height: 6px;
+  height: 8px;
   border-radius: 3px;
   background: var(--surface-3);
   overflow: hidden;
+}
+/* A narrow widget has no room for a bar beside the numbers: it goes under them. */
+@container (max-width: 340px) {
+  .wbars {
+    grid-template-columns: minmax(0, 1fr) auto minmax(40px, auto);
+    row-gap: 12px;
+  }
+  .wbar-track {
+    grid-column: 1 / -1;
+    height: 6px;
+  }
 }
 .wbar-track > div {
   height: 100%;
@@ -3251,6 +3267,72 @@ tr.camp-off .tnum {
 .stg-actions {
   display: flex;
   padding-top: 2px;
+}
+.stg-row {
+  position: relative;
+}
+.stg-row.dragging {
+  opacity: 0.35;
+}
+.stg-row.drop-before::before,
+.stg-row.drop-after::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  z-index: 1;
+}
+.stg-row.drop-before::before {
+  top: -1px;
+}
+.stg-row.drop-after::after {
+  bottom: -1px;
+}
+.stg-n.grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1px;
+  width: 34px;
+  height: 32px;
+  cursor: grab;
+}
+.stg-n.grip:active {
+  cursor: grabbing;
+}
+/* The ways a stage can end, hanging off its row. */
+.stg-outs {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 2px 0 4px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+}
+.stg-out {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 3fr) minmax(0, 2fr) auto;
+  gap: 4px 8px;
+  align-items: center;
+  padding-left: 8px;
+  border-left: 3px solid var(--border-strong);
+  border-radius: 2px;
+}
+.stg-out.ok {
+  border-left-color: var(--ok);
+}
+.stg-out.fail {
+  border-left-color: var(--err);
+}
+.stg-out .field-error {
+  grid-column: 1 / -1;
+  margin-top: 0;
+}
+.stg-outs .field-help {
+  margin-top: 0;
 }
 @media (max-width: 700px) {
   .stg-fields {
@@ -4064,6 +4146,10 @@ tr.camp-off .tnum {
   background: var(--info-soft);
   color: var(--info);
 }
+.tag.ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
 .tag.err {
   background: var(--err-soft);
   color: var(--err);
@@ -4472,30 +4558,53 @@ tr.camp-off .tnum {
 .fnv-table td:first-child {
   max-width: 240px;
 }
+/* A funnel drawn as one: centred blocks that narrow step by step, each holding its own numbers. */
 .fnl {
   display: flex;
   flex-direction: column;
+  align-items: center;
+}
+.fnl-group {
+  display: contents;
 }
 .fnl-step {
-  display: grid;
-  grid-template-columns: 22px minmax(110px, 26%) minmax(60px, 1fr) minmax(48px, auto) 58px;
+  --tone: var(--series-1);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  /* Never narrower than its own text. */
+  min-width: min(100%, 300px);
+  padding: 9px 14px;
+  border: 1px solid color-mix(in srgb, var(--tone) 45%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--tone) 18%, transparent);
+  transition: width 0.25s ease;
+}
+.fnl-step.top {
+  background: color-mix(in srgb, var(--tone) 9%, transparent);
+}
+.fnl-step.goal {
+  --tone: var(--ok);
+}
+.fnl-head {
+  display: flex;
   align-items: center;
-  column-gap: 10px;
+  justify-content: space-between;
+  gap: 12px;
 }
 .fnl-ix {
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  flex: none;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  background: var(--surface-3);
-  color: var(--text-2);
+  background: color-mix(in srgb, var(--tone) 30%, transparent);
+  color: var(--text);
   font-size: 11px;
   font-weight: 700;
-}
-.fnl-step.goal .fnl-ix {
-  background: var(--ok-soft);
-  color: var(--ok);
 }
 .fnl-name {
   display: flex;
@@ -4506,29 +4615,15 @@ tr.camp-off .tnum {
 .fnl-name b {
   font-weight: 600;
 }
-.fnl-track {
-  height: 22px;
-  border-radius: 5px;
-  background: var(--surface-3);
-  overflow: hidden;
-}
-.fnl-bar {
-  height: 100%;
-  min-width: 2px;
-  border-radius: 5px;
-  background: var(--series-1);
-  transition: width 0.25s ease;
-}
-.fnl-step.top .fnl-bar {
-  background: color-mix(in srgb, var(--series-1) 45%, transparent);
-}
-.fnl-step.goal .fnl-bar {
-  background: var(--ok);
+.fnl-val {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
 }
 .fnl-num {
-  text-align: right;
-  font-size: 14px;
-  font-weight: 650;
+  font-size: 15px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
@@ -4536,31 +4631,87 @@ a.fnl-num:hover {
   color: var(--accent-text);
 }
 .fnl-pct {
-  text-align: right;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   color: var(--text-2);
 }
 .fnl-meta {
-  grid-column: 3 / -1;
   display: flex;
   flex-wrap: wrap;
   gap: 2px 14px;
-  margin-top: 3px;
   font-size: 11.5px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 .fnl-meta a {
   color: inherit;
   text-decoration: underline dotted;
 }
+/* A stage with outcomes: a strip cut into how it ended, with the legend under it. */
+.fnl-split {
+  display: flex;
+  gap: 1px;
+  height: 5px;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.fnl-split i {
+  min-width: 2px;
+  flex-basis: 0;
+  background: var(--series-1);
+}
+.fnl-split i.ok,
+.fnl-out.ok i {
+  background: var(--ok);
+}
+.fnl-split i.fail,
+.fnl-out.fail i {
+  background: var(--err);
+}
+.fnl-split i.rest,
+.fnl-out.rest i {
+  background: color-mix(in srgb, var(--text-3) 45%, transparent);
+}
+.fnl-outs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.fnl-out {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: inherit;
+  white-space: nowrap;
+}
+a.fnl-out:hover {
+  color: var(--accent-text);
+}
+.fnl-out i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--series-1);
+}
+.fnl-out b {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.fnl-out span {
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+/* The seam between two blocks: what went on, and what did not. */
 .fnl-drop {
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 26px;
-  /* Under the bars, past the index and the name. */
-  margin-left: calc(22px + 10px + max(110px, 26%) + 10px);
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  min-height: 28px;
+  padding: 3px 0;
   font-size: 11.5px;
   color: var(--text-3);
 }
@@ -4577,19 +4728,8 @@ a.fnl-num:hover {
 }
 @media (max-width: 620px) {
   .fnl-step {
-    grid-template-columns: 22px minmax(0, 1fr) auto 52px;
-  }
-  .fnl-track {
-    grid-column: 2 / -1;
-    grid-row: 2;
-    height: 10px;
-    margin-top: 4px;
-  }
-  .fnl-meta {
-    grid-column: 2 / -1;
-  }
-  .fnl-drop {
-    margin-left: 32px;
+    min-width: min(100%, 250px);
+    padding: 8px 10px;
   }
 }
 
@@ -5070,6 +5210,20 @@ fieldset.plain:disabled .action-card {
 .slink .url-line code {
   font-size: 11.5px;
 }
+.slink-out {
+  grid-column: 2;
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+.slink-out .tag {
+  justify-self: start;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .slinks .field-help {
   margin-top: 0;
 }
@@ -5210,6 +5364,14 @@ fieldset.plain:disabled .action-card {
 .pip-tag.err {
   color: var(--err);
   background: var(--err-soft);
+}
+.pip-tag.ok {
+  color: var(--ok);
+  background: var(--ok-soft);
+}
+.pip.fail.on {
+  background: var(--err);
+  border-color: var(--err);
 }
 .pip-rev {
   margin-left: 2px;

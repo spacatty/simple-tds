@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowDown, ArrowUp, CornerDownLeft, Plus, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, CornerDownLeft, GripVertical, Plus, Split, Trash2, X } from 'lucide-react'
 import { errMsg, get, put } from '../api'
 import { useLoad, useMeta } from '../hooks'
-import type { Campaign, ConvKey, Stage } from '../types'
+import type { Campaign, ConvKey, Outcome, Stage } from '../types'
 import type { DateRange } from '../components/DateRangePicker'
 import { Card, CopyButton, Notice, Select, useBusy, toast } from '../components/ui'
 import { FunnelView } from './FunnelDrawer'
@@ -53,6 +53,26 @@ function StageEditor({ campaign, saved, readOnly, onSaved }: { campaign: Campaig
   const [error, setError] = useState('')
   const [busy, run] = useBusy()
   const dirty = JSON.stringify(rows) !== JSON.stringify(saved)
+  // Dragging a stage by its grip: the row being moved, and where it would land.
+  const [armed, setArmed] = useState(-1)
+  const [drag, setDrag] = useState(-1)
+  const [over, setOver] = useState<{ i: number; after: boolean } | null>(null)
+  const endDrag = () => {
+    setArmed(-1)
+    setDrag(-1)
+    setOver(null)
+  }
+  const drop = () => {
+    if (drag >= 0 && over && over.i !== drag) {
+      setRows((r) => {
+        const out = r.filter((_, j) => j !== drag)
+        const at = over.i + (over.after ? 1 : 0) - (drag < over.i ? 1 : 0)
+        out.splice(at, 0, r[drag])
+        return out
+      })
+    }
+    endDrag()
+  }
 
   const patch = (i: number, p: Partial<Stage>) => setRows((r) => r.map((s, j) => (j === i ? { ...s, ...p } : s)))
   // The key follows the name until it is edited by hand.
@@ -65,9 +85,30 @@ function StageEditor({ campaign, saved, readOnly, onSaved }: { campaign: Campaig
     })
   const setGoal = (i: number) => setRows((r) => r.map((s, j) => ({ ...s, goal: j === i, public: j === i ? false : s.public })))
 
+  const maxOut = meta.max_outcomes ?? 6
+  const outs = (s: Stage) => s.outcomes ?? []
+  const setOuts = (i: number, list: Outcome[]) => patch(i, { outcomes: list.length ? list : undefined })
+  const patchOut = (i: number, j: number, p: Partial<Outcome>) => setOuts(i, outs(rows[i]).map((o, k) => (k === j ? { ...o, ...p } : o)))
+  const renameOut = (i: number, j: number, name: string) => {
+    const o = outs(rows[i])[j]
+    patchOut(i, j, o.key === slug(o.name) ? { name, key: slug(name) } : { name })
+  }
+  // The first split is the usual pair; after that, one blank outcome at a time.
+  const addOut = (i: number) =>
+    setOuts(
+      i,
+      outs(rows[i]).length === 0
+        ? [
+            { key: 'ok', name: t('Success'), kind: 'ok' },
+            { key: 'error', name: t('Error'), kind: 'fail' },
+          ]
+        : [...outs(rows[i]), { key: '', name: '', kind: '' }],
+    )
+
   const dupes = new Set(rows.map((s) => s.key).filter((k, i, all) => k && all.indexOf(k) !== i))
   const keyError = (s: Stage) => (!/^[a-z0-9_]{1,32}$/.test(s.key) ? t('a-z, 0-9 and _ only') : s.key === 'rejected' ? t('reserved') : dupes.has(s.key) ? t('used twice') : '')
-  const invalid = rows.some((s) => keyError(s))
+  const outError = (s: Stage, o: Outcome) => (!/^[a-z0-9_]{1,32}$/.test(o.key) ? t('a-z, 0-9 and _ only') : outs(s).filter((x) => x.key === o.key).length > 1 ? t('used twice') : '')
+  const invalid = rows.some((s) => keyError(s) || outs(s).some((o) => outError(s, o)))
 
   const save = () =>
     run(async () => {
@@ -89,8 +130,32 @@ function StageEditor({ campaign, saved, readOnly, onSaved }: { campaign: Campaig
       </p>
       <fieldset className="plain" disabled={readOnly}>
         {rows.map((s, i) => (
-          <div className="stg-row" key={i}>
-            <span className="stg-n">{i + 1}</span>
+          <div
+            className={'stg-row' + (drag === i ? ' dragging' : '') + (over && over.i === i && drag >= 0 && drag !== i ? (over.after ? ' drop-after' : ' drop-before') : '')}
+            key={i}
+            draggable={armed === i && !readOnly}
+            onDragStart={(e) => {
+              e.dataTransfer.effectAllowed = 'move'
+              e.dataTransfer.setData('text/plain', s.key)
+              setDrag(i)
+            }}
+            onDragEnd={endDrag}
+            onDragOver={(e) => {
+              if (drag < 0) return
+              e.preventDefault()
+              const box = e.currentTarget.getBoundingClientRect()
+              const after = e.clientY > box.top + box.height / 2
+              if (!over || over.i !== i || over.after !== after) setOver({ i, after })
+            }}
+            onDrop={(e) => {
+              e.preventDefault()
+              drop()
+            }}
+          >
+            <span className={'stg-n' + (readOnly ? '' : ' grip')} title={readOnly ? undefined : t('Drag to reorder')} onMouseDown={() => !readOnly && setArmed(i)} onMouseUp={() => setArmed(-1)}>
+              {!readOnly && <GripVertical size={14} />}
+              {i + 1}
+            </span>
             <div className="stg-fields">
               <input className="input" placeholder={t('Name, e.g. Registration')} value={s.name} maxLength={64} onChange={(e) => rename(i, e.target.value)} />
               <input className="input mono" placeholder={t('key')} title={t('What postbacks send as type')} value={s.key} maxLength={32} onChange={(e) => patch(i, { key: e.target.value.toLowerCase().trim() })} />
@@ -103,8 +168,36 @@ function StageEditor({ campaign, saved, readOnly, onSaved }: { campaign: Campaig
                 </label>
               </div>
               {s.key !== '' && keyError(s) && <div className="field-error">{t('Key: {error}', { error: keyError(s) })}</div>}
+              {outs(s).length > 0 && (
+                <div className="stg-outs">
+                  {outs(s).map((o, j) => (
+                    <div className={'stg-out ' + (o.kind || 'none')} key={j}>
+                      <Select
+                        className="input-sm"
+                        value={o.kind || 'none'}
+                        onChange={(v) => patchOut(i, j, { kind: v === 'none' ? '' : (v as Outcome['kind']) })}
+                        options={[
+                          { value: 'ok', label: t('Success') },
+                          { value: 'fail', label: t('Failure') },
+                          { value: 'none', label: t('Neither') },
+                        ]}
+                      />
+                      <input className="input input-sm" placeholder={t('Name, e.g. Sent')} value={o.name} maxLength={64} onChange={(e) => renameOut(i, j, e.target.value)} />
+                      <input className="input input-sm mono" placeholder={t('key')} title={t('What postbacks send as outcome')} value={o.key} maxLength={32} onChange={(e) => patchOut(i, j, { key: e.target.value.toLowerCase().trim() })} />
+                      <button className="icon-btn" title={t('Remove outcome')} onClick={() => setOuts(i, outs(s).filter((_, k) => k !== j))}>
+                        <X size={13} />
+                      </button>
+                      {o.key !== '' && outError(s, o) && <div className="field-error">{t('Key: {error}', { error: outError(s, o) })}</div>}
+                    </div>
+                  ))}
+                  {s.goal && outs(s).some((o) => o.kind === 'ok') && <div className="field-help">{t('Only a successful outcome of the goal counts as the conversion.')}</div>}
+                </div>
+              )}
             </div>
             <div className="stg-actions">
+              <button className="icon-btn" title={outs(s).length ? t('Add outcome') : t('Split into outcomes: tell a success from a failure inside this stage')} disabled={outs(s).length >= maxOut} onClick={() => addOut(i)}>
+                <Split size={14} />
+              </button>
               <button className="icon-btn" title={t('Move up')} disabled={i === 0} onClick={() => move(i, -1)}>
                 <ArrowUp size={14} />
               </button>
@@ -174,7 +267,8 @@ export function StageLinks({ stages, domain, onInsert }: { stages: Stage[]; doma
   const who = !key || key.attribution === 'click_id' ? '&click_id={click_id}' : key.attribution === 'ip' ? '&ip=VISITOR_IP' : ''
   const postback = (type: string) => `${base}${meta.postback_path}?key=${key ? key.key : 'YOUR_KEY'}${who}&type=${type}${key?.require_sig ? '&ts=UNIX_TIME&sig=SIGNATURE' : ''}`
   const eventUrl = (stage: string) => `${base}${meta.event_prefix ?? '/_e/'}${stage}?cid=CLICK_ID`
-  const rows = stages.length > 0 ? stages.map((st) => ({ ...st, url: st.public ? eventUrl(st.key) : postback(st.key) })) : [{ key: key?.default_type ?? 'lead', name: t('Conversion'), goal: false, public: false, url: postback(key?.default_type ?? 'lead') }]
+  const rows: (Stage & { url: string })[] = stages.length > 0 ? stages.map((st) => ({ ...st, url: st.public ? eventUrl(st.key) : postback(st.key) })) : [{ key: key?.default_type ?? 'lead', name: t('Conversion'), goal: false, public: false, url: postback(key?.default_type ?? 'lead') }]
+  const split = rows.some((r) => (r.outcomes ?? []).length > 0)
   const anyServer = rows.some((r) => !r.public)
 
   return (
@@ -221,9 +315,23 @@ export function StageLinks({ stages, domain, onInsert }: { stages: Stage[]; doma
             )}
             <CopyButton text={r.url} label={t('Copy')} />
           </div>
+          {(r.outcomes ?? []).map((o) => (
+            <div className="slink-out" key={o.key}>
+              <span className={'tag ' + (o.kind === 'ok' ? 'ok' : o.kind === 'fail' ? 'err' : '')}>{o.name}</span>
+              <div className="url-line">
+                <code>{`${r.url}&outcome=${o.key}`}</code>
+                <CopyButton text={`${r.url}&outcome=${o.key}`} label={t('Copy')} />
+              </div>
+            </div>
+          ))}
         </div>
       ))}
       <div className="field-help">
+        {split && (
+          <>
+            {tx('An outcome is the same event with <code>&outcome=…</code>; without it the event only says the stage was started. Add any parameter of your own to keep details with it, for example <code>&reason=timeout</code> on an error.', { code: (c) => <code>{c}</code> })}{' '}
+          </>
+        )}
         {anyServer && key?.attribution !== 'ip' && key?.attribution !== 'none' && (
           <>
             {tx("Postbacks are sent by the network or your backend: put the <code>{click_id}</code> macro into the stream's offer URL and replace <code>{click_id}</code> above with the sender's own macro for that value.", { code: (c) => <code>{c}</code> })}{' '}

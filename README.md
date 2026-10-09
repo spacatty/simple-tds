@@ -298,7 +298,7 @@ https://domain/postback?key=KEY&click_id={click_id}&type=sale&revenue=10&currenc
 
 - Parameter names are not fixed. `click_id` is also read from `clickid`,
   `subid` and `cid`, `revenue` from `payout`, and Settings → Parameter names
-  adds more for any of them (`key`, `type`, `currency`, `ip`, `sig`, `ts`, and
+  adds more for any of them (`key`, `type`, `outcome`, `currency`, `ip`, `sig`, `ts`, and
   on campaign URLs `keyword` and `sub1`–`sub5`) — for a network that can only
   send `sub_id=` or `status=`. A name added for `click_id`, `keyword` or a sub
   id works as a macro too: `{sub_id}`.
@@ -333,8 +333,24 @@ same click.
   beacon, any origin). They carry no revenue, are counted once per click and
   are accepted for 7 days after it. In a stream's content or URL the macro
   `{event:<stage>}` expands to that address for the visitor's own click.
-- The Funnel tab and the stream editor build the URL of every stage: choose a
-  conversion key there and copy the postbacks with the key already in place.
+- A stage can be split into **outcomes** — the ways it can end, each a
+  success, a failure or neither: `send → sent | error`,
+  `purchase → paid | declined`. The event is the same one with
+  `&outcome=<key>` added (`…&type=send&outcome=error&reason=timeout`), so a
+  failure stays inside its stage instead of becoming a step of its own, and
+  is told apart from an event that never came: the funnel cuts the stage's bar
+  into its outcomes and "no result". A click counts under one outcome — a
+  successful one if it has any, otherwise the latest — so a retry that worked
+  is not a failure. Without `outcome` the event only says the stage was
+  started. Any other parameter (the error text, a code) is kept with the event
+  and can be filtered in the conversion log. A failed outcome carries no
+  revenue; on the goal stage only a successful outcome is the conversion once
+  one is defined. Dedupe is per click, type and outcome. An outcome the stage
+  does not define is refused and shows in the postback log. Browser events
+  take `&outcome=` too and keep up to 8 short parameters.
+- The Funnel tab and the stream editor build the URL of every stage and
+  outcome: choose a conversion key there and copy the postbacks with the key
+  already in place. Stages are reordered by dragging.
 - The Funnel tab shows how many clicks of the period reached each stage,
   whenever the events arrived, in any order or strictly in order. Give keys a
   window long enough for the late stages.

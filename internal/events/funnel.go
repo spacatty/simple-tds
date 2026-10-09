@@ -17,6 +17,24 @@ type FunnelStep struct {
 	// MedianSec is the typical time from the click to its first event of
 	// this stage; zero when nothing reached it.
 	MedianSec float64 `json:"median_sec"`
+	// Outcomes splits Reached by how the stage ended, one entry per outcome
+	// of the stage, in its order. What is left over had no result.
+	Outcomes []FunnelOutcome `json:"outcomes,omitempty"`
+}
+
+// FunnelOutcome is the part of a stage that ended one way.
+type FunnelOutcome struct {
+	Reached int64 `json:"reached"` // clicks whose stage ended this way
+	Events  int64 `json:"events"`  // events received with this outcome
+}
+
+// FunnelStage is a stage as the funnel query needs it.
+type FunnelStage struct {
+	Key      string
+	Outcomes []string // outcome keys, in the order they are reported
+	// Wins are the successful outcomes. A click that has one is counted
+	// there whatever else it has: a retry that worked is not a failure.
+	Wins []string
 }
 
 type FunnelRow struct {
@@ -51,7 +69,10 @@ const (
 //
 // A click has reached a stage once any event of that stage arrived for it.
 // With strict set it must also have passed every earlier stage, in order.
-func (db *DB) Funnel(ctx context.Context, group string, stages []string, strict bool, q Query) ([]FunnelRow, error) {
+//
+// A click is counted under one outcome of a stage: a successful one if it has
+// any, otherwise the latest it sent.
+func (db *DB) Funnel(ctx context.Context, group string, stages []FunnelStage, strict bool, q Query) ([]FunnelRow, error) {
 	d, ok := dims[group]
 	if !ok || !d.clicks || !d.convs {
 		return nil, fmt.Errorf("unknown grouping %q", group)
@@ -60,8 +81,10 @@ func (db *DB) Funnel(ctx context.Context, group string, stages []string, strict 
 		return nil, fmt.Errorf("the campaign has no stages")
 	}
 	for _, s := range stages {
-		if !ValidStageKey(s) {
-			return nil, fmt.Errorf("bad stage key %q", s)
+		for _, k := range append([]string{s.Key}, s.Outcomes...) {
+			if !ValidStageKey(k) {
+				return nil, fmt.Errorf("bad stage key %q", k)
+			}
 		}
 	}
 	expr := d.expr
@@ -93,7 +116,7 @@ func (db *DB) Funnel(ctx context.Context, group string, stages []string, strict 
 	// clicks of each group added up.
 	var conds, inner, outer []string
 	for i, s := range stages {
-		cond := "type = '" + s + "'"
+		cond := "type = '" + s.Key + "'"
 		conds = append(conds, cond)
 		reached := "max(" + cond + ")"
 		if strict {
@@ -104,6 +127,22 @@ func (db *DB) Funnel(ctx context.Context, group string, stages []string, strict 
 		inner = append(inner, fmt.Sprintf("%s AS is%d, countIf(%s) AS ie%d, sumIf(revenue, %s) AS ir%d, minIf(toUnixTimestamp64Milli(ts), %s) - min(toUnixTimestamp64Milli(cts)) AS id%d",
 			reached, i, cond, i, cond, i, cond, i))
 		outer = append(outer, fmt.Sprintf("sum(is%d) AS s%d, sum(ie%d) AS e%d, sum(ir%d) AS r%d, ifNotFinite(quantileIf(0.5)(id%d, is%d > 0 AND ie%d > 0), 0) / 1000 AS m%d", i, i, i, i, i, i, i, i, i, i))
+		if len(s.Outcomes) == 0 {
+			continue
+		}
+		// io: the one outcome the click is counted under at this stage.
+		last := func(keys []string) string {
+			return fmt.Sprintf("argMaxIf(toString(outcome), ts, %s AND outcome IN ('%s'))", cond, strings.Join(keys, "', '"))
+		}
+		final := last(s.Outcomes)
+		if len(s.Wins) > 0 {
+			final = fmt.Sprintf("if(%s != '', %s, %s)", last(s.Wins), last(s.Wins), final)
+		}
+		inner = append(inner, fmt.Sprintf("%s AS io%d", final, i))
+		for j, o := range s.Outcomes {
+			inner = append(inner, fmt.Sprintf("countIf(%s AND outcome = '%s') AS ic%d_%d", cond, o, i, j))
+			outer = append(outer, fmt.Sprintf("countIf(is%d > 0 AND io%d = '%s') AS o%d_%d, sum(ic%d_%d) AS oe%d_%d", i, i, o, i, j, i, j, i, j))
+		}
 	}
 	lvl := ""
 	if strict {
@@ -125,6 +164,10 @@ func (db *DB) Funnel(ctx context.Context, group string, stages []string, strict 
 		for i := range stages {
 			n := strconv.Itoa(i)
 			row.Steps[i] = FunnelStep{Reached: int64(num(r["s"+n])), Events: int64(num(r["e"+n])), Revenue: num(r["r"+n]), MedianSec: num(r["m"+n])}
+			for j := range stages[i].Outcomes {
+				m := n + "_" + strconv.Itoa(j)
+				row.Steps[i].Outcomes = append(row.Steps[i].Outcomes, FunnelOutcome{Reached: int64(num(r["o"+m])), Events: int64(num(r["oe"+m]))})
+			}
 		}
 	}
 

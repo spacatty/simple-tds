@@ -55,6 +55,7 @@ export const TYPE_TONE: Record<string, Tone> = { sale: 'ok', deposit: 'ok', lead
 const FIXED: { key: string; label: string; def: boolean }[] = [
   { key: 'ts', label: t('Time'), def: true },
   { key: 'type', label: t('Type'), def: true },
+  { key: 'outcome', label: t('Outcome'), def: true },
   { key: 'key_id', label: t('Key'), def: true },
   { key: 'campaign_id', label: t('Campaign'), def: true },
   { key: 'click_id', label: t('Click ID'), def: true },
@@ -95,7 +96,7 @@ function ConvLog() {
   const [range, setRange] = useDateRange()
   const [search] = useSearchParams()
   // The click log links here with ?click_id=… to show the conversions of one click, the funnel with ?type=… for one stage.
-  const [f, setF] = useState({ key_id: '', campaign_id: search.get('campaign_id') ?? '', type: search.get('type') ?? '', click_id: search.get('click_id') ?? '', ip: '' })
+  const [f, setF] = useState({ key_id: '', campaign_id: search.get('campaign_id') ?? '', type: search.get('type') ?? '', outcome: search.get('outcome') ?? '', click_id: search.get('click_id') ?? '', ip: '' })
   const [pf, setPf] = useState<Record<string, string>>({})
   const [offset, setOffset] = useState(0)
   const [cols, setCols] = useState<Record<string, boolean>>(loadCols)
@@ -108,10 +109,10 @@ function ConvLog() {
   const camps = useLoad(() => get<Campaign[]>('campaigns'), [])
 
   const query: Params = useMemo(() => {
-    const p: Params = { ...rangeParams(range), key_id: f.key_id, campaign_id: f.campaign_id, type: f.type, click_id: clickId, ip }
+    const p: Params = { ...rangeParams(range), key_id: f.key_id, campaign_id: f.campaign_id, type: f.type, outcome: f.type ? f.outcome : '', click_id: clickId, ip }
     for (const [k, v] of Object.entries(pf)) p['p.' + k] = v
     return p
-  }, [range, f.key_id, f.campaign_id, f.type, clickId, ip, pf])
+  }, [range, f.key_id, f.campaign_id, f.type, f.outcome, clickId, ip, pf])
   const queryKey = JSON.stringify(query)
 
   useEffect(() => setOffset(0), [queryKey])
@@ -143,6 +144,13 @@ function ConvLog() {
   const campById = (id: unknown) => camps.data?.find((c) => c.id === Number(id))
   const stagesOf = (id: unknown): Stage[] => campById(id)?.stages ?? []
   const campName = (id: unknown) => camps.data?.find((c) => c.id === Number(id))?.name ?? (Number(id) ? `#${id}` : '—')
+  // The outcomes of the stage picked as the type, across the campaigns in view.
+  const outcomeOptions = useMemo(() => {
+    const stages = (camps.data ?? []).filter((c) => !f.campaign_id || String(c.id) === f.campaign_id).flatMap((c) => c.stages ?? [])
+    const all = new Map(stages.filter((s) => s.key === f.type).flatMap((s) => s.outcomes ?? []).map((o) => [o.key, o.name || o.key]))
+    return [...all].map(([value, label]) => ({ value, label }))
+  }, [camps.data, f.campaign_id, f.type])
+  const outcomeOf = (r: ConvRow) => stagesOf(r.campaign_id).find((s) => s.key === r.type)?.outcomes?.find((o) => o.key === r.outcome)
 
   const cell = (key: string, r: ConvRow) => {
     const v = r[key]
@@ -155,6 +163,15 @@ function ConvLog() {
             {stageName(stagesOf(r.campaign_id), String(v))}
           </Badge>
         )
+      case 'outcome': {
+        if (!v) return <span className="muted">—</span>
+        const o = outcomeOf(r)
+        return (
+          <Badge tone={o?.kind === 'ok' ? 'ok' : o?.kind === 'fail' ? 'err' : 'neutral'} title={String(v)}>
+            {o?.name ?? String(v)}
+          </Badge>
+        )
+      }
       case 'since': {
         const after = r.click_id ? secondsBetween(r.click_ts, r.ts) : null
         return after === null ? <span className="muted">—</span> : <span className="nowrap">{fmtSpan(after)}</span>
@@ -285,7 +302,7 @@ function ConvLog() {
           anyFilter
             ? () => {
                 setPf({})
-                setF({ key_id: '', campaign_id: '', type: '', click_id: '', ip: '' })
+                setF({ key_id: '', campaign_id: '', type: '', outcome: '', click_id: '', ip: '' })
               }
             : undefined
         }
@@ -321,8 +338,13 @@ function ConvLog() {
           <Select value={f.campaign_id} onChange={(campaign_id) => setF({ ...f, campaign_id })} placeholder={t('All campaigns')} options={(camps.data ?? []).map((c) => ({ value: String(c.id), label: c.name }))} />
         </FilterField>
         <FilterField label={t('Type')} size="sm" active={!!f.type}>
-          <Select value={f.type} onChange={(type) => setF({ ...f, type })} placeholder={t('All types')} options={typeOptions} />
+          <Select value={f.type} onChange={(type) => setF({ ...f, type, outcome: '' })} placeholder={t('All types')} options={typeOptions} />
         </FilterField>
+        {(outcomeOptions.length > 0 || !!f.outcome) && (
+          <FilterField label={t('Outcome')} size="sm" active={!!f.outcome}>
+            <Select value={f.outcome} onChange={(outcome) => setF({ ...f, outcome })} placeholder={t('Any outcome')} options={outcomeOptions.some((o) => o.value === f.outcome) || !f.outcome ? outcomeOptions : [...outcomeOptions, { value: f.outcome, label: f.outcome }]} />
+          </FilterField>
+        )}
         <FilterField label={t('Click ID')} active={!!f.click_id}>
           <input className="input mono" placeholder={t('Exact match')} value={f.click_id} onChange={(e) => setF({ ...f, click_id: e.target.value })} />
         </FilterField>
@@ -373,6 +395,11 @@ function ConvLog() {
 }
 
 /** Everything one event carried, and where it sits in the journey of its click. */
+function outcomeLabel(stage: Stage | undefined, key: string) {
+  const o = stage?.outcomes?.find((x) => x.key === key)
+  return o ? `${o.name} (${key})` : key
+}
+
 function ConvDetail({ r, campaign, keyName, stages, currency }: { r: ConvRow; campaign: string; keyName: (id: unknown) => string; stages: Stage[]; currency?: string }) {
   const str = (v: unknown) => (v === null || v === undefined ? '' : String(v))
   const item = (label: string, value: ReactNode, mono?: boolean) => (
@@ -415,6 +442,7 @@ function ConvDetail({ r, campaign, keyName, stages, currency }: { r: ConvRow; ca
           {item(t('Time'), fmtDateTime(r.ts))}
           {item(t('Type'), str(r.type), true)}
           {item(t('Funnel stage'), stage ? `${stage.name}${stage.goal ? ' ★' : ''}` : '')}
+          {!!r.outcome && item(t('Outcome'), outcomeLabel(stage, str(r.outcome)))}
           {item(t('Counts as a conversion'), num(r.goal) ? t('yes') : t('no'))}
           {item(t('Revenue'), num(r.revenue) ? fmtMoney(r.revenue, str(r.currency)) : '')}
           {item(t('Cost'), num(r.cost) ? fmtMoney(r.cost) : '')}

@@ -38,6 +38,7 @@ var systemParams = []ParamDef{
 		Builtin: []string{"clickid", "subid", "cid"}, Macro: true, stored: true},
 	{Name: "key", Group: groupPostback, Label: "Postback key", stored: true},
 	{Name: "type", Group: groupPostback, Label: "Conversion type or funnel stage key", stored: true},
+	{Name: "outcome", Group: groupPostback, Label: "Outcome of a funnel stage, also on browser event URLs"},
 	{Name: "revenue", Group: groupPostback, Label: "Revenue", Builtin: []string{"payout"}, stored: true},
 	{Name: "currency", Group: groupPostback, Label: "Currency", stored: true},
 	{Name: "ip", Group: groupPostback, Label: "Visitor IP, for keys attributed by IP"},

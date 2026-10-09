@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { ArrowDown, MousePointerClick, RefreshCw, Settings2, Star, Target } from 'lucide-react'
 import { get } from '../api'
 import { canRead, useLoad, useMeta } from '../hooks'
-import type { Campaign, FunnelRow, Stream } from '../types'
+import type { Campaign, FunnelRow, Stage, Stream } from '../types'
 import { DateRangePicker, rangeBuckets } from '../components/DateRangePicker'
 import type { DateRange } from '../components/DateRangePicker'
 import { TimeChart } from '../components/charts'
@@ -29,6 +29,10 @@ export interface FunnelStepView {
   median?: number
   /** Where the number leads: the clicks that got this far, the ones that stopped before, the events. */
   links?: { reached?: string; lost?: string; events?: string }
+  /** Clicks that completed the stage: its successful outcomes when it has any, else everyone who reached it. */
+  done?: number
+  /** How the stage ended for the clicks that reached it; the rest sent no result. */
+  outcomes?: { key: string; name: string; kind: string; reached: number; events: number; link?: string }[]
 }
 
 type StreamRef = { id: number; name: string }
@@ -36,6 +40,16 @@ type StreamRef = { id: number; name: string }
 const BREAKDOWNS = ['stream', 'country', 'device_type', 'os', 'browser', 'domain', 'ref_domain', 'keyword', 'sub1', 'sub2', 'sub3', 'sub4', 'sub5']
 
 const share = (part: number, total: number) => (total > 0 ? (part / total) * 100 : 0)
+
+/**
+ * Clicks that completed a stage rather than merely got to it: with a
+ * successful outcome defined those that had one, otherwise all that reached it.
+ */
+export function stageDone(stage: Stage | undefined, step: FunnelRow['steps'][number] | undefined): number {
+  const outs = stage?.outcomes ?? []
+  if (!outs.some((o) => o.kind === 'ok')) return step?.reached ?? 0
+  return outs.reduce((n, o, j) => n + (o.kind === 'ok' ? (step?.outcomes?.[j]?.reached ?? 0) : 0), 0)
+}
 
 /**
  * A campaign's funnel for a period, as a list of steps. With stages it is the
@@ -83,6 +97,15 @@ export function useFunnel(campaign: Campaign, range: DateRange, opts: { streamId
         events: st.events,
         revenue: st.revenue,
         median: st.median_sec,
+        done: stageDone(s, st),
+        outcomes: (s.outcomes ?? []).map((o, j) => ({
+          key: o.key,
+          name: o.name || o.key,
+          kind: o.kind,
+          reached: st.outcomes?.[j]?.reached ?? 0,
+          events: st.outcomes?.[j]?.events ?? 0,
+          link: '/conversions?' + new URLSearchParams({ campaign_id: String(campaign.id), type: s.key, outcome: o.key }).toString(),
+        })),
         links: { reached: clicksLink({ reached: s.key }), lost: clicksLink(lost), events: '/conversions?' + new URLSearchParams({ campaign_id: String(campaign.id), type: s.key }).toString() },
       }
     })
@@ -93,7 +116,7 @@ export function useFunnel(campaign: Campaign, range: DateRange, opts: { streamId
   return { ...view, stages, loading: res.loading, loaded: !!res.data, error: res.error, reload: res.reload }
 }
 
-/** The funnel itself: one bar per step, and what was lost between them. */
+/** The funnel itself: a block per step, narrowing as clicks drop out, and what was lost between them. */
 export function FunnelSteps({ clicks, steps, currency, clicksLink }: { clicks: number; steps: FunnelStepView[]; currency?: string; clicksLink?: string }) {
   // The step that loses the largest share of what reached it.
   let worst = -1
@@ -114,20 +137,23 @@ export function FunnelSteps({ clicks, steps, currency, clicksLink }: { clicks: n
     ) : (
       <span className="fnl-num">{fmtInt(n)}</span>
     )
+  // The blocks show the shape, not the scale: they narrow with the square root of the share and stop at a third, so a step that kept a few percent still holds its text.
+  const width = (n: number) => (clicks > 0 ? `${34 + 66 * Math.min(1, Math.sqrt(Math.max(0, n) / clicks))}%` : '100%')
   return (
     <div className="fnl">
       <div className="fnl-step top">
-        <span className="fnl-ix">
-          <MousePointerClick size={12} />
-        </span>
-        <div className="fnl-name">
-          <b className="ellipsis">{t('Clicks')}</b>
+        <div className="fnl-head">
+          <div className="fnl-name">
+            <span className="fnl-ix">
+              <MousePointerClick size={12} />
+            </span>
+            <b className="ellipsis">{t('Clicks')}</b>
+          </div>
+          <div className="fnl-val">
+            {num(clicks, clicksLink)}
+            <span className="fnl-pct">{clicks > 0 ? '100%' : '—'}</span>
+          </div>
         </div>
-        <div className="fnl-track">
-          <div className="fnl-bar" style={{ width: clicks > 0 ? '100%' : 0 }} />
-        </div>
-        {num(clicks, clicksLink)}
-        <span className="fnl-pct">{clicks > 0 ? '100%' : '—'}</span>
       </div>
       {steps.map((s, i) => {
         const prev = i === 0 ? clicks : steps[i - 1].reached
@@ -145,6 +171,8 @@ export function FunnelSteps({ clicks, steps, currency, clicksLink }: { clicks: n
           )
         if (s.revenue) meta.push(<span key="r" className="tone-good">{fmtMoney(s.revenue, currency)}</span>)
         if (s.reached > 0 && s.median) meta.push(<span key="m" title={t('Median time from the click to its first event of this stage')}>{t('{span} from click', { span: fmtSpan(s.median) })}</span>)
+        const outs = s.outcomes ?? []
+        const rest = Math.max(0, s.reached - outs.reduce((n, o) => n + o.reached, 0))
         return (
           <div key={s.key} className="fnl-group">
             <div className={'fnl-drop' + (i === worst && lost > 0 ? ' worst' : '')}>
@@ -165,20 +193,55 @@ export function FunnelSteps({ clicks, steps, currency, clicksLink }: { clicks: n
               )}
               {i === worst && lost > 0 && steps.length > 1 && <span className="tag err">{t('biggest drop')}</span>}
             </div>
-            <div className={'fnl-step' + (s.goal ? ' goal' : '')}>
-              <span className="fnl-ix">{s.goal ? <Star size={11} /> : i + 1}</span>
-              <div className="fnl-name" title={s.key.startsWith('#') ? undefined : s.key}>
-                <b className="ellipsis">{s.name}</b>
-                {s.goal && <span className="tag info">{t('goal')}</span>}
-                {s.public && <span className="tag">{t('browser')}</span>}
+            <div className={'fnl-step' + (s.goal ? ' goal' : '')} style={{ width: width(s.reached) }}>
+              <div className="fnl-head">
+                <div className="fnl-name" title={s.key.startsWith('#') ? undefined : s.key}>
+                  <span className="fnl-ix">{s.goal ? <Star size={11} /> : i + 1}</span>
+                  <b className="ellipsis">{s.name}</b>
+                  {s.goal && <span className="tag info">{t('goal')}</span>}
+                  {s.public && <span className="tag">{t('browser')}</span>}
+                </div>
+                <div className="fnl-val">
+                  {num(s.reached, s.links?.reached)}
+                  <span className="fnl-pct" title={t('Share of all clicks of the period')}>
+                    {ratioPct(s.reached, clicks, clicks > 0 && s.reached / clicks < 0.1 ? 2 : 1)}
+                  </span>
+                </div>
               </div>
-              <div className="fnl-track">
-                <div className="fnl-bar" style={{ width: `${Math.min(100, share(s.reached, clicks))}%` }} />
-              </div>
-              {num(s.reached, s.links?.reached)}
-              <span className="fnl-pct" title={t('Share of all clicks of the period')}>
-                {ratioPct(s.reached, clicks, clicks > 0 && s.reached / clicks < 0.1 ? 2 : 1)}
-              </span>
+              {outs.length > 0 && s.reached > 0 && (
+                <div className="fnl-split">
+                  {outs.map((o) => o.reached > 0 && <i key={o.key} className={o.kind || 'none'} style={{ flexGrow: o.reached }} />)}
+                  {rest > 0 && <i className="rest" style={{ flexGrow: rest }} />}
+                </div>
+              )}
+              {outs.length > 0 && (
+                <div className="fnl-outs">
+                  {outs.map((o) => {
+                    const body = (
+                      <>
+                        <i />
+                        {o.name} <b>{fmtInt(o.reached)}</b> <span>{ratioPct(o.reached, s.reached)}</span>
+                      </>
+                    )
+                    const title = t('{key}: clicks whose stage ended this way, of those that reached it. Events received: {n}. Opens them in the conversion log.', { key: o.key, n: fmtInt(o.events) })
+                    return o.link ? (
+                      <Link key={o.key} className={'fnl-out ' + (o.kind || 'none')} to={o.link} title={title}>
+                        {body}
+                      </Link>
+                    ) : (
+                      <span key={o.key} className={'fnl-out ' + (o.kind || 'none')} title={title}>
+                        {body}
+                      </span>
+                    )
+                  })}
+                  {rest > 0 && (
+                    <span className="fnl-out rest" title={t('Reached the stage, but no outcome arrived for it.')}>
+                      <i />
+                      {t('no result')} <b>{fmtInt(rest)}</b> <span>{ratioPct(rest, s.reached)}</span>
+                    </span>
+                  )}
+                </div>
+              )}
               {meta.length > 0 && <div className="fnl-meta">{meta}</div>}
             </div>
           </div>
@@ -207,18 +270,20 @@ export function FunnelView({ campaign, stream, range, setRange, toolbarStart, to
 
   const goalIx = Math.max(0, f.steps.findIndex((s) => s.goal))
   const goal = f.steps[goalIx]
+  // A goal with a successful outcome is reached by that outcome, not by an attempt.
+  const goalDone = goal?.done ?? goal?.reached ?? 0
   const revenue = f.steps.reduce((n, s) => n + (s.revenue ?? 0), 0)
   const profit = revenue - f.cost
   const cur = campaign.currency
   const tiles: { label: string; value: string; sub?: string; tone?: string }[] = [
     { label: bots === 'exclude' && staged ? t('Clicks, no bots') : t('Clicks'), value: fmtInt(f.clicks) },
-    { label: t('Reached the goal'), value: fmtInt(goal?.reached ?? 0), sub: goal?.name },
-    { label: t('Click → goal'), value: ratioPct(goal?.reached ?? 0, f.clicks, 2), sub: goal?.median && goal.reached > 0 ? t('in {span} (median)', { span: fmtSpan(goal.median) }) : undefined, tone: 'tone-accent' },
+    { label: t('Reached the goal'), value: fmtInt(goalDone), sub: goal?.name },
+    { label: t('Click → goal'), value: ratioPct(goalDone, f.clicks, 2), sub: goal?.median && goal.reached > 0 ? t('in {span} (median)', { span: fmtSpan(goal.median) }) : undefined, tone: 'tone-accent' },
     { label: t('Revenue'), value: fmtMoney(revenue, cur), sub: f.clicks > 0 ? t('{value} per click', { value: fmtMoney(revenue / f.clicks) }) : undefined },
     { label: t('Profit'), value: fmtMoney(profit, cur), sub: t('cost {value}', { value: fmtMoney(f.cost) }), tone: profit > 0 ? 'tone-good' : profit < 0 ? 'tone-bad' : '' },
   ]
 
-  const trendData = useMemo(() => (trend.data?.rows ?? []).map((r) => ({ key: r.key, cr: share(r.steps?.[goalIx]?.reached ?? 0, r.clicks), first: share(r.steps?.[0]?.reached ?? 0, r.clicks) })), [trend.data, goalIx])
+  const trendData = useMemo(() => (trend.data?.rows ?? []).map((r) => ({ key: r.key, cr: share(stageDone(f.stages[goalIx], r.steps?.[goalIx]), r.clicks), first: share(r.steps?.[0]?.reached ?? 0, r.clicks) })), [trend.data, goalIx, f.stages])
   const trendSeries = [
     ...(goalIx > 0 ? [{ key: 'first', label: t('Click → {stage}', { stage: f.steps[0]?.name ?? '' }), color: 'var(--series-1)' }] : []),
     { key: 'cr', label: t('Click → {stage}', { stage: goal?.name ?? '' }), color: 'var(--series-3)' },

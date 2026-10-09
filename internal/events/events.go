@@ -52,11 +52,14 @@ type Click struct {
 }
 
 type Conversion struct {
-	TS         time.Time
-	ConvID     string
-	ClickID    string
-	KeyID      uint32
-	Type       string
+	TS      time.Time
+	ConvID  string
+	ClickID string
+	KeyID   uint32
+	Type    string
+	// Outcome is how the funnel stage named by Type ended, when the stage
+	// defines outcomes and the event names one.
+	Outcome    string
 	Revenue    float64
 	Cost       float64
 	Currency   string
@@ -131,7 +134,7 @@ const ddlConversions = `CREATE TABLE IF NOT EXISTS conversions (
  region String, city String, isp String, device_type LowCardinality(String), os LowCardinality(String),
  browser LowCardinality(String), lang LowCardinality(String), ref_domain String, keyword String,
  sub1 String, sub2 String, sub3 String, sub4 String, sub5 String, is_bot UInt8,
- goal UInt8 DEFAULT type != 'rejected', click_ts DateTime64(3,'UTC'),
+ goal UInt8 DEFAULT type != 'rejected', click_ts DateTime64(3,'UTC'), outcome LowCardinality(String),
  INDEX idx_click click_id TYPE bloom_filter(0.01) GRANULARITY 4
 ) ENGINE = MergeTree PARTITION BY toYYYYMM(ts) ORDER BY (ts)`
 
@@ -162,7 +165,7 @@ const insertClick = `INSERT INTO clicks (ts, click_id, campaign_id, stream_id, d
 
 const insertConv = `INSERT INTO conversions (ts, conv_id, click_id, key_id, type, revenue, cost, currency, sender_ip, params,
  campaign_id, stream_id, domain, country, region, city, isp, device_type, os, browser, lang, ref_domain, keyword,
- sub1, sub2, sub3, sub4, sub5, is_bot, goal, click_ts)`
+ sub1, sub2, sub3, sub4, sub5, is_bot, goal, click_ts, outcome)`
 
 // Columns added after the first release; safe to run on every start.
 var chMigrations = []string{
@@ -170,6 +173,7 @@ var chMigrations = []string{
 	// Before funnels every accepted conversion was the goal.
 	"ALTER TABLE conversions ADD COLUMN IF NOT EXISTS goal UInt8 DEFAULT type != 'rejected'",
 	"ALTER TABLE conversions ADD COLUMN IF NOT EXISTS click_ts DateTime64(3,'UTC')",
+	"ALTER TABLE conversions ADD COLUMN IF NOT EXISTS outcome LowCardinality(String)",
 }
 
 type Config struct {
@@ -432,7 +436,7 @@ func (db *DB) AddConversion(ctx context.Context, c *Conversion) error {
 	err = batch.Append(c.TS, c.ConvID, c.ClickID, c.KeyID, c.Type, c.Revenue, c.Cost, c.Currency, c.SenderIP, c.Params,
 		c.CampaignID, c.StreamID, c.Domain, c.Country, c.Region, c.City, c.ISP, c.DeviceType, c.OS, c.Browser, c.Lang,
 		c.RefDomain, c.Keyword, c.Sub[0], c.Sub[1], c.Sub[2], c.Sub[3], c.Sub[4], b2u(c.IsBot),
-		b2u(c.Goal), clickTS)
+		b2u(c.Goal), clickTS, c.Outcome)
 	if err != nil {
 		batch.Abort()
 		return err

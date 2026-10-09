@@ -227,17 +227,19 @@ function FunnelBody({ campaign, w, range }: { campaign: Campaign; w: BoardWidget
   if (!f.loaded) return <Skeleton rows={4} />
   const rows = [{ key: '#clicks', name: t('Clicks'), reached: f.clicks, goal: false }, ...f.steps.map((s) => ({ key: s.key, name: s.name, reached: s.reached, goal: !!s.goal }))]
   return (
-    <div className="wbars">
-      {rows.map((r, i) => (
-        <div key={r.key} className={'wbar' + (r.goal ? ' goal' : '')}>
-          <span className="ellipsis">{r.name}</span>
-          <b>{fmtInt(r.reached)}</b>
-          <small>{i === 0 ? (f.clicks > 0 ? '100%' : '—') : ratioPct(r.reached, f.clicks)}</small>
-          <div className="wbar-track">
-            <div style={{ width: f.clicks > 0 ? `${Math.min(100, (r.reached / f.clicks) * 100)}%` : 0 }} />
+    <div className="wbars-box">
+      <div className="wbars">
+        {rows.map((r, i) => (
+          <div key={r.key} className={'wbar' + (r.goal ? ' goal' : '')}>
+            <span className="ellipsis">{r.name}</span>
+            <b>{fmtInt(r.reached)}</b>
+            <small>{i === 0 ? (f.clicks > 0 ? '100%' : '—') : ratioPct(r.reached, f.clicks)}</small>
+            <div className="wbar-track">
+              <div style={{ width: f.clicks > 0 ? `${Math.min(100, (r.reached / f.clicks) * 100)}%` : 0 }} />
+            </div>
           </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   )
 }

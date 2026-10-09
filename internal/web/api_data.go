@@ -308,9 +308,15 @@ func (s *Server) dataRoutes(r chi.Router) {
 		if err != nil {
 			return nil, err
 		}
-		keys := make([]string, len(c.Stages))
+		keys := make([]events.FunnelStage, len(c.Stages))
 		for i, st := range c.Stages {
-			keys[i] = st.Key
+			keys[i].Key = st.Key
+			for _, o := range st.Outcomes {
+				keys[i].Outcomes = append(keys[i].Outcomes, o.Key)
+				if o.Kind == model.OutcomeOK {
+					keys[i].Wins = append(keys[i].Wins, o.Key)
+				}
+			}
 		}
 		group := r.URL.Query().Get("group")
 		if group == "" {
@@ -332,10 +338,15 @@ func (s *Server) dataRoutes(r chi.Router) {
 		}
 		// reached / not_reached: clicks that did, or did not, get to a funnel stage.
 		q.Reached, q.NotReached = r.URL.Query().Get("reached"), r.URL.Query().Get("not_reached")
-		for _, k := range []string{q.Reached, q.NotReached} {
+		// reached may also name how the stage ended: stage:outcome.
+		stage, outcome, split := strings.Cut(q.Reached, ":")
+		for _, k := range []string{stage, q.NotReached} {
 			if k != "" && !events.ValidStageKey(k) {
 				return nil, bad("bad stage key")
 			}
+		}
+		if split && !events.ValidStageKey(outcome) {
+			return nil, bad("bad stage key")
 		}
 		rows, total, err := s.ev.Clicks(r.Context(), q)
 		if err != nil {
@@ -377,7 +388,7 @@ func parseTime(v string) (time.Time, error) {
 // seconds or RFC 3339; p.<name>=<value> filters conversions by postback param.
 func parseQuery(r *http.Request) (events.Query, error) {
 	v := r.URL.Query()
-	q := events.Query{TZ: v.Get("tz"), Country: strings.ToUpper(v.Get("country")), Domain: v.Get("domain"), Type: v.Get("type"),
+	q := events.Query{TZ: v.Get("tz"), Country: strings.ToUpper(v.Get("country")), Domain: v.Get("domain"), Type: v.Get("type"), Outcome: v.Get("outcome"),
 		IP: v.Get("ip"), ClickID: v.Get("click_id"), Bots: v.Get("bots"), Params: map[string]string{}, Dims: map[string]string{}}
 	var err error
 	if q.From, err = parseTime(v.Get("from")); err != nil {
@@ -546,6 +557,7 @@ func (s *Server) meta(*http.Request) (any, error) {
 		"postback_path":        postbackPath,
 		"event_prefix":         eventPrefix,
 		"max_stages":           model.MaxStages,
+		"max_outcomes":         model.MaxOutcomes,
 		"reserved_aliases":     ReservedAliases,
 		"reputation_providers": reputation.Defs(),
 	}, nil

@@ -119,7 +119,10 @@ export default function Clicks() {
       }
     })
   const progressOptions = [
-    ...stages.map((s) => ({ value: 'r:' + s.key, label: t('Reached: {stage}', { stage: s.name }) })),
+    ...stages.flatMap((s) => [
+      { value: 'r:' + s.key, label: t('Reached: {stage}', { stage: s.name }) },
+      ...(s.outcomes ?? []).map((o) => ({ value: `r:${s.key}:${o.key}`, label: t('Reached: {stage}', { stage: `${s.name} · ${o.name}` }) })),
+    ]),
     ...stages.map((s) => ({ value: 'n:' + s.key, label: t('Stopped before: {stage}', { stage: s.name }) })),
   ]
   const showFunnel = (res.data?.rows ?? []).some((r) => stagesOf(r.campaign_id).length > 0 || eventsOf(r).length > 0)

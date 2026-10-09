@@ -1,12 +1,16 @@
 package engine
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/netip"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
 	"simpletds/internal/antibot"
+	"simpletds/internal/events"
 	"simpletds/internal/geo"
 	"simpletds/internal/model"
 )
@@ -174,6 +178,50 @@ func TestConversionKind(t *testing.T) {
 		if goal, known := conversionKind(c.c, c.typ); goal != c.goal || known != c.known {
 			t.Errorf("%s: got goal=%v known=%v", c.name, goal, known)
 		}
+	}
+}
+
+func TestStageOutcomes(t *testing.T) {
+	plain := model.Stage{Key: "order", Goal: true}
+	onlyFail := model.Stage{Key: "send", Outcomes: []model.Outcome{{Key: "error", Kind: model.OutcomeFail}}}
+	both := model.Stage{Key: "buy", Outcomes: []model.Outcome{{Key: "paid", Kind: model.OutcomeOK}, {Key: "declined", Kind: model.OutcomeFail}, {Key: "pending"}}}
+	cases := []struct {
+		name    string
+		st      model.Stage
+		outcome string
+		want    bool
+	}{
+		{"a stage without outcomes is done by its event", plain, "", true},
+		{"a failure is not", onlyFail, "error", false},
+		{"with only failures named, the bare event is the success", onlyFail, "", true},
+		{"a named success", both, "paid", true},
+		{"a failure next to it", both, "declined", false},
+		{"once a success is named, the bare event is only an attempt", both, "", false},
+		{"and so is a neutral outcome", both, "pending", false},
+	}
+	for _, c := range cases {
+		if got := c.st.Succeeded(c.outcome); got != c.want {
+			t.Errorf("%s: got %v", c.name, got)
+		}
+	}
+	a := &events.Conversion{ClickID: "c", Type: "send", Outcome: "error"}
+	b := &events.Conversion{ClickID: "c", Type: "send", Outcome: "sent"}
+	if dedupeKey(a) == dedupeKey(b) {
+		t.Error("a failure and a success of one stage are different events")
+	}
+	// What a browser attaches is capped, and never holds the click id or a taken outcome.
+	q := url.Values{"cid": {"X"}, "outcome": {"error"}, "reason": {strings.Repeat("r", 500)}}
+	for i := 0; i < 20; i++ {
+		q.Set(fmt.Sprintf("p%02d", i), "v")
+	}
+	var kept map[string]string
+	json.Unmarshal([]byte(eventParams(q, nil, true)), &kept)
+	if len(kept) != maxEventParams || kept["cid"] != "" || kept["outcome"] != "" || kept["p00"] != "v" {
+		t.Errorf("event params: %v", kept)
+	}
+	json.Unmarshal([]byte(eventParams(url.Values{"reason": {strings.Repeat("r", 500)}, "outcome": {"x"}}, nil, false)), &kept)
+	if len(kept["reason"]) != maxEventParamLen || kept["outcome"] != "x" {
+		t.Errorf("event params: %v", kept)
 	}
 }
 

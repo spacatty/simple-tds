@@ -20,11 +20,15 @@ export function StagePips({ stages, events, clickTs }: { stages: Stage[]; events
     <span className="pips">
       {stages.map((s) => {
         const e = events.find((x) => x.type === s.key)
+        // How the stage ended for this click: a success if it has one, else the latest outcome.
+        const mine = events.filter((x) => x.type === s.key && x.outcome).map((x) => s.outcomes?.find((o) => o.key === x.outcome))
+        const out = mine.find((o) => o?.kind === 'ok') ?? mine[mine.length - 1]
+        const what = out ? `${s.name} · ${out.name}` : s.name
         return (
           <span
             key={s.key}
-            className={'pip' + (e ? ' on' : '') + (s.goal ? ' goal' : '')}
-            title={e ? t('{stage}: {time} after the click', { stage: s.name, time: fmtSpan(secondsBetween(clickTs, e.ts) ?? 0) }) : t('{stage}: not reached', { stage: s.name })}
+            className={'pip' + (e ? ' on' : '') + (s.goal ? ' goal' : '') + (out?.kind === 'fail' ? ' fail' : '')}
+            title={e ? t('{stage}: {time} after the click', { stage: what, time: fmtSpan(secondsBetween(clickTs, e.ts) ?? 0) }) : t('{stage}: not reached', { stage: s.name })}
           />
         )
       })}
@@ -88,18 +92,20 @@ export function Journey({
         {events.map((e, i) => {
           const type = String(e.type)
           const stage = stages.find((s) => s.key === type)
-          const repeat = seen.has(type)
-          seen.add(type)
+          const outcome = stage?.outcomes?.find((o) => o.key === e.outcome)
+          const repeat = seen.has(type + '|' + String(e.outcome ?? ''))
+          seen.add(type + '|' + String(e.outcome ?? ''))
           const after = secondsBetween(clickTs, e.ts)
           const step = i > 0 ? secondsBetween(events[i - 1].ts, e.ts) : null
           const params = Object.entries(e.params ?? {})
           return (
-            <li key={String(e.conv_id ?? i)} className={'journey-step on' + (type === 'rejected' ? ' err' : '') + (current && e.conv_id === current ? ' current' : '')}>
+            <li key={String(e.conv_id ?? i)} className={'journey-step on' + (type === 'rejected' || outcome?.kind === 'fail' ? ' err' : '') + (current && e.conv_id === current ? ' current' : '')}>
               <span className="journey-dot" />
               <span className="journey-name">
                 {stage ? stage.name : ts(type)}
                 {stage?.goal && ' ★'}
                 {stage && <span className="muted mono small"> {type}</span>}
+                {!!e.outcome && <span className={'pip-tag' + (outcome?.kind === 'fail' ? ' err' : outcome?.kind === 'ok' ? ' ok' : '')}>{outcome?.name ?? String(e.outcome)}</span>}
                 {!stage && stages.length > 0 && type !== 'rejected' && <span className="pip-tag">{t('not a stage of this funnel')}</span>}
                 {repeat && <span className="pip-tag">{t('repeat')}</span>}
               </span>

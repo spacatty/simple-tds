@@ -125,6 +125,15 @@ export interface Stage {
   goal: boolean
   /** May be reported from the visitor's browser with only the click id. */
   public: boolean
+  /** The ways the stage can end; an event names one with its `outcome` parameter. */
+  outcomes?: Outcome[] | null
+}
+
+/** One result of a stage: a success, a failure or neither. */
+export interface Outcome {
+  key: string
+  name: string
+  kind: '' | 'ok' | 'fail'
 }
 
 export interface FunnelRow {
@@ -134,7 +143,7 @@ export interface FunnelRow {
   bots: number
   cost: number
   /** One entry per stage, in funnel order. */
-  steps: { reached: number; events: number; revenue: number; median_sec?: number }[]
+  steps: { reached: number; events: number; revenue: number; median_sec?: number; outcomes?: { reached: number; events: number }[] | null }[]
 }
 
 export interface Campaign {
@@ -359,6 +368,7 @@ export interface Meta {
   postback_path: string
   event_prefix?: string
   max_stages?: number
+  max_outcomes?: number
   reserved_aliases: string[]
   stream_presets?: StreamPreset[] | null
   report_filters?: string[] | null
@@ -474,6 +484,7 @@ export interface ConvRow extends Row {
 export interface ClickEvent {
   ts: string
   type: string
+  outcome?: string
   revenue: number
   goal: number
 }
