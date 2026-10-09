@@ -1,0 +1,23 @@
+/* No tokens here: served as a plain cacheable asset. */
+* { box-sizing: border-box; }
+body {
+  margin: 0; min-height: 100vh; display: grid; place-items: center;
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: #f1f5f9; color: #0f172a; padding: 16px;
+}
+.card { width: 100%; max-width: 480px; padding: 32px; border-radius: 16px; background: #fff; box-shadow: 0 10px 30px rgba(15, 23, 42, .08); }
+h1 { margin: 0 0 8px; font-size: 26px; line-height: 1.2; }
+.lead { margin: 0 0 16px; color: #475569; }
+.price { margin: 0 0 4px; font-size: 22px; }
+.price s { color: #94a3b8; font-size: 16px; margin-right: 8px; }
+.price b { color: #dc2626; }
+.stock { margin: 0 0 20px; font-size: 14px; color: #b45309; }
+form { display: grid; gap: 10px; }
+input, button { font: inherit; padding: 12px 14px; border-radius: 10px; }
+input { border: 1px solid #cbd5e1; }
+button { border: 0; font-weight: 600; color: #fff; background: #2563eb; cursor: pointer; }
+.small { margin: 16px 0 0; font-size: 13px; color: #64748b; }
+.debug { width: 100%; margin-top: 24px; border-collapse: collapse; font-size: 13px; }
+.debug caption { text-align: left; color: #64748b; padding-bottom: 4px; }
+.debug th, .debug td { text-align: left; padding: 6px 8px; border-top: 1px solid #e2e8f0; }
+.debug th { width: 45%; font-weight: 500; color: #475569; }

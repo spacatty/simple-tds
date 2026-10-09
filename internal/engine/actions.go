@@ -19,7 +19,7 @@ type Handler func(v *Visit) (*Result, error)
 type Field struct {
 	Name     string   `json:"name"`
 	Label    string   `json:"label"`
-	Type     string   `json:"type"`           // text | textarea | code | number | select | bool | whitepage | campaign
+	Type     string   `json:"type"`           // text | textarea | code | number | select | bool | whitepage | campaign | stage | landing | landing_presets | landing_values
 	Lang     string   `json:"lang,omitempty"` // code fields: html | javascript; without it the panel goes by content_type
 	Options  []string `json:"options,omitempty"`
 	Default  any      `json:"default,omitempty"`
@@ -71,6 +71,19 @@ func decode(cfg json.RawMessage, into any) error {
 
 // expand substitutes {macros} in s. With esc set, values are query-escaped.
 func (v *Visit) expand(s string, esc bool) string {
+	if !esc {
+		return v.expandWith(s, nil)
+	}
+	return v.expandWith(s, func(name, val string) string {
+		if name == "query" { // the query string is encoded already
+			return val
+		}
+		return url.QueryEscape(val)
+	})
+}
+
+// expandWith substitutes {macros} in s, passing each value through esc.
+func (v *Visit) expandWith(s string, esc func(name, val string) string) string {
 	if !strings.Contains(s, "{") {
 		return s
 	}
@@ -96,8 +109,8 @@ func (v *Visit) expand(s string, esc bool) string {
 		switch {
 		case !ok:
 			b.WriteString(s[i : i+j+1]) // not ours: leave untouched
-		case esc && name != "query": // the query string is encoded already
-			b.WriteString(url.QueryEscape(val))
+		case esc != nil:
+			b.WriteString(esc(name, val))
 		default:
 			b.WriteString(val)
 		}
@@ -159,6 +172,15 @@ func (v *Visit) macro(name string) (string, bool) {
 		return v.params.Get(v.Query, name), true
 	case "query":
 		return v.Query.Encode(), true
+	case "offer":
+		// Set while a landing with an offer URL is shown: its offer link.
+		if v.offer != "" {
+			return v.offer, true
+		}
+	}
+	// A landing page opened without its click reports nothing and leads nowhere.
+	if v.blank && (name == "offer" || strings.HasPrefix(name, "event:")) && v.Campaign.ID == 0 {
+		return "", true
 	}
 	if p, ok := strings.CutPrefix(name, "param:"); ok {
 		return v.Query.Get(p), true
@@ -166,12 +188,21 @@ func (v *Visit) macro(name string) (string, bool) {
 	// {event:STAGE} is the URL the page requests to report a browser stage of
 	// the campaign funnel for this very click.
 	if key, ok := strings.CutPrefix(name, "event:"); ok && v.Campaign != nil {
-		if st := v.Campaign.Stage(key); st != nil && st.Public {
+		st := v.Campaign.Stage(key)
+		if st == nil {
+			// An outcome key of a browser stage reports the stage with that outcome.
+			if owner, o := v.Campaign.StageByOutcome(key); o != nil {
+				st, key = owner, o.Key
+			}
+		} else {
+			key = st.Key
+		}
+		if st != nil && st.Public {
 			scheme := "http"
 			if v.Secure {
 				scheme = "https"
 			}
-			return scheme + "://" + v.Domain + EventPrefix + st.Key + "?cid=" + url.QueryEscape(v.ClickID), true
+			return scheme + "://" + v.Domain + EventPrefix + key + "?cid=" + url.QueryEscape(v.ClickID), true
 		}
 	}
 	// A name given to a system parameter in the settings is a macro as well.

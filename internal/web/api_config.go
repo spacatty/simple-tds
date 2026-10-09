@@ -467,6 +467,9 @@ func (s *Server) validateCampaign(ctx context.Context, c *model.Campaign, old *m
 	if err := validateStages(c); err != nil {
 		return err
 	}
+	if err := s.checkFunnelPreset(ctx, c, old); err != nil {
+		return err
+	}
 	if old == nil {
 		c.Token = randToken(24)
 	} else {
@@ -527,6 +530,13 @@ func validateStages(c *model.Campaign) error {
 		seen[st.Key] = true
 		if st.Goal {
 			goals++
+		}
+	}
+	for _, st := range c.Stages {
+		for _, o := range st.Outcomes {
+			if seen[o.Key] {
+				return bad(fmt.Sprintf("stage %q: outcome key %q is also the key of a stage", st.Key, o.Key))
+			}
 		}
 	}
 	if goals > 1 {
@@ -763,6 +773,7 @@ func (s *Server) routes(r chi.Router) {
 		}})
 	s.groupRoutes(r)
 	s.dashboardRoutes(r)
+	s.funnelPresetRoutes(r)
 	r.Post("/campaigns/{id}/clone", handler(s.campaignClone))
 	r.Post("/campaigns/{id}/alias", handler(s.campaignNewAlias))
 	r.Post("/campaigns/{id}/reset-stats", handler(s.campaignResetStats))
@@ -831,6 +842,7 @@ func (s *Server) routes(r chi.Router) {
 	s.userRoutes(r)
 
 	s.whitepageRoutes(r)
+	s.landingRoutes(r)
 	s.dataRoutes(r)
 }
 
@@ -1007,7 +1019,7 @@ func (s *Server) campaignStreams(r *http.Request) (any, error) {
 	}
 	// Streams may point at whitepages and campaigns the viewer cannot list
 	// (they belong to the campaign's owner): send their names along.
-	pages, targets := map[int64]string{}, map[int64]string{}
+	pages, targets, landings := map[int64]string{}, map[int64]string{}, map[int64]any{}
 	snap := s.eng.Snap()
 	for _, st := range streams {
 		var ref struct {
@@ -1021,9 +1033,35 @@ func (s *Server) campaignStreams(r *http.Request) (any, error) {
 		if c := snap.ByID[ref.Campaign]; c != nil && st.ActionType == "campaign" {
 			targets[c.ID] = c.Name
 		}
+		// Of a landing the stream form needs the variables and the preset
+		// names. Values stay with the owner: they may be secrets.
+		if l := snap.Landings[engine.LandingID(&st)]; l != nil {
+			type ref struct {
+				ID   int64  `json:"id"`
+				Name string `json:"name"`
+			}
+			type variable struct {
+				Name  string `json:"name"`
+				Label string `json:"label"`
+				Kind  string `json:"kind"`
+			}
+			info := struct {
+				ID      int64      `json:"id"`
+				Name    string     `json:"name"`
+				Vars    []variable `json:"vars"`
+				Presets []ref      `json:"presets"`
+			}{ID: l.ID, Name: l.Name, Vars: []variable{}, Presets: []ref{}}
+			for _, v := range l.Vars {
+				info.Vars = append(info.Vars, variable{v.Name, v.Label, v.Kind})
+			}
+			for _, p := range l.Presets {
+				info.Presets = append(info.Presets, ref{p.ID, p.Name})
+			}
+			landings[l.ID] = info
+		}
 	}
 	return map[string]any{"streams": streams, "errors": s.eng.StreamErrors(r.Context()),
-		"whitepages": pages, "campaigns": targets}, nil
+		"whitepages": pages, "campaigns": targets, "landings": landings}, nil
 }
 
 func (s *Server) streamsReorder(r *http.Request) (any, error) {
@@ -1112,7 +1150,8 @@ func (s *Server) campaignClone(r *http.Request) (any, error) {
 	c.Name, c.Alias, c.Token = src.Name+" (copy)", newAlias(), randToken(24)
 	c.OwnerID = currentUser(r).ID // the copy belongs to whoever made it
 	if c.OwnerID != src.OwnerID {
-		c.GroupID = nil // the group is the original owner's
+		c.GroupID = nil // the group is the original owner's, and so is the funnel preset
+		c.FunnelPresetID, c.FunnelPresetRev = nil, 0
 	}
 	if err := store.Insert(ctx, s.st, "campaigns", &c); err != nil {
 		return nil, err

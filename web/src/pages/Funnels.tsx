@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { MousePointerClick, Settings2, Target } from 'lucide-react'
+import { Layers, MousePointerClick, Settings2, Target } from 'lucide-react'
 import { get } from '../api'
 import { canRead, useLoad } from '../hooks'
 import type { Campaign, Stream } from '../types'
@@ -47,7 +47,11 @@ export default function Funnels() {
 
   return (
     <div className="page">
-      <PageHeader title={t('Funnels')} sub={t('How far the clicks of a campaign get: every stage, the trend and a breakdown by any dimension.')} />
+      <PageHeader title={t('Funnels')} sub={t('How far the clicks of a campaign get: every stage, the trend and a breakdown by any dimension.')}>
+        <Link className="btn" to="/funnels/presets">
+          <Layers size={14} /> {t('Presets')}
+        </Link>
+      </PageHeader>
 
       <ErrorBox error={camps.error} retry={camps.reload} />
       {!camps.data ? (

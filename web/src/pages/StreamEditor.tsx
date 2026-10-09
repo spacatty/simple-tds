@@ -1,14 +1,15 @@
 import { useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Ban, BookmarkPlus, Braces, Check, ChevronRight, Code2, CornerDownRight, ExternalLink, Eye, FileCode2, FileText, Pencil, Plus, Search, Split, Trash2, X } from 'lucide-react'
+import { Ban, BookmarkPlus, Braces, Check, ChevronRight, Code2, CornerDownRight, ExternalLink, Eye, FileCode2, FileText, LayoutTemplate, Pencil, Plus, Search, Split, Trash2, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { del, errMsg, get, post, put } from '../api'
-import { useMeta } from '../hooks'
-import type { ActionConfig, ActionDef, ActionField, Campaign, Filter, FilterDef, GeoPreset, Stage, Stream, StreamPreset, Whitepage } from '../types'
+import { useLoad, useMeta } from '../hooks'
+import type { ActionConfig, ActionDef, ActionField, Campaign, Filter, FilterDef, GeoPreset, Landing, LandingRef, Stage, Stream, StreamPreset, Whitepage } from '../types'
 import { Chips, Drawer, Dropdown, Field, MenuItem, MultiSelect, Notice, NumberInput, Segmented, Select, Toggle, confirmDialog, toast } from '../components/ui'
 import { CountrySelect } from '../components/CountrySelect'
 import { CodeEditor, languageOf } from '../components/CodeEditor'
 import type { CodeEditorHandle } from '../components/CodeEditor'
+import { VarValues } from '../components/LandingVars'
 import { StageLinks } from './Stages'
 import { t, tn, ts, tx } from '../i18n'
 
@@ -18,6 +19,7 @@ export const ACTION_ICONS: Record<string, LucideIcon> = {
   js: Braces,
   redirect: ExternalLink,
   whitepage: FileCode2,
+  landing: LayoutTemplate,
   remote_js: Code2,
   campaign: Split,
   nothing: CornerDownRight,
@@ -41,7 +43,22 @@ export interface StreamDraft {
 export interface RefNames {
   whitepages: Record<string, string>
   campaigns: Record<string, string>
+  /** Every landing the streams show, with its variables and preset names. */
+  landings: Record<string, LandingRef>
 }
+
+interface PresetShare {
+  id: number
+  weight: number
+}
+
+/** The presets a landing stream shows, as stored in its config. */
+export function landingPresets(v: unknown): PresetShare[] {
+  if (!Array.isArray(v)) return []
+  return v.map((p) => ({ id: Number((p as PresetShare)?.id) || 0, weight: Number.isFinite(Number((p as PresetShare)?.weight)) ? Number((p as PresetShare).weight) : 100 })).filter((p) => p.id > 0)
+}
+
+const landingValues = (v: unknown): Record<string, string> => (v && typeof v === 'object' && !Array.isArray(v) ? (Object.fromEntries(Object.entries(v as Record<string, unknown>).filter(([, x]) => typeof x === 'string' && x !== '')) as Record<string, string>) : {})
 
 export function defaultConfig(def: ActionDef | undefined): ActionConfig {
   const cfg: ActionConfig = {}
@@ -97,8 +114,15 @@ export function cleanConfig(def: ActionDef | undefined, cfg: ActionConfig): Acti
   for (const f of def?.fields ?? []) {
     const v = cfg[f.name]
     switch (f.type) {
+      case 'landing_presets':
+        out[f.name] = landingPresets(v)
+        break
+      case 'landing_values':
+        out[f.name] = landingValues(v)
+        break
       case 'number':
       case 'whitepage':
+      case 'landing':
       case 'campaign': {
         if (v === '' || v === undefined || v === null) {
           if (typeof f.default === 'number') out[f.name] = f.default
@@ -423,6 +447,7 @@ export default function StreamEditor({ draft: initial, campaign, campaigns, whit
               whitepages={whitepages}
               campaigns={campaigns.filter((c) => c.id !== campaign.id)}
               refNames={refNames}
+              campaignId={campaign.id}
               macros={meta.macros}
               stages={stages}
               insertRef={insertMacro}
@@ -692,6 +717,7 @@ function ActionForm({
   whitepages,
   campaigns,
   refNames,
+  campaignId,
   macros,
   stages,
   insertRef,
@@ -704,6 +730,8 @@ function ActionForm({
   whitepages: Whitepage[]
   campaigns: Campaign[]
   refNames?: RefNames
+  /** The campaign the stream belongs to: landing previews resolve its stages. */
+  campaignId: number
   macros: string[]
   /** The campaign funnel: its browser stages become {event:…} macros. */
   stages: Stage[]
@@ -711,6 +739,15 @@ function ActionForm({
   readOnly?: boolean
 }) {
   const fields = def.fields ?? []
+  const meta = useMeta()
+  // Own landings come with their values; of the campaign owner's only what the stream list sent is known.
+  const ownLandings = useLoad(() => (fields.some((f) => f.type === 'landing') ? get<Landing[]>('landings') : Promise.resolve([])), [def.type])
+  const landings: LandingRef[] = useMemo(() => {
+    const own = ownLandings.data ?? []
+    return [...own, ...Object.values(refNames?.landings ?? {}).filter((r) => !own.some((l) => l.id === r.id))]
+  }, [ownLandings.data, refNames])
+  const landing = landings.find((l) => l.id === Number(config.landing_id))
+  const ownLanding = (ownLandings.data ?? []).some((l) => l.id === landing?.id)
   const els = useRef<Record<string, TextEl | null>>({})
   // Code fields are editors of their own: they insert at their cursor themselves.
   const editors = useRef<Record<string, { current: CodeEditorHandle | null }>>({})
@@ -749,6 +786,14 @@ function ActionForm({
   const browserStages = stages.filter((st) => st.public)
   const macroList = macros.filter((m) => m !== 'event:STAGE')
 
+  const previewLanding = async (id: number, preset?: number) => {
+    try {
+      const r = await get<{ url: string }>(`landings/${id}/preview-url`, { preset: preset || undefined, campaign_id: campaignId })
+      window.open(r.url, '_blank', 'noopener')
+    } catch (e) {
+      toast.err(e)
+    }
+  }
   const preview = async (id: number) => {
     try {
       const r = await get<{ url: string }>(`whitepages/${id}/preview-url`)
@@ -847,6 +892,117 @@ function ActionForm({
                 </Field>
               )
             }
+            case 'landing': {
+              const shares = landingPresets(config.presets)
+              return (
+                <Field
+                  key={f.name}
+                  label={label}
+                  className="span-2"
+                  error={err}
+                  help={landings.length === 0 && !v && !ownLandings.loading ? tx('No landings uploaded yet. <a>Upload one</a> first.', { a: (c) => <Link to="/landings">{c}</Link> }) : help}
+                >
+                  <div className="row gap-s">
+                    <Select
+                      className="grow"
+                      value={v ? String(v) : ''}
+                      placeholder={t('Choose a landing…')}
+                      // Presets and values belong to one landing: another one starts clean.
+                      onChange={(s) => onChange({ ...config, [f.name]: s ? Number(s) : '', presets: [], values: {} })}
+                      options={[
+                        ...(v && !landing ? [{ value: String(v), label: t('Landing #{id} (not available)', { id: String(v) }) }] : []),
+                        ...landings.map((l) => ({ value: String(l.id), label: (ownLandings.data ?? []).some((o) => o.id === l.id) ? `${l.name} (${tn((l.vars ?? []).length, '{n} variable', '{n} variables')})` : t("{name} (owner's)", { name: l.name }) })),
+                      ]}
+                    />
+                    {ownLanding && (
+                      <a
+                        className="btn"
+                        href="#preview"
+                        title={t('Open a sandboxed preview in a new tab. It shows the first preset of this stream, without the values set for this stream.')}
+                        onClick={(e) => {
+                          e.preventDefault()
+                          previewLanding(Number(v), shares[0]?.id)
+                        }}
+                      >
+                        <Eye size={14} /> {t('Preview')}
+                      </a>
+                    )}
+                  </div>
+                </Field>
+              )
+            }
+            case 'landing_presets': {
+              if (!landing) return null
+              const all = landing.presets ?? []
+              const shares = landingPresets(v)
+              const setShares = (next: { id: number; weight: number }[]) => setVal(f.name, next)
+              const total = shares.reduce((n, p) => n + Math.max(0, p.weight), 0)
+              const free = all.filter((p) => !shares.some((x) => x.id === p.id))
+              return (
+                <Field key={f.name} label={label} help={all.length === 0 ? t('This landing has no presets: the stream shows it with the default values and its own values below.') : help} error={err} className="span-2">
+                  {shares.length === 0 && all.length > 0 && <div className="muted small pad-s">{t('No preset: the default values of the variables are shown.')}</div>}
+                  {shares.map((p, i) => (
+                    <div className="row gap-s lpreset" key={p.id}>
+                      <Select
+                        className="grow"
+                        value={String(p.id)}
+                        onChange={(s) => setShares(shares.map((x, j) => (j === i ? { ...x, id: Number(s) } : x)))}
+                        options={[...(all.some((x) => x.id === p.id) ? [] : [{ value: String(p.id), label: t('Preset #{id} (removed)', { id: p.id }) }]), ...all.filter((x) => x.id === p.id || free.some((y) => y.id === x.id)).map((x) => ({ value: String(x.id), label: x.name }))]}
+                      />
+                      {shares.length > 1 && (
+                        <>
+                          <span className="muted small">{t('weight')}</span>
+                          <div style={{ width: 90 }}>
+                            <NumberInput value={p.weight} onChange={(n) => setShares(shares.map((x, j) => (j === i ? { ...x, weight: n === '' ? 0 : n } : x)))} />
+                          </div>
+                          <span className="muted small lpreset-pct">{total > 0 ? Math.round((Math.max(0, p.weight) / total) * 100) + '%' : '—'}</span>
+                        </>
+                      )}
+                      <button type="button" className="icon-btn" title={t('Remove')} onClick={() => setShares(shares.filter((_, j) => j !== i))}>
+                        <X size={15} />
+                      </button>
+                    </div>
+                  ))}
+                  {free.length > 0 && (
+                    <button type="button" className="btn small" onClick={() => setShares([...shares, { id: free[0].id, weight: 100 }])}>
+                      <Plus size={14} /> {shares.length === 0 ? t('Show a preset') : t('Split with another preset')}
+                    </button>
+                  )}
+                </Field>
+              )
+            }
+            case 'landing_values': {
+              if (!landing) return null
+              const shares = landingPresets(config.presets)
+              const one = shares.length === 1 ? (landing.presets ?? []).find((p) => p.id === shares[0].id) : undefined
+              return (
+                <Field key={f.name} label={label} help={help} error={err} className="span-2">
+                  <VarValues
+                    prefix={meta.landing_var_prefix ?? 'CRELLA_VAR_'}
+                    vars={landing.vars ?? []}
+                    values={landingValues(v)}
+                    onChange={(vals) => setVal(f.name, vals)}
+                    placeholder={(name) => {
+                      const lv = (landing.vars ?? []).find((x) => x.name === name)
+                      if (shares.length > 1) return t('from the preset')
+                      const val = one?.values?.[name] ?? lv?.default
+                      if (val === undefined) return t('from the preset or the default')
+                      return val === '' ? t('empty') : lv?.kind === 'server' ? t('set by the preset or the default') : val
+                    }}
+                    macros={macroList}
+                    stages={stages}
+                    offer={String(config.offer_url ?? '').trim() !== ''}
+                    readOnly={readOnly}
+                  />
+                </Field>
+              )
+            }
+            case 'stage':
+              return (
+                <Field key={f.name} label={label} help={browserStages.length === 0 ? t('This campaign has no browser stages. Add one on the Funnel tab to report the click on the offer link.') : help} error={err} className="span-2">
+                  <Select value={String(v ?? '')} placeholder={t('Do not report')} onChange={(s) => setVal(f.name, s)} options={browserStages.map((st) => ({ value: st.key, label: `${st.name} (${st.key})` }))} />
+                </Field>
+              )
             case 'campaign':
               return (
                 <Field key={f.name} label={label} help={help} error={err} className="span-2">

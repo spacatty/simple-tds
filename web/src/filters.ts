@@ -13,6 +13,8 @@ export const DIM_LABELS: Record<string, string> = {
   hour: t('Hour'),
   campaign: t('Campaign'),
   stream: t('Stream'),
+  landing: t('Landing'),
+  landing_preset: t('Landing preset'),
   domain: t('Domain'),
   country: t('Country'),
   region: t('Region'),

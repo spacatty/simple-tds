@@ -119,6 +119,7 @@ func run() error {
 	eng := engine.New(st, ev, g, antibot.NewDetector(lists), secret)
 	pages := whitepage.New(env("TDS_WHITEPAGE_DIR", filepath.Join(dataDir, "whitepages")), os.Getenv("TDS_PHP_FCGI"), os.Getenv("TDS_PHP_ROOT"))
 	eng.Pages = pages
+	eng.Landings = pages.Sub("landings")
 	if err := eng.Reload(ctx); err != nil {
 		return err
 	}

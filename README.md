@@ -214,6 +214,7 @@ yourself without deleting the rule. The actions:
 | Show JavaScript | inline script with macros, run in the visitor's browser: wrapped in a page, or raw for `<script src>` and the JS integration |
 | Redirect | 301/302/303/307, meta or JS |
 | Whitepage | an uploaded HTML or PHP page |
+| Landing | an uploaded page with variables, filled in from presets and the stream's own values |
 | JavaScript from URL | fetches code from a partner endpoint; optional cache in minutes (stale copies are served while one background request refreshes them) |
 | Send to campaign | hand over to another campaign |
 
@@ -342,7 +343,12 @@ same click.
   into its outcomes and "no result". A click counts under one outcome — a
   successful one if it has any, otherwise the latest — so a retry that worked
   is not a failure. Without `outcome` the event only says the stage was
-  started. Any other parameter (the error text, a code) is kept with the event
+  started. An outcome key is by default **linked** to its stage: it is the
+  stage key, `_` and a suffix (`install` → `install_ok`, `install_error`) and
+  follows the stage key when that is renamed; the link button next to the key
+  frees it. A key that names nothing else in the funnel can be sent as the
+  type on its own — `&type=install_error`, `/_e/install_error`,
+  `{event:install_error}`. Any other parameter (the error text, a code) is kept with the event
   and can be filtered in the conversion log. A failed outcome carries no
   revenue; on the goal stage only a successful outcome is the conversion once
   one is defined. Dedupe is per click, type and outcome. An outcome the stage
@@ -351,6 +357,15 @@ same click.
 - The Funnel tab and the stream editor build the URL of every stage and
   outcome: choose a conversion key there and copy the postbacks with the key
   already in place. Stages are reordered by dragging.
+- **Funnel presets** (Funnels → Presets) are sets of stages you reuse. A
+  preset is applied from a campaign's Funnel tab ("Presets") or picked when
+  the campaign is created; the stages are copied, so the campaign's funnel
+  stays its own and can be edited freely. The campaign remembers the preset
+  it came from: when the preset's stages change later, its Funnel tab offers
+  "Update from preset", which replaces the stages after a confirmation. A
+  campaign's funnel can be saved as a new preset from the same menu. Presets
+  are personal — only their owner sees and applies them — and deleting one
+  leaves the campaigns copied from it as they are.
 - The Funnel tab shows how many clicks of the period reached each stage,
   whenever the events arrived, in any order or strictly in order. Give keys a
   window long enough for the late stages.
@@ -366,6 +381,49 @@ The PHP container has no internet access, cannot reach the databases, sees the
 whitepage files read-only, and has process-spawning functions disabled. If a
 page must call an external API, attach the `php` service to the `edge` network
 in `docker-compose.yml`.
+
+## Landings
+
+A landing is uploaded like a whitepage and adds **variables**: write
+`CRELLA_VAR_TITLE` anywhere in its files and `TITLE` becomes a variable of the
+landing. The "Landing" stream action shows the page with the variables filled
+in, so one landing serves many streams with different texts, links and
+settings.
+
+- **Where a value comes from.** The stream's own value, else the value of the
+  preset the stream shows, else the variable's default (empty unless set).
+  Values may contain macros: `Hello, {city}`.
+- **Presets** are named sets of values kept with the landing: `prod` and
+  `staging` settings, or the variants of an A/B test. A stream shows one
+  preset, or splits its visitors between several by weight; the reports group
+  by Landing and by Landing preset to compare them.
+- **Kinds.** A variable's kind says where its value goes, and so how it is
+  escaped: *Text* (HTML-escaped whole), *HTML* (markup as is, macro values
+  escaped), *Link* (macro values URL-encoded), *JS string* (between the quotes
+  of a script string), *Server only* (never written into a page). Visitor data
+  arriving through a macro cannot inject markup unless the kind is HTML and
+  the markup is yours.
+- **PHP.** Every variable is in `$_SERVER['CRELLA_VAR_NAME']`, unescaped,
+  next to `TDS_CLICK_ID`. PHP source is not rewritten before it runs; a token
+  is replaced only in what the script prints. Keep secrets (a DSN, an API
+  key) in *Server only* variables and read them from `$_SERVER`. The PHP
+  container has no network by default (see Whitepages) — attach it to one if
+  the page must reach a database.
+- **Other pages.** The first page sets a signed cookie for the landing's
+  path, valid for seven days; its other pages, and the scripts and styles
+  that carry tokens, are rendered with the same click, preset and macros.
+  Files without tokens stay plain cacheable assets. A page opened without
+  the cookie gets the defaults and reports no events. The JS and PHP
+  integrations deliver the first page only.
+- **Funnel events.** `{event:<stage>}` in a value works as elsewhere. A
+  stream can only show a landing whose values report stages its campaign
+  accepts from a browser: saving the stream, or a preset used by one, is
+  refused otherwise and names the variable and the stage.
+- **Offer link.** Give the stream an offer URL and put `{offer}` into a link
+  variable: the visitor goes to `/_a/<key>/_go` on the tracker domain, which
+  records the chosen browser stage for the click and redirects to the offer.
+- The panel edits text files in place, shows a sandboxed preview with any
+  preset, and can copy a whitepage into a landing.
 
 ## Operations
 

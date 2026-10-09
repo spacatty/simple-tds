@@ -64,6 +64,9 @@ var dims = map[string]dim{
 	"hour":        {"formatDateTime(ts, '%%Y-%%m-%%d %%H:00', %s)", true, true, true},
 	"campaign":    {"toString(campaign_id)", true, true, false},
 	"stream":      {"toString(stream_id)", true, true, false},
+	"landing":     {"toString(landing_id)", true, true, false},
+	// A preset id means something only inside its landing.
+	"landing_preset": {"concat(toString(landing_id), ':', toString(preset_id))", true, true, false},
 	"domain":      {"domain", true, true, false},
 	"country":     {"country", true, true, false},
 	"region":      {"region", true, true, false},
@@ -410,7 +413,7 @@ func (db *DB) ReferrerURLs(ctx context.Context, q Query) ([]ReferrerRow, error) 
 
 const clickCols = `ts, click_id, campaign_id, stream_id, domain, ip, country, region, city, asn, isp, device_type, os, os_version,
  browser, browser_version, ua, lang, referer, ref_domain, is_bot, bot_reason, is_dc, is_unique, action, integration,
- sub1, sub2, sub3, sub4, sub5, keyword, params, ja3, ja4, cost`
+ sub1, sub2, sub3, sub4, sub5, keyword, params, ja3, ja4, cost, landing_id, preset_id`
 
 func (q *Query) page() (int, int) {
 	limit := q.Limit
@@ -682,12 +685,12 @@ func scanClick(rows interface {
 	var bot uint8
 	defer func() { c.IsBot = bot == 1 }()
 	err := rows.Scan(&c.TS, &c.ClickID, &c.CampaignID, &c.StreamID, &c.Domain, &c.IP, &c.Country, &c.Region, &c.City, &c.ISP,
-		&c.DeviceType, &c.OS, &c.Browser, &c.Lang, &c.RefDomain, &c.Keyword, &c.Sub[0], &c.Sub[1], &c.Sub[2], &c.Sub[3], &c.Sub[4], &bot)
+		&c.DeviceType, &c.OS, &c.Browser, &c.Lang, &c.RefDomain, &c.Keyword, &c.Sub[0], &c.Sub[1], &c.Sub[2], &c.Sub[3], &c.Sub[4], &bot, &c.LandingID, &c.PresetID)
 	return c, err
 }
 
 const lookupCols = `ts, click_id, campaign_id, stream_id, domain, ip, country, region, city, isp, device_type, os, browser,
- lang, ref_domain, keyword, sub1, sub2, sub3, sub4, sub5, is_bot`
+ lang, ref_domain, keyword, sub1, sub2, sub3, sub4, sub5, is_bot, landing_id, preset_id`
 
 // ClickByID finds a click. The id carries its campaign and timestamp, so the
 // lookup is a narrow primary-key range rather than a scan.

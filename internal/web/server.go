@@ -45,16 +45,19 @@ type Config struct {
 }
 
 type Server struct {
-	cfg    Config
-	st     *store.Store
-	ev     *events.DB
-	eng    *engine.Engine
-	geo    *geo.DB
-	lists  *antibot.Lists
-	pages  *whitepage.Manager
-	panel  http.Handler
-	certs  *certManager
-	selfTS *tls.Certificate
+	cfg   Config
+	st    *store.Store
+	ev    *events.DB
+	eng   *engine.Engine
+	geo   *geo.DB
+	lists *antibot.Lists
+	pages *whitepage.Manager
+	// landings keeps landing files in a folder of their own inside the
+	// whitepage directory.
+	landings *whitepage.Manager
+	panel    http.Handler
+	certs    *certManager
+	selfTS   *tls.Certificate
 
 	sessMu   sync.Mutex
 	sessions map[string]sessionEntry
@@ -71,7 +74,7 @@ type Server struct {
 }
 
 func New(cfg Config, st *store.Store, ev *events.DB, eng *engine.Engine, g *geo.DB, lists *antibot.Lists, pages *whitepage.Manager) (*Server, error) {
-	s := &Server{cfg: cfg, st: st, ev: ev, eng: eng, geo: g, lists: lists, pages: pages, sessions: map[string]sessionEntry{}, rep: newRepState()}
+	s := &Server{cfg: cfg, st: st, ev: ev, eng: eng, geo: g, lists: lists, pages: pages, landings: pages.Sub("landings"), sessions: map[string]sessionEntry{}, rep: newRepState()}
 	cert, err := selfSigned()
 	if err != nil {
 		return nil, err

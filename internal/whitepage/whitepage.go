@@ -359,8 +359,8 @@ func (m *Manager) page(ctx context.Context, wp *model.Whitepage, sub string, req
 	return res, nil
 }
 
-// Render implements engine.WhitepageRenderer: it serves the entry page for a click.
-func (m *Manager) Render(ctx context.Context, wp *model.Whitepage, v *engine.Visit) (*engine.Result, error) {
+// visitRequest is the click as the entry page sees it.
+func visitRequest(v *engine.Visit) *Request {
 	req := &Request{Method: v.Method, URI: v.Path, Query: v.Query.Encode(), Host: v.Domain, RemoteIP: v.IP.String(),
 		Secure: v.Secure, Header: v.Header, Body: v.Body,
 		Env: map[string]string{
@@ -377,7 +377,12 @@ func (m *Manager) Render(ctx context.Context, wp *model.Whitepage, v *engine.Vis
 	if req.Query != "" {
 		req.URI += "?" + req.Query
 	}
-	return m.page(ctx, wp, "", req)
+	return req
+}
+
+// Render implements engine.WhitepageRenderer: it serves the entry page for a click.
+func (m *Manager) Render(ctx context.Context, wp *model.Whitepage, v *engine.Visit) (*engine.Result, error) {
+	return m.page(ctx, wp, "", visitRequest(v))
 }
 
 // Serve answers a request for any file of the whitepage: assets, sub-pages and
@@ -399,6 +404,10 @@ func (m *Manager) Serve(w http.ResponseWriter, r *http.Request, wp *model.Whitep
 	page := *wp
 	page.InjectBase = wp.InjectBase && inject
 	res, err := m.page(r.Context(), &page, sub, req)
+	writePage(w, r, res, err)
+}
+
+func writePage(w http.ResponseWriter, r *http.Request, res *engine.Result, err error) {
 	if err != nil {
 		if errors.Is(err, errNotFound) {
 			http.NotFound(w, r)

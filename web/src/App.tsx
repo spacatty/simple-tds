@@ -12,8 +12,10 @@ import Dashboard from './pages/Dashboard'
 import Campaigns from './pages/Campaigns'
 import CampaignEditor from './pages/CampaignEditor'
 import Funnels from './pages/Funnels'
+import FunnelPresets from './pages/FunnelPresets'
 import Domains from './pages/Domains'
 import Whitepages from './pages/Whitepages'
+import Landings from './pages/Landings'
 import Conversions from './pages/Conversions'
 import Reports from './pages/Reports'
 import Referrers from './pages/Referrers'
@@ -127,8 +129,10 @@ export default function App() {
             <Route path="/campaigns/:id" element={<CampaignEditor />} />
             <Route path="/campaigns/:id/:tab" element={<CampaignEditor />} />
             <Route path="/funnels" element={<Funnels />} />
+            <Route path="/funnels/presets" element={<FunnelPresets />} />
             <Route path="/domains" element={<Domains />} />
             <Route path="/whitepages" element={<Whitepages />} />
+            <Route path="/landings" element={<Landings />} />
             <Route path="/conversions" element={<Conversions />} />
             <Route path="/conversions/:tab" element={<Conversions />} />
             <Route path="/reports" element={<Reports />} />

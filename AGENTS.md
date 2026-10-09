@@ -50,7 +50,7 @@ cd web && npm install && npm run dev  # panel with hot reload at http://localhos
 | `internal/antibot` | IP lists, UA signatures, header/TLS checks, JS challenge |
 | `internal/geo`, `internal/extapi` | MMDB lookups; external HTTP JSON providers |
 | `internal/reputation` | blocklist providers for domain reputation checks (scheduled from `internal/web/domainrep.go`) |
-| `internal/whitepage` | whitepage storage, static serving, FastCGI client |
+| `internal/whitepage` | whitepage and landing storage, static serving, variable substitution, FastCGI client |
 | `internal/web` | listeners, TLS/ACME, public routes, panel API, embedded UI |
 | `web/` | panel sources (React + TypeScript + Vite) → built into `internal/web/ui/dist` |
 | `web/src/i18n` | panel translations: `t()` helpers, `ru.json` (UI text), `ru.server.json` (text sent by the server) |
@@ -102,6 +102,16 @@ cd web && npm install && npm run dev  # panel with hot reload at http://localhos
   (`UsableBy`). They are checked first in `Engine.Process`; a suppressed
   request must never become a click. Its counters and log live in their own
   ClickHouse tables, read by owner.
+- **Landings are whitepages with variables** (`internal/whitepage/landing.go`,
+  `internal/engine/landing.go`, `internal/web/landings.go`); their files live
+  in `landings/` inside the whitepage directory, so the PHP sandbox needs no
+  second mount. A value is escaped by the variable's kind before it is written
+  into a page, and a `server` variable never is: keep both true for any new
+  place a value can end up. The landing's other pages find their click through
+  a signed cookie and repeat the runtime checks (`landingVisit`). A stream may
+  only report funnel stages its campaign takes from a browser
+  (`checkLandingStream`, `checkLandingUse`); a co-editor never receives the
+  owner's variable values.
 - `internal/web/ui/dist` is build output and is not committed.
 
 ## Translations

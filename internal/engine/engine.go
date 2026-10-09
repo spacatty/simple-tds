@@ -31,6 +31,10 @@ type StreamRT struct {
 	filters []compiledFilter
 	action  Handler
 	Err     string // why the stream is unusable, if it is
+	// landing is the config of a stream that shows a landing, and campaign the
+	// campaign it belongs to: the landing's other pages find them by stream id.
+	landing  *LandingConfig
+	campaign *CampaignRT
 }
 
 type CampaignRT struct {
@@ -60,15 +64,18 @@ type KeyRT struct {
 
 // Snapshot is the whole runtime configuration. It is replaced atomically.
 type Snapshot struct {
-	Settings      model.Settings
-	Domains       map[string]*DomainRT
-	ByAlias       map[string]*CampaignRT
-	ByID          map[int64]*CampaignRT
-	Whitepages    map[int64]*model.Whitepage
-	WhitepageKeys map[string]*model.Whitepage
-	Keys          map[string]*KeyRT
-	KeyNames      map[uint32]string
-	Trusted       *antibot.Set
+	Settings       model.Settings
+	Domains        map[string]*DomainRT
+	ByAlias        map[string]*CampaignRT
+	ByID           map[int64]*CampaignRT
+	Whitepages     map[int64]*model.Whitepage
+	WhitepageKeys  map[string]*model.Whitepage
+	Landings       map[int64]*model.Landing
+	LandingKeys    map[string]*model.Landing
+	landingStreams map[int64]*StreamRT
+	Keys           map[string]*KeyRT
+	KeyNames       map[uint32]string
+	Trusted        *antibot.Set
 	// Params knows every name the system request parameters go by.
 	Params       *ParamNames
 	geoProviders []*extapi.Provider
@@ -88,6 +95,7 @@ type Engine struct {
 	Detector *antibot.Detector
 	Signer   *antibot.Signer
 	Pages    WhitepageRenderer
+	Landings LandingRenderer
 
 	secret []byte
 	snap   atomic.Pointer[Snapshot]
@@ -138,6 +146,10 @@ func (e *Engine) Reload(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	landings, err := store.List[model.Landing](ctx, e.Store, "landings", "id")
+	if err != nil {
+		return err
+	}
 	keys, err := store.List[model.ConvKey](ctx, e.Store, "conv_keys", "id")
 	if err != nil {
 		return err
@@ -157,7 +169,8 @@ func (e *Engine) Reload(ctx context.Context) error {
 
 	s := &Snapshot{Settings: st, Domains: map[string]*DomainRT{}, ByAlias: map[string]*CampaignRT{},
 		ByID: map[int64]*CampaignRT{}, Whitepages: map[int64]*model.Whitepage{},
-		WhitepageKeys: map[string]*model.Whitepage{}, Keys: map[string]*KeyRT{}, KeyNames: map[uint32]string{}}
+		WhitepageKeys: map[string]*model.Whitepage{}, Landings: map[int64]*model.Landing{}, LandingKeys: map[string]*model.Landing{},
+		landingStreams: map[int64]*StreamRT{}, Keys: map[string]*KeyRT{}, KeyNames: map[uint32]string{}}
 
 	var trusted []netip.Prefix
 	for _, t := range st.TrustedProxies {
@@ -169,6 +182,10 @@ func (e *Engine) Reload(ctx context.Context) error {
 	for i := range pages {
 		s.Whitepages[pages[i].ID] = &pages[i]
 		s.WhitepageKeys[pages[i].Key] = &pages[i]
+	}
+	for i := range landings {
+		s.Landings[landings[i].ID] = &landings[i]
+		s.LandingKeys[landings[i].Key] = &landings[i]
 	}
 	for i := range campaigns {
 		c := &CampaignRT{Campaign: campaigns[i], users: map[int64]bool{campaigns[i].OwnerID: true}}
@@ -198,6 +215,15 @@ func (e *Engine) Reload(ctx context.Context) error {
 			// A broken stream must not swallow traffic: leave it out of rotation.
 			slog.Warn("stream disabled", "campaign", c.Name, "stream", rt.Name, "err", rt.Err)
 			continue
+		}
+		if rt.ActionType == LandingAction {
+			// The landing action has to know its own stream: the landing's
+			// other pages are served by stream id.
+			if cfg, err := ParseLandingConfig(rt.ActionConfig); err == nil {
+				rt.landing, rt.campaign = cfg, c
+				rt.action = func(v *Visit) (*Result, error) { return e.showLanding(v, cfg, rt.ID, c) }
+				s.landingStreams[rt.ID] = rt
+			}
 		}
 		switch rt.Kind {
 		case model.StreamForced:
@@ -274,6 +300,12 @@ type Visit struct {
 	Cookie func(name string) string
 	// Body is the request body for whitepages that handle form posts.
 	Body []byte
+	// LandingID and PresetID are set by the landing action for the click row.
+	LandingID, PresetID int64
+	// offer is the offer link of the landing being shown, the {offer} macro.
+	offer string
+	// blank marks a landing page requested without its click.
+	blank bool
 
 	params *ParamNames
 	depth  int

@@ -387,11 +387,15 @@ func (s *Server) pageRequest(r *http.Request, w http.ResponseWriter, host string
 		RemoteIP: ip.String(), Secure: secure, Header: r.Header, Body: readBody(w, r)}
 }
 
-// serveAsset serves whitepage files and sub-pages under /_a/<key>/.
+// serveAsset serves whitepage and landing files and sub-pages under /_a/<key>/.
 func (s *Server) serveAsset(w http.ResponseWriter, r *http.Request, d *engine.DomainRT, snap *engine.Snapshot) {
 	key, sub, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, whitepage.AssetPrefix), "/")
 	wp := snap.WhitepageKeys[key]
 	if wp == nil {
+		if l := snap.LandingKeys[key]; l != nil {
+			s.serveLanding(w, r, d, l, sub, snap)
+			return
+		}
 		stock404(w)
 		return
 	}

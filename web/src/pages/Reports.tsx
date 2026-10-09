@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { ChevronRight, CornerDownRight, Download, MousePointerClick, RefreshCw, X } from 'lucide-react'
 import { get } from '../api'
 import { useLoad, useMeta } from '../hooks'
-import type { Campaign, ConvKey, ReportRow, Stream } from '../types'
+import type { Campaign, ConvKey, Landing, ReportRow, Stream } from '../types'
 import { DataTable } from '../components/DataTable'
 import type { Column } from '../components/DataTable'
 import { DateRangePicker, currentRange, rememberRange } from '../components/DateRangePicker'
@@ -21,7 +21,7 @@ import { t, tn, ts, tx } from '../i18n'
 
 const GROUP_SECTIONS: [string, string[]][] = [
   [t('Time'), ['total', 'day', 'hour']],
-  [t('Routing'), ['campaign', 'stream', 'domain', 'action']],
+  [t('Routing'), ['campaign', 'stream', 'landing', 'landing_preset', 'domain', 'action']],
   [t('Geo'), ['country', 'region', 'city', 'isp', 'lang']],
   [t('Device'), ['device_type', 'os', 'browser']],
   [t('Source'), ['ref_domain', 'keyword', 'sub1', 'sub2', 'sub3', 'sub4', 'sub5']],
@@ -63,6 +63,7 @@ export default function Reports() {
   const camps = useLoad(() => get<Campaign[]>('campaigns'), [])
   const streams = useLoad(() => get<Stream[]>('streams'), [])
   const keys = useLoad(() => get<ConvKey[]>('conversion-keys'), [])
+  const landings = useLoad(() => get<Landing[]>('landings'), [])
 
   const apiFilters = useMemo(() => filterParams(filters), [filters])
   const rep = useLoad(() => loadReport(group, range, apiFilters), [group, range.from, range.to, JSON.stringify(apiFilters)])
@@ -91,6 +92,16 @@ export default function Reports() {
         return k === '0' ? t('(no campaign)') : camps.data?.find((c) => String(c.id) === k)?.name ?? `#${k}`
       case 'stream':
         return k === '0' ? t('(no stream)') : streams.data?.find((s) => String(s.id) === k)?.name ?? `#${k}`
+      case 'landing':
+        return k === '0' ? t('(no landing)') : landings.data?.find((l) => String(l.id) === k)?.name ?? `#${k}`
+      case 'landing_preset': {
+        // "<landing id>:<preset id>"; preset 0 is the landing shown with its default values.
+        const [lid, pid] = k.split(':')
+        if (lid === '0') return t('(no landing)')
+        const l = landings.data?.find((x) => String(x.id) === lid)
+        const preset = pid === '0' ? t('default values') : l?.presets?.find((p) => String(p.id) === pid)?.name ?? `#${pid}`
+        return `${l?.name ?? '#' + lid} · ${preset}`
+      }
       case 'key':
         return k === '0' ? t('(no key)') : keys.data?.find((x) => String(x.id) === k)?.name ?? `#${k}`
       case 'country':

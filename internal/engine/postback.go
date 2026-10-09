@@ -197,6 +197,14 @@ func (e *Engine) Postback(in *PostbackInput) (int, string) {
 
 	// Which types exist depends on the campaign, so this waits for attribution.
 	campaign := snap.ByID[int64(conv.CampaignID)]
+	// An outcome key that is unique in the funnel may come as the type itself.
+	outcomeName := strings.ToLower(names.Get(q, "outcome"))
+	if campaign != nil {
+		if st, o := campaign.StageByOutcome(typ); o != nil {
+			typ, outcomeName = st.Key, o.Key
+			conv.Type = typ
+		}
+	}
 	var known bool
 	if conv.Goal, known = conversionKind(campaign, typ); !known {
 		return reject(http.StatusBadRequest, "unknown conversion type "+clip(typ, 32))
@@ -205,7 +213,7 @@ func (e *Engine) Postback(in *PostbackInput) (int, string) {
 	// other stage the parameter is plain data, as it was before outcomes.
 	failed := false
 	if st := stageOf(campaign, typ); st != nil && len(st.Outcomes) > 0 {
-		if name := strings.ToLower(names.Get(q, "outcome")); name != "" {
+		if name := outcomeName; name != "" {
 			o := st.Outcome(name)
 			if o == nil {
 				return reject(http.StatusBadRequest, "unknown outcome "+clip(name, 32)+" of stage "+typ)
@@ -391,14 +399,21 @@ func (e *Engine) Event(in *EventInput) bool {
 	if c == nil || !c.UsableBy(in.OwnerID) {
 		return false
 	}
-	st := c.Stage(strings.ToLower(in.Stage))
+	names := e.Snap().Params
+	st, outcomeName := c.Stage(strings.ToLower(in.Stage)), strings.ToLower(names.Get(in.Params, "outcome"))
+	if st == nil {
+		// /_e/<outcome key>: the outcome names its stage.
+		var o *model.Outcome
+		if st, o = c.StageByOutcome(strings.ToLower(in.Stage)); o != nil {
+			outcomeName = o.Key
+		}
+	}
 	if st == nil || !st.Public {
 		return false
 	}
 	conv := &events.Conversion{TS: now.UTC(), Type: st.Key, SenderIP: ip.String(), Params: "{}",
 		ClickID: in.ClickID, CampaignID: ref.CampaignID, StreamID: ref.StreamID, ClickTS: ref.At, Currency: c.Currency}
-	names := e.Snap().Params
-	if name := strings.ToLower(names.Get(in.Params, "outcome")); name != "" && len(st.Outcomes) > 0 {
+	if name := outcomeName; name != "" && len(st.Outcomes) > 0 {
 		o := st.Outcome(name)
 		if o == nil {
 			return false

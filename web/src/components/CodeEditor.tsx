@@ -13,6 +13,8 @@ export interface CodeEditorProps {
   readOnly?: boolean
   /** Macro names (without braces) to highlight and complete. */
   macros?: string[]
+  /** Highlight tokens that start with this prefix: the variables of a landing. */
+  varPrefix?: string
   minHeight?: number
   maxHeight?: number
   invalid?: boolean

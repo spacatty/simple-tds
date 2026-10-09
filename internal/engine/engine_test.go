@@ -133,8 +133,9 @@ func TestMacroExpansion(t *testing.T) {
 	// {event:STAGE} exists only for the campaign's browser stages.
 	v.Domain, v.Secure = "t.example", true
 	v.Campaign.Stages = []model.Stage{{Key: "lp_click", Public: true}, {Key: "deposit", Goal: true}}
-	got = v.expand("<a href='{event:lp_click}'>go</a> {event:deposit} {event:none}", false)
-	want = "<a href='https://t.example/_e/lp_click?cid=CID'>go</a> {event:deposit} {event:none}"
+	v.Campaign.Stages[0].Outcomes = []model.Outcome{{Key: "lp_click_ok"}}
+	got = v.expand("<a href='{event:lp_click}'>go</a> {event:deposit} {event:none} {event:lp_click_ok}", false)
+	want = "<a href='https://t.example/_e/lp_click?cid=CID'>go</a> {event:deposit} {event:none} https://t.example/_e/lp_click_ok?cid=CID"
 	if got != want {
 		t.Errorf("got  %s\nwant %s", got, want)
 	}
@@ -202,6 +203,14 @@ func TestStageOutcomes(t *testing.T) {
 	for _, c := range cases {
 		if got := c.st.Succeeded(c.outcome); got != c.want {
 			t.Errorf("%s: got %v", c.name, got)
+		}
+	}
+	// A key that names one outcome of the funnel, and no stage, stands for its stage.
+	c := &model.Campaign{Stages: []model.Stage{onlyFail, both, {Key: "paid2", Outcomes: []model.Outcome{{Key: "error"}, {Key: "buy"}, {Key: "paid2_ok"}}}}}
+	for key, want := range map[string]string{"paid": "buy", "paid2_ok": "paid2", "error": "", "buy": "", "send": "", "nosuch": ""} {
+		st, o := c.StageByOutcome(key)
+		if got := ""; (st != nil && st.Key != want) || (st == nil && want != got) || (st != nil && o.Key != key) {
+			t.Errorf("StageByOutcome(%q): got %v, want stage %q", key, st, want)
 		}
 	}
 	a := &events.Conversion{ClickID: "c", Type: "send", Outcome: "error"}

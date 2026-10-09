@@ -144,6 +144,12 @@ CREATE TABLE IF NOT EXISTS dashboards (
   id bigserial PRIMARY KEY, owner_id bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name text NOT NULL, position int NOT NULL DEFAULT 0, widgets jsonb NOT NULL DEFAULT '[]',
   created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS funnel_presets (
+  id bigserial PRIMARY KEY, owner_id bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name text NOT NULL, note text NOT NULL DEFAULT '', stages jsonb NOT NULL DEFAULT '[]', rev int NOT NULL DEFAULT 1,
+  created_at timestamptz NOT NULL DEFAULT now());
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS funnel_preset_id bigint REFERENCES funnel_presets(id) ON DELETE SET NULL;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS funnel_preset_rev int NOT NULL DEFAULT 0;
 ALTER TABLE domains ADD COLUMN IF NOT EXISTS rep_status text NOT NULL DEFAULT '';
 ALTER TABLE domains ADD COLUMN IF NOT EXISTS reputation jsonb NOT NULL DEFAULT '[]';
 ALTER TABLE domains ADD COLUMN IF NOT EXISTS rep_checked_at timestamptz;
@@ -153,10 +159,16 @@ CREATE TABLE IF NOT EXISTS suppress_rules (
   kind text NOT NULL, value text NOT NULL, campaign_ids jsonb NOT NULL DEFAULT '[]',
   store text NOT NULL DEFAULT 'count', created_at timestamptz NOT NULL DEFAULT now());
 CREATE INDEX IF NOT EXISTS suppress_rules_owner ON suppress_rules(owner_id, kind);
+CREATE TABLE IF NOT EXISTS landings (
+  id bigserial PRIMARY KEY, owner_id bigint REFERENCES users(id), name text NOT NULL, key text UNIQUE NOT NULL,
+  kind text NOT NULL DEFAULT 'html', entry text NOT NULL DEFAULT 'index.html', inject_base boolean NOT NULL DEFAULT true,
+  note text NOT NULL DEFAULT '', file_count int NOT NULL DEFAULT 0, size bigint NOT NULL DEFAULT 0,
+  vars jsonb NOT NULL DEFAULT '[]', presets jsonb NOT NULL DEFAULT '[]', templated jsonb NOT NULL DEFAULT '[]',
+  next_id bigint NOT NULL DEFAULT 1, created_at timestamptz NOT NULL DEFAULT now());
 `
 
 // OwnedTables are the tables whose rows belong to a user.
-var OwnedTables = []string{"campaigns", "campaign_groups", "domains", "domain_groups", "whitepages", "conv_keys", "stream_presets"}
+var OwnedTables = []string{"campaigns", "campaign_groups", "domains", "domain_groups", "whitepages", "landings", "conv_keys", "stream_presets"}
 
 // AdoptOrphans makes sure there is an admin and that every row has an owner.
 // Installations that predate multi-user support had neither.

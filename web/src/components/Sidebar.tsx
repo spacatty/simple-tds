@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
-import { Activity, BarChart3, Check, ChevronDown, ChevronsUpDown, EyeOff, FileCode2, Globe, KeyRound, LayoutDashboard, Link2, LogOut, Menu, Moon, MousePointerClick, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, ShieldCheck, Split, Sun, Target, Unlink, UserCog, Users as UsersIcon, Webhook } from 'lucide-react'
+import { Activity, BarChart3, Check, ChevronDown, ChevronsUpDown, EyeOff, FileCode2, Globe, KeyRound, LayoutDashboard, LayoutTemplate, Layers, Link2, LogOut, Menu, Moon, MousePointerClick, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, ShieldCheck, Split, Sun, Target, Unlink, UserCog, Users as UsersIcon, Webhook } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { User } from '../types'
 import type { Theme } from '../hooks'
@@ -24,7 +24,9 @@ const GROUPS: { id: string; label: string; items: Item[] }[] = [
     label: t('Traffic'),
     items: [
       { to: '/campaigns', label: t('Campaigns'), icon: Split },
-      { to: '/funnels', label: t('Funnels'), icon: FunnelIcon },
+      // "end": the presets live under /funnels/ and must not light this one up.
+      { to: '/funnels', label: t('Funnels'), icon: FunnelIcon, end: true },
+      { to: '/funnels/presets', label: t('Funnel presets'), icon: Layers },
     ],
   },
   {
@@ -38,6 +40,7 @@ const GROUPS: { id: string; label: string; items: Item[] }[] = [
     items: [
       { to: '/domains', label: t('Domains'), icon: Globe },
       { to: '/whitepages', label: t('Whitepages'), icon: FileCode2 },
+      { to: '/landings', label: t('Landings'), icon: LayoutTemplate },
     ],
   },
   {

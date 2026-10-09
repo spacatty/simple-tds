@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
-import { ExternalLink, Eye, Pencil, Trash2, Upload } from 'lucide-react'
-import { del, errMsg, get, put, upload } from '../api'
+import { ExternalLink, Eye, LayoutTemplate, Pencil, Trash2, Upload } from 'lucide-react'
+import { del, errMsg, get, post, put, upload } from '../api'
 import { useLoad } from '../hooks'
 import type { SystemInfo, WPFile, Whitepage } from '../types'
 import { DataTable } from '../components/DataTable'
@@ -43,6 +43,16 @@ export default function Whitepages() {
     }
   }
 
+  const toLanding = async (w: Whitepage) => {
+    if (!(await confirmDialog({ title: t('Copy to a landing?'), danger: false, confirmLabel: t('Copy'), message: tx('The files of <b>{name}</b> are copied into a new landing, where tokens in them become variables. The whitepage and the streams showing it stay as they are.', { b: (c) => <b>{c}</b>, name: w.name }) }))) return
+    try {
+      await post(`landings/from-whitepage/${w.id}`)
+      toast.ok(t('Copied: open Landings to set up its variables'))
+    } catch (e) {
+      toast.err(e)
+    }
+  }
+
   const phpOff = sys.data ? !sys.data.php_enabled : false
   const hasPHP = (list.data ?? []).some((w) => w.kind === 'php')
 
@@ -79,9 +89,12 @@ export default function Whitepages() {
       key: 'actions',
       title: '',
       align: 'right',
-      width: 120,
+      width: 150,
       render: (w) => (
         <div className="row-actions">
+          <button className="icon-btn" title={t('Copy to a landing')} onClick={() => toLanding(w)}>
+            <LayoutTemplate size={15} />
+          </button>
           <button className="icon-btn" title={t('Preview')} onClick={() => openPreview(w)}>
             <Eye size={15} />
           </button>
@@ -166,7 +179,7 @@ export default function Whitepages() {
   )
 }
 
-function FileInput({ file, onChange }: { file: File | null; onChange: (f: File | null) => void }) {
+export function FileInput({ file, onChange }: { file: File | null; onChange: (f: File | null) => void }) {
   const ref = useRef<HTMLInputElement>(null)
   const [drag, setDrag] = useState(false)
   return (

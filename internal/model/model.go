@@ -130,6 +130,8 @@ func (c *Campaign) Owner() int64         { return c.OwnerID }
 func (c *Campaign) SetOwner(id int64)    { c.OwnerID = id }
 func (w *Whitepage) Owner() int64        { return w.OwnerID }
 func (w *Whitepage) SetOwner(id int64)   { w.OwnerID = id }
+func (l *Landing) Owner() int64          { return l.OwnerID }
+func (l *Landing) SetOwner(id int64)     { l.OwnerID = id }
 func (k *ConvKey) Owner() int64          { return k.OwnerID }
 func (k *ConvKey) SetOwner(id int64)     { k.OwnerID = id }
 
@@ -192,19 +194,37 @@ type Campaign struct {
 	Access    string `db:"-" json:"access,omitempty"`
 	OwnerName string `db:"-" json:"owner_name,omitempty"`
 	// GroupID is the owner's group the campaign is filed under, if any.
-	GroupID     *int64    `db:"group_id" json:"group_id"`
-	Name        string    `db:"name" json:"name"`
-	Alias       string    `db:"alias" json:"alias"`
-	Token       string    `db:"token" json:"token"` // secret for the PHP integration
-	Enabled     bool      `db:"enabled" json:"enabled"`
-	Rotation    string    `db:"rotation" json:"rotation"`     // position | weight
-	CostModel   string    `db:"cost_model" json:"cost_model"` // none | cpc | cpuc | cpm | cpa | revshare
-	CostValue   float64   `db:"cost_value" json:"cost_value"`
-	Currency    string    `db:"currency" json:"currency"`
-	UniqueHours int       `db:"unique_hours" json:"unique_hours"`
-	Stages      []Stage   `db:"stages" json:"stages"` // conversion funnel, first step first; empty = single-stage
-	Note        string    `db:"note" json:"note"`
-	CreatedAt   time.Time `db:"created_at" json:"created_at"`
+	GroupID     *int64  `db:"group_id" json:"group_id"`
+	Name        string  `db:"name" json:"name"`
+	Alias       string  `db:"alias" json:"alias"`
+	Token       string  `db:"token" json:"token"` // secret for the PHP integration
+	Enabled     bool    `db:"enabled" json:"enabled"`
+	Rotation    string  `db:"rotation" json:"rotation"`     // position | weight
+	CostModel   string  `db:"cost_model" json:"cost_model"` // none | cpc | cpuc | cpm | cpa | revshare
+	CostValue   float64 `db:"cost_value" json:"cost_value"`
+	Currency    string  `db:"currency" json:"currency"`
+	UniqueHours int     `db:"unique_hours" json:"unique_hours"`
+	Stages      []Stage `db:"stages" json:"stages"` // conversion funnel, first step first; empty = single-stage
+	// FunnelPresetID is the owner's preset the stages were copied from, and
+	// FunnelPresetRev the preset's revision at that moment. The stages are the
+	// campaign's own; this only lets the panel offer an update.
+	FunnelPresetID  *int64    `db:"funnel_preset_id" json:"funnel_preset_id"`
+	FunnelPresetRev int       `db:"funnel_preset_rev" json:"funnel_preset_rev"`
+	Note            string    `db:"note" json:"note"`
+	CreatedAt       time.Time `db:"created_at" json:"created_at"`
+}
+
+// FunnelPreset is a user's reusable set of funnel stages. Applying one copies
+// the stages into a campaign.
+type FunnelPreset struct {
+	ID      int64   `db:"id" json:"id"`
+	OwnerID int64   `db:"owner_id" json:"owner_id"`
+	Name    string  `db:"name" json:"name"`
+	Note    string  `db:"note" json:"note"`
+	Stages  []Stage `db:"stages" json:"stages"`
+	// Rev grows every time the stages change.
+	Rev       int       `db:"rev" json:"rev"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
 }
 
 // Stage is one step of a campaign's conversion funnel. Events reach it as a
@@ -236,6 +256,9 @@ type Outcome struct {
 	Key  string `json:"key"`
 	Name string `json:"name"`
 	Kind string `json:"kind"` // ok | fail | "" (neither)
+	// Linked: the key is the stage key, "_" and a suffix, and the panel keeps
+	// it so when the stage is renamed ("install" → "install_ok").
+	Linked bool `json:"linked"`
 }
 
 // Outcome returns the stage's outcome with this key, or nil.
@@ -263,6 +286,26 @@ func (s *Stage) Succeeded(outcome string) bool {
 		return kind == OutcomeOK
 	}
 	return kind != OutcomeFail
+}
+
+// StageByOutcome finds the stage an outcome key belongs to, when the key
+// names exactly one outcome of the funnel and no stage: such a key can be sent
+// as the event type on its own ("install_error").
+func (c *Campaign) StageByOutcome(key string) (*Stage, *Outcome) {
+	var st *Stage
+	var out *Outcome
+	for i := range c.Stages {
+		if c.Stages[i].Key == key {
+			return nil, nil
+		}
+		if o := c.Stages[i].Outcome(key); o != nil {
+			if out != nil {
+				return nil, nil
+			}
+			st, out = &c.Stages[i], o
+		}
+	}
+	return st, out
 }
 
 // Stage returns the campaign's stage with this key, or nil.
@@ -526,7 +569,7 @@ const TypeRejected = "rejected"
 const MaxStages = 12
 
 // MaxOutcomes caps the outcomes of one stage.
-const MaxOutcomes = 6
+const MaxOutcomes = 12
 
 // ConversionTypes are the built-in conversion kinds, accepted by every
 // postback. Campaigns add their own on top by defining stages.
@@ -534,3 +577,91 @@ var ConversionTypes = []string{"lead", "sale", "install", "registration", "depos
 
 // CostModels are the supported campaign cost models.
 var CostModels = []string{"none", "cpc", "cpuc", "cpm", "cpa", "revshare"}
+
+// LandingVarPrefix starts every landing variable token: CRELLA_VAR_TITLE in a
+// file of the landing is the variable TITLE.
+const LandingVarPrefix = "CRELLA_VAR_"
+
+// Landing variable kinds: where the value goes decides how it is escaped.
+const (
+	VarText   = "text"   // text or an attribute value: HTML-escaped
+	VarHTML   = "html"   // markup: written as is, macro values HTML-escaped
+	VarURL    = "url"    // a link: macro values URL-encoded
+	VarJS     = "js"     // inside a JavaScript string literal
+	VarServer = "server" // PHP only ($_SERVER); never written into a page
+)
+
+var LandingVarKinds = []string{VarText, VarHTML, VarURL, VarJS, VarServer}
+
+const (
+	MaxLandingVars    = 200
+	MaxLandingPresets = 50
+	MaxLandingValue   = 16 << 10
+)
+
+// LandingVar is one variable of a landing.
+type LandingVar struct {
+	Name    string `json:"name"` // without the prefix: TITLE
+	Label   string `json:"label"`
+	Kind    string `json:"kind"`
+	Default string `json:"default"`
+	// Used: the token occurs in the landing's files. Variables read only by
+	// PHP through $_SERVER may be declared without it.
+	Used bool `json:"used"`
+}
+
+// LandingPreset is a named set of variable values: "prod", "staging", an
+// A/B variant. A variable it does not mention keeps its default.
+type LandingPreset struct {
+	ID     int64             `json:"id"` // unique within the landing, never reused
+	Name   string            `json:"name"`
+	Values map[string]string `json:"values"`
+}
+
+// Landing is an uploaded page like a whitepage whose files carry variables,
+// filled in per stream by the "Landing" action.
+type Landing struct {
+	ID         int64           `db:"id" json:"id"`
+	OwnerID    int64           `db:"owner_id" json:"owner_id"`
+	Name       string          `db:"name" json:"name"`
+	Key        string          `db:"key" json:"key"`
+	Kind       string          `db:"kind" json:"kind"` // html | php
+	Entry      string          `db:"entry" json:"entry"`
+	InjectBase bool            `db:"inject_base" json:"inject_base"`
+	Note       string          `db:"note" json:"note"`
+	FileCount  int             `db:"file_count" json:"file_count"`
+	Size       int64           `db:"size" json:"size"`
+	Vars       []LandingVar    `db:"vars" json:"vars"`
+	Presets    []LandingPreset `db:"presets" json:"presets"`
+	// Templated are the files that carry variable tokens and are therefore
+	// rendered per visitor; the rest are served as plain cacheable assets.
+	Templated []string  `db:"templated" json:"templated"`
+	NextID    int64     `db:"next_id" json:"-"` // next preset id
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+}
+
+// Page is the landing as the file storage sees it.
+func (l *Landing) Page() *Whitepage {
+	return &Whitepage{ID: l.ID, OwnerID: l.OwnerID, Name: l.Name, Key: l.Key, Kind: l.Kind, Entry: l.Entry,
+		InjectBase: l.InjectBase, FileCount: l.FileCount, Size: l.Size}
+}
+
+// Preset returns the landing's preset with this id, or nil.
+func (l *Landing) Preset(id int64) *LandingPreset {
+	for i := range l.Presets {
+		if l.Presets[i].ID == id {
+			return &l.Presets[i]
+		}
+	}
+	return nil
+}
+
+// Var returns the landing's variable with this name, or nil.
+func (l *Landing) Var(name string) *LandingVar {
+	for i := range l.Vars {
+		if l.Vars[i].Name == name {
+			return &l.Vars[i]
+		}
+	}
+	return nil
+}

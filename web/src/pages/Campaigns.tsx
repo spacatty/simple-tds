@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { BarChart3, Check, Copy, Eye, Folder, FolderCog, MoreVertical, Pencil, Plus, RefreshCw, Trash2, Users } from 'lucide-react'
 import { del, get, post, put } from '../api'
 import { canEdit, canRead, isOwner, useLoad } from '../hooks'
-import type { Campaign, CampaignGroup, Domain, ReportRow, Stream } from '../types'
+import type { Campaign, CampaignGroup, Domain, FunnelPreset, ReportRow, Stream } from '../types'
 import { DataTable } from '../components/DataTable'
 import type { Column } from '../components/DataTable'
 import { Badge, CopyButton, Dropdown, Empty, ErrorBox, Field, MenuItem, Modal, PageHeader, SearchInput, Segmented, Select, Skeleton, Toggle, confirmDialog, toast, useBusy } from '../components/ui'
@@ -390,13 +390,17 @@ export default function Campaigns() {
 
 function CreateCampaign({ onClose, onCreated }: { onClose: () => void; onCreated: (c: Campaign) => void }) {
   const [name, setName] = useState('')
+  const [presetId, setPresetId] = useState('')
   const [error, setError] = useState('')
   const [busy, run] = useBusy()
+  const presets = useLoad(() => get<FunnelPreset[] | null>('funnel-presets'), [])
   const submit = () =>
     run(async () => {
       setError('')
       try {
-        const c = await post<Campaign>('campaigns', { name, enabled: true })
+        // The campaign starts with a copy of the preset's stages and remembers where they came from.
+        const p = (presets.data ?? []).find((x) => String(x.id) === presetId)
+        const c = await post<Campaign>('campaigns', { name, enabled: true, ...(p ? { stages: p.stages, funnel_preset_id: p.id, funnel_preset_rev: p.rev } : {}) })
         toast.ok(t('Campaign created'))
         onCreated(c)
       } catch (e) {
@@ -428,6 +432,11 @@ function CreateCampaign({ onClose, onCreated }: { onClose: () => void; onCreated
         <Field label={t('Name')} help={t('The campaign gets a random, unguessable link and starts with two streams you can edit: an intercepting “Traffic filter” that stops bots and off-target visitors, and a “Fallback”. Both answer 404 until you point them at a whitepage or an offer.')}>
           <input className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={t('FB · DE · sweepstakes')} />
         </Field>
+        {(presets.data ?? []).length > 0 && (
+          <Field label={t('Funnel preset')} help={t('Optional: the campaign starts with a copy of the preset’s stages. You can change them later on the Funnel tab.')}>
+            <Select value={presetId} onChange={setPresetId} options={[{ value: '', label: t('No funnel') }, ...(presets.data ?? []).map((p) => ({ value: String(p.id), label: `${p.name} · ${tn(p.stages.length, '{n} stage', '{n} stages')}` }))]} />
+          </Field>
+        )}
         {error && <div className="field-error">{error}</div>}
         <button type="submit" hidden />
       </form>

@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/crypto/bcrypt"
 
+	"simpletds/internal/engine"
 	"simpletds/internal/events"
 	"simpletds/internal/model"
 	"simpletds/internal/store"
@@ -214,6 +215,9 @@ func (s *Server) checkActionRefs(ctx context.Context, st *model.Stream, old *mod
 		if _, err := s.campaign(ctx, now.Campaign, model.AccessEdit); err != nil {
 			return bad("target campaign not found or not editable by you")
 		}
+	}
+	if st.ActionType == engine.LandingAction {
+		return s.checkLandingStream(ctx, st, old)
 	}
 	return nil
 }

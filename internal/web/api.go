@@ -486,6 +486,8 @@ func (s *Server) panelHandler() http.Handler {
 	})
 	r.Get("/preview/*", s.servePreview)
 	r.Post("/preview/*", s.servePreview)
+	r.Get("/preview-l/*", s.serveLandingPreview)
+	r.Post("/preview-l/*", s.serveLandingPreview)
 
 	r.Route("/api", func(r chi.Router) {
 		r.Post("/login", s.login)

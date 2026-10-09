@@ -560,6 +560,8 @@ func (s *Server) meta(*http.Request) (any, error) {
 		"max_outcomes":         model.MaxOutcomes,
 		"reserved_aliases":     ReservedAliases,
 		"reputation_providers": reputation.Defs(),
+		"landing_var_prefix":   model.LandingVarPrefix,
+		"landing_var_kinds":    model.LandingVarKinds,
 	}, nil
 }
 

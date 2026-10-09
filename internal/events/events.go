@@ -49,6 +49,10 @@ type Click struct {
 	JA3            string
 	JA4            string
 	Cost           float64
+	// LandingID and PresetID say which landing the click was shown, and with
+	// which set of variable values; zero when the stream showed none.
+	LandingID uint32
+	PresetID  uint32
 }
 
 type Conversion struct {
@@ -76,6 +80,7 @@ type Conversion struct {
 	Domain, Country, Region, City, ISP, DeviceType, OS, Browser, Lang, RefDomain, Keyword string
 	IsBot                                                                                 bool // the attributed click was flagged as a bot
 	Sub                                                                                   [5]string
+	LandingID, PresetID                                                                   uint32
 }
 
 // Postback outcomes, as stored in the postback log.
@@ -113,6 +118,7 @@ func (c *Conversion) FromClick(click *Click) {
 	c.Domain, c.Country, c.Region, c.City, c.ISP = click.Domain, click.Country, click.Region, click.City, click.ISP
 	c.DeviceType, c.OS, c.Browser, c.Lang = click.DeviceType, click.OS, click.Browser, click.Lang
 	c.RefDomain, c.Keyword, c.Sub, c.IsBot = click.RefDomain, click.Keyword, click.Sub, click.IsBot
+	c.LandingID, c.PresetID = click.LandingID, click.PresetID
 }
 
 const ddlClicks = `CREATE TABLE IF NOT EXISTS clicks (
@@ -161,11 +167,11 @@ const insertPostback = `INSERT INTO postbacks (ts, status, http_status, reason, 
 
 const insertClick = `INSERT INTO clicks (ts, click_id, campaign_id, stream_id, domain, ip, country, region, city, asn, isp,
  device_type, os, os_version, browser, browser_version, ua, lang, referer, ref_domain, is_bot, bot_reason, is_dc, is_unique,
- action, integration, sub1, sub2, sub3, sub4, sub5, keyword, params, ja3, ja4, cost)`
+ action, integration, sub1, sub2, sub3, sub4, sub5, keyword, params, ja3, ja4, cost, landing_id, preset_id)`
 
 const insertConv = `INSERT INTO conversions (ts, conv_id, click_id, key_id, type, revenue, cost, currency, sender_ip, params,
  campaign_id, stream_id, domain, country, region, city, isp, device_type, os, browser, lang, ref_domain, keyword,
- sub1, sub2, sub3, sub4, sub5, is_bot, goal, click_ts, outcome)`
+ sub1, sub2, sub3, sub4, sub5, is_bot, goal, click_ts, outcome, landing_id, preset_id)`
 
 // Columns added after the first release; safe to run on every start.
 var chMigrations = []string{
@@ -174,6 +180,10 @@ var chMigrations = []string{
 	"ALTER TABLE conversions ADD COLUMN IF NOT EXISTS goal UInt8 DEFAULT type != 'rejected'",
 	"ALTER TABLE conversions ADD COLUMN IF NOT EXISTS click_ts DateTime64(3,'UTC')",
 	"ALTER TABLE conversions ADD COLUMN IF NOT EXISTS outcome LowCardinality(String)",
+	"ALTER TABLE clicks ADD COLUMN IF NOT EXISTS landing_id UInt32",
+	"ALTER TABLE clicks ADD COLUMN IF NOT EXISTS preset_id UInt32",
+	"ALTER TABLE conversions ADD COLUMN IF NOT EXISTS landing_id UInt32",
+	"ALTER TABLE conversions ADD COLUMN IF NOT EXISTS preset_id UInt32",
 }
 
 type Config struct {
@@ -413,7 +423,7 @@ func (db *DB) writeClicks(rows []*Click) error {
 		err := batch.Append(c.TS, c.ClickID, c.CampaignID, c.StreamID, c.Domain, c.IP, c.Country, c.Region, c.City, c.ASN, c.ISP,
 			c.DeviceType, c.OS, c.OSVersion, c.Browser, c.BrowserVersion, c.UA, c.Lang, c.Referer, c.RefDomain,
 			b2u(c.IsBot), c.BotReason, b2u(c.IsDC), b2u(c.IsUnique), c.Action, c.Integration,
-			c.Sub[0], c.Sub[1], c.Sub[2], c.Sub[3], c.Sub[4], c.Keyword, c.Params, c.JA3, c.JA4, c.Cost)
+			c.Sub[0], c.Sub[1], c.Sub[2], c.Sub[3], c.Sub[4], c.Keyword, c.Params, c.JA3, c.JA4, c.Cost, c.LandingID, c.PresetID)
 		if err != nil {
 			batch.Abort()
 			return err
@@ -436,7 +446,7 @@ func (db *DB) AddConversion(ctx context.Context, c *Conversion) error {
 	err = batch.Append(c.TS, c.ConvID, c.ClickID, c.KeyID, c.Type, c.Revenue, c.Cost, c.Currency, c.SenderIP, c.Params,
 		c.CampaignID, c.StreamID, c.Domain, c.Country, c.Region, c.City, c.ISP, c.DeviceType, c.OS, c.Browser, c.Lang,
 		c.RefDomain, c.Keyword, c.Sub[0], c.Sub[1], c.Sub[2], c.Sub[3], c.Sub[4], b2u(c.IsBot),
-		b2u(c.Goal), clickTS, c.Outcome)
+		b2u(c.Goal), clickTS, c.Outcome, c.LandingID, c.PresetID)
 	if err != nil {
 		batch.Abort()
 		return err

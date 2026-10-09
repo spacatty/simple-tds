@@ -277,6 +277,7 @@ func (e *Engine) record(v *Visit, c *CampaignRT, streamID int64, action string) 
 	for i := range click.Sub {
 		click.Sub[i] = clip(v.params.Get(v.Query, "sub"+strconv.Itoa(i+1)), 500)
 	}
+	click.LandingID, click.PresetID = uint32(v.LandingID), uint32(v.PresetID)
 	if v.TLS != nil {
 		click.JA3, click.JA4 = v.TLS.JA3, v.TLS.JA4
 	}

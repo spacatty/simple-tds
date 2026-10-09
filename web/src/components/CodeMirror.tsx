@@ -121,6 +121,25 @@ function macroMarks(known: () => string[]) {
   )
 }
 
+/** Landing variable tokens stand out too. */
+function varMarks(prefix: string) {
+  const mark = Decoration.mark({ class: 'cm-macro' })
+  // The prefix is letters and underscores: nothing in it to escape.
+  const matcher = new MatchDecorator({ regexp: new RegExp(prefix + '[A-Z0-9]+(?:_[A-Z0-9]+)*', 'g'), decoration: () => mark })
+  return ViewPlugin.fromClass(
+    class {
+      marks: DecorationSet
+      constructor(view: EditorView) {
+        this.marks = matcher.createDeco(view)
+      }
+      update(u: ViewUpdate) {
+        this.marks = matcher.updateDeco(u, this.marks)
+      }
+    },
+    { decorations: (p) => p.marks },
+  )
+}
+
 /** Typing "{c" offers the macros; a bare "{" does not, it opens too many blocks in real code. */
 function macroCompletion(known: () => string[]) {
   const apply = (view: EditorView, c: Completion, from: number, to: number) => {
@@ -136,7 +155,7 @@ function macroCompletion(known: () => string[]) {
   }
 }
 
-export default function CodeMirror({ value, onChange, language = 'text', readOnly, macros, minHeight = 220, maxHeight = 520, invalid, onFocus, handle, ariaLabel }: CodeEditorProps) {
+export default function CodeMirror({ value, onChange, language = 'text', readOnly, macros, varPrefix, minHeight = 220, maxHeight = 520, invalid, onFocus, handle, ariaLabel }: CodeEditorProps) {
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
   // The latest props, for callbacks created once with the editor.
@@ -161,6 +180,7 @@ export default function CodeMirror({ value, onChange, language = 'text', readOnl
           lang.current.of(LANGS[language]?.() ?? []),
           ro.current.of([EditorState.readOnly.of(!!readOnly), EditorView.editable.of(!readOnly)]),
           macroMarks(known),
+          varPrefix ? varMarks(varPrefix) : [],
           EditorState.languageData.of(() => [{ autocomplete: macroCompletion(known) }]),
           EditorView.contentAttributes.of({ 'aria-label': ariaLabel ?? '', spellcheck: 'false' }),
           EditorView.updateListener.of((u) => {

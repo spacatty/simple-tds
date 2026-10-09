@@ -1,13 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
+import type { Dispatch, ReactNode, SetStateAction } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowDown, ArrowUp, CornerDownLeft, GripVertical, Plus, Split, Trash2, X } from 'lucide-react'
-import { errMsg, get, put } from '../api'
+import { ArrowDown, ArrowUp, BookmarkPlus, ChevronsDown, CornerDownLeft, GripVertical, Layers, Link2, Plus, Split, Trash2, Unlink2, X } from 'lucide-react'
+import { errMsg, get, post, put } from '../api'
 import { useLoad, useMeta } from '../hooks'
-import type { Campaign, ConvKey, Outcome, Stage } from '../types'
+import type { Campaign, ConvKey, FunnelPreset, Outcome, Stage } from '../types'
 import type { DateRange } from '../components/DateRangePicker'
-import { Card, CopyButton, Notice, Select, useBusy, toast } from '../components/ui'
+import { Card, CopyButton, Dropdown, Field, MenuItem, Modal, Notice, Select, confirmDialog, useBusy, toast } from '../components/ui'
 import { FunnelView } from './FunnelDrawer'
-import { t, tx } from '../i18n'
+import { t, tn, tx } from '../i18n'
 
 const slug = (s: string) =>
   s
@@ -46,13 +47,210 @@ export default function Stages({
   )
 }
 
+// A linked outcome key is the stage key, "_" and a suffix of its own.
+const prefix = (s: Stage) => (s.key ? s.key + '_' : '')
+const suffixOf = (s: Stage, o: Outcome) => (o.linked && o.key.startsWith(prefix(s)) ? o.key.slice(prefix(s).length) : o.key)
+const outKey = (s: Stage, linked: boolean | undefined, suffix: string) => ((linked ? prefix(s) : '') + suffix).slice(0, 32)
+const outs = (s: Stage) => s.outcomes ?? []
+
+const stageKeyError = (rows: Stage[], s: Stage) =>
+  !/^[a-z0-9_]{1,32}$/.test(s.key) ? t('a-z, 0-9 and _ only') : s.key === 'rejected' ? t('reserved') : rows.filter((x) => x.key === s.key).length > 1 ? t('used twice') : ''
+const outcomeError = (rows: Stage[], s: Stage, o: Outcome) =>
+  !/^[a-z0-9_]{1,32}$/.test(o.key) || suffixOf(s, o) === '' ? t('a-z, 0-9 and _ only') : outs(s).filter((x) => x.key === o.key).length > 1 || rows.some((x) => x.key === o.key) ? t('used twice') : ''
+
+/** Whether the server would refuse these stages for a key that is malformed or repeated. */
+export const stagesInvalid = (rows: Stage[]) => rows.some((s) => stageKeyError(rows, s) || outs(s).some((o) => outcomeError(rows, s, o)))
+
+/** The campaign's own funnel: its stages, and the preset they can be taken from or saved as. */
 function StageEditor({ campaign, saved, readOnly, onSaved }: { campaign: Campaign; saved: Stage[]; readOnly: boolean; onSaved: (c: Campaign) => void }) {
-  const meta = useMeta()
-  const max = meta.max_stages ?? 12
   const [rows, setRows] = useState<Stage[]>(saved)
+  // The preset the rows on screen were taken from, until they are saved; undefined leaves what the campaign has.
+  const [from, setFrom] = useState<{ id: number; rev: number } | undefined>(undefined)
+  const [naming, setNaming] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [busy, run] = useBusy()
-  const dirty = JSON.stringify(rows) !== JSON.stringify(saved)
+  const presets = useLoad(() => (readOnly ? Promise.resolve([]) : get<FunnelPreset[] | null>('funnel-presets')), [readOnly])
+  const list = presets.data ?? []
+  const dirty = JSON.stringify(rows) !== JSON.stringify(saved) || from !== undefined
+  const invalid = stagesInvalid(rows)
+  // Presets are personal: the one this funnel came from is known only to whoever owns it.
+  const origin = list.find((p) => p.id === (from ? from.id : campaign.funnel_preset_id))
+  const outdated = !from && origin && origin.rev !== campaign.funnel_preset_rev
+
+  const take = async (p: FunnelPreset, update: boolean) => {
+    if (
+      rows.length > 0 &&
+      !(await confirmDialog({
+        title: update ? t('Update the funnel from the preset?') : t('Replace the funnel with the preset?'),
+        message: t('The stages of this campaign are replaced by those of “{name}”. Events already collected keep the key they arrived with, so stages whose key changes start from zero. Nothing is saved until you press Save funnel.', { name: p.name }),
+        confirmLabel: update ? t('Update') : t('Replace'),
+        danger: false,
+      }))
+    )
+      return
+    setRows(p.stages)
+    setFrom({ id: p.id, rev: p.rev })
+  }
+
+  const save = () =>
+    run(async () => {
+      setError('')
+      try {
+        const c = await put<Campaign>(`campaigns/${campaign.id}`, { stages: rows, ...(from ? { funnel_preset_id: from.id, funnel_preset_rev: from.rev } : {}) })
+        onSaved(c)
+        setRows(c.stages ?? [])
+        setFrom(undefined)
+        toast.ok(t('Funnel saved'))
+      } catch (e) {
+        setError(errMsg(e))
+      }
+    })
+
+  const saveAs = () =>
+    run(async () => {
+      setError('')
+      try {
+        const p = await post<FunnelPreset>('funnel-presets', { name: naming, stages: rows })
+        setNaming(null)
+        presets.reload()
+        // The campaign now comes from that preset: at once when nothing else is pending, else with the next save.
+        if (dirty) setFrom({ id: p.id, rev: p.rev })
+        else onSaved(await put<Campaign>(`campaigns/${campaign.id}`, { funnel_preset_id: p.id, funnel_preset_rev: p.rev }))
+        toast.ok(t('Preset saved'))
+      } catch (e) {
+        setError(errMsg(e))
+      }
+    })
+
+  return (
+    <Card
+      title={t('Conversion stages')}
+      actions={
+        !readOnly && (
+          <Dropdown
+            align="right"
+            className="btn small"
+            label={
+              <>
+                <Layers size={13} /> {t('Presets')}
+              </>
+            }
+          >
+            {(close) => (
+              <div className="menu menu-scroll">
+                {list.length > 0 && <div className="menu-title">{t('Use a preset')}</div>}
+                {list.map((p) => (
+                  <MenuItem
+                    key={p.id}
+                    onClick={() => {
+                      close()
+                      take(p, false)
+                    }}
+                  >
+                    <ChevronsDown size={14} /> <span className="ellipsis">{p.name}</span> <span className="muted small">{tn(p.stages.length, '{n} stage', '{n} stages')}</span>
+                  </MenuItem>
+                ))}
+                {list.length > 0 && <div className="menu-sep" />}
+                <MenuItem
+                  disabled={rows.length === 0 || invalid}
+                  onClick={() => {
+                    close()
+                    setNaming(campaign.name)
+                  }}
+                >
+                  <BookmarkPlus size={14} /> {t('Save as a preset…')}
+                </MenuItem>
+                <Link className="menu-item" to="/funnels/presets">
+                  <Layers size={14} /> {t('Manage presets')}
+                </Link>
+              </div>
+            )}
+          </Dropdown>
+        )
+      }
+    >
+      <p className="muted small">
+        {tx('The steps a visitor takes after the click, in order. Each one arrives as a conversion whose <code>type</code> is the stage key. Without stages the campaign counts single conversions of the built-in types.', { code: (c) => <code>{c}</code> })}
+      </p>
+      {outdated && (
+        <Notice tone="warn">
+          {tx('The preset <b>{name}</b> has changed since this funnel was copied from it.', { name: origin.name, b: (c) => <b>{c}</b> })}{' '}
+          <button className="btn small" onClick={() => take(origin, true)}>
+            {t('Update from preset')}
+          </button>
+        </Notice>
+      )}
+      <StageRows
+        rows={rows}
+        setRows={setRows}
+        readOnly={readOnly}
+        actions={
+          <>
+            <button className="btn primary" disabled={busy || !dirty || invalid} onClick={save}>
+              {busy ? t('Saving…') : t('Save funnel')}
+            </button>
+            {dirty && (
+              <button
+                className="btn ghost"
+                onClick={() => {
+                  setRows(saved)
+                  setFrom(undefined)
+                }}
+              >
+                {t('Discard')}
+              </button>
+            )}
+          </>
+        }
+      >
+        {origin && !outdated && (
+          <div className="field-help">{from ? tx('Taken from the preset <b>{name}</b>: save the funnel to keep it.', { name: origin.name, b: (c) => <b>{c}</b> }) : tx('Copied from the preset <b>{name}</b>. The stages here are the campaign’s own.', { name: origin.name, b: (c) => <b>{c}</b> })}</div>
+        )}
+        {dirty && saved.length > 0 && <div className="field-help">{t('Events already collected keep the key they arrived with: renaming a key starts that stage from zero.')}</div>}
+        {error && <div className="field-error">{error}</div>}
+      </StageRows>
+      {naming !== null && (
+        <Modal
+          title={t('Save as a preset')}
+          size="sm"
+          onClose={() => setNaming(null)}
+          footer={
+            <>
+              <button className="btn" onClick={() => setNaming(null)}>
+                {t('Cancel')}
+              </button>
+              <button className="btn primary" disabled={busy || !naming.trim()} onClick={saveAs}>
+                {t('Save')}
+              </button>
+            </>
+          }
+        >
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (naming.trim()) saveAs()
+            }}
+          >
+            <Field label={t('Name')} help={t('The preset is a copy of the stages on screen. It is yours alone and can be applied to any campaign you edit.')}>
+              <input className="input" autoFocus value={naming} maxLength={64} onChange={(e) => setNaming(e.target.value)} />
+            </Field>
+            {error && <div className="field-error">{error}</div>}
+            <button type="submit" hidden />
+          </form>
+        </Modal>
+      )}
+    </Card>
+  )
+}
+
+/**
+ * The editable list of stages, shared by a campaign's funnel and a preset.
+ * children go under the list (notes, errors), actions next to "Add stage".
+ */
+export function StageRows({ rows, setRows, readOnly, actions, children }: { rows: Stage[]; setRows: Dispatch<SetStateAction<Stage[]>>; readOnly?: boolean; actions?: ReactNode; children?: ReactNode }) {
+  const meta = useMeta()
+  const max = meta.max_stages ?? 12
+  const goalName = useId()
   // Dragging a stage by its grip: the row being moved, and where it would land.
   const [armed, setArmed] = useState(-1)
   const [drag, setDrag] = useState(-1)
@@ -74,7 +272,9 @@ function StageEditor({ campaign, saved, readOnly, onSaved }: { campaign: Campaig
     endDrag()
   }
 
-  const patch = (i: number, p: Partial<Stage>) => setRows((r) => r.map((s, j) => (j === i ? { ...s, ...p } : s)))
+  // Linked outcome keys follow the stage key when it changes.
+  const relink = (old: Stage, next: Stage): Stage => (old.key === next.key || !next.outcomes ? next : { ...next, outcomes: next.outcomes.map((o) => (o.linked ? { ...o, key: outKey(next, true, suffixOf(old, o)) } : o)) })
+  const patch = (i: number, p: Partial<Stage>) => setRows((r) => r.map((s, j) => (j === i ? relink(s, { ...s, ...p }) : s)))
   // The key follows the name until it is edited by hand.
   const rename = (i: number, name: string) => patch(i, rows[i].key === slug(rows[i].name) ? { name, key: slug(name) } : { name })
   const move = (i: number, by: number) =>
@@ -85,13 +285,20 @@ function StageEditor({ campaign, saved, readOnly, onSaved }: { campaign: Campaig
     })
   const setGoal = (i: number) => setRows((r) => r.map((s, j) => ({ ...s, goal: j === i, public: j === i ? false : s.public })))
 
-  const maxOut = meta.max_outcomes ?? 6
-  const outs = (s: Stage) => s.outcomes ?? []
+  const maxOut = meta.max_outcomes ?? 12
   const setOuts = (i: number, list: Outcome[]) => patch(i, { outcomes: list.length ? list : undefined })
   const patchOut = (i: number, j: number, p: Partial<Outcome>) => setOuts(i, outs(rows[i]).map((o, k) => (k === j ? { ...o, ...p } : o)))
   const renameOut = (i: number, j: number, name: string) => {
-    const o = outs(rows[i])[j]
-    patchOut(i, j, o.key === slug(o.name) ? { name, key: slug(name) } : { name })
+    const s = rows[i]
+    const o = outs(s)[j]
+    // The suffix follows the name until it is edited by hand.
+    patchOut(i, j, suffixOf(s, o) === slug(o.name) ? { name, key: outKey(s, o.linked, slug(name)) } : { name })
+  }
+  // Linking puts the stage key in front of the outcome key; unlinking leaves the key as it is, free to edit.
+  const setLinked = (i: number, j: number, linked: boolean) => {
+    const s = rows[i]
+    const o = outs(s)[j]
+    patchOut(i, j, { linked, key: linked && !o.key.startsWith(prefix(s)) ? outKey(s, true, o.key) : o.key })
   }
   // The first split is the usual pair; after that, one blank outcome at a time.
   const addOut = (i: number) =>
@@ -99,35 +306,17 @@ function StageEditor({ campaign, saved, readOnly, onSaved }: { campaign: Campaig
       i,
       outs(rows[i]).length === 0
         ? [
-            { key: 'ok', name: t('Success'), kind: 'ok' },
-            { key: 'error', name: t('Error'), kind: 'fail' },
+            { key: outKey(rows[i], true, 'ok'), name: t('Success'), kind: 'ok', linked: true },
+            { key: outKey(rows[i], true, 'error'), name: t('Error'), kind: 'fail', linked: true },
           ]
-        : [...outs(rows[i]), { key: '', name: '', kind: '' }],
+        : [...outs(rows[i]), { key: outKey(rows[i], true, ''), name: '', kind: '', linked: true }],
     )
 
-  const dupes = new Set(rows.map((s) => s.key).filter((k, i, all) => k && all.indexOf(k) !== i))
-  const keyError = (s: Stage) => (!/^[a-z0-9_]{1,32}$/.test(s.key) ? t('a-z, 0-9 and _ only') : s.key === 'rejected' ? t('reserved') : dupes.has(s.key) ? t('used twice') : '')
-  const outError = (s: Stage, o: Outcome) => (!/^[a-z0-9_]{1,32}$/.test(o.key) ? t('a-z, 0-9 and _ only') : outs(s).filter((x) => x.key === o.key).length > 1 ? t('used twice') : '')
-  const invalid = rows.some((s) => keyError(s) || outs(s).some((o) => outError(s, o)))
-
-  const save = () =>
-    run(async () => {
-      setError('')
-      try {
-        const c = await put<Campaign>(`campaigns/${campaign.id}`, { stages: rows })
-        onSaved(c)
-        setRows(c.stages ?? [])
-        toast.ok(t('Funnel saved'))
-      } catch (e) {
-        setError(errMsg(e))
-      }
-    })
+  const keyError = (s: Stage) => stageKeyError(rows, s)
+  const outError = (s: Stage, o: Outcome) => outcomeError(rows, s, o)
 
   return (
-    <Card title={t('Conversion stages')}>
-      <p className="muted small">
-        {tx('The steps a visitor takes after the click, in order. Each one arrives as a conversion whose <code>type</code> is the stage key. Without stages the campaign counts single conversions of the built-in types.', { code: (c) => <code>{c}</code> })}
-      </p>
+    <>
       <fieldset className="plain" disabled={readOnly}>
         {rows.map((s, i) => (
           <div
@@ -161,7 +350,7 @@ function StageEditor({ campaign, saved, readOnly, onSaved }: { campaign: Campaig
               <input className="input mono" placeholder={t('key')} title={t('What postbacks send as type')} value={s.key} maxLength={32} onChange={(e) => patch(i, { key: e.target.value.toLowerCase().trim() })} />
               <div className="stg-opts">
                 <label className="stg-check" title={t('The stage that counts as the conversion: it drives CR and carries the CPA cost')}>
-                  <input type="radio" name="stage-goal" checked={s.goal} onChange={() => setGoal(i)} /> {t('Goal')}
+                  <input type="radio" name={goalName} checked={s.goal} onChange={() => setGoal(i)} /> {t('Goal')}
                 </label>
                 <label className="stg-check" title={t("Can be reported from the visitor's browser with just the click id (landing and offer clicks). Never carries revenue.")}>
                   <input type="checkbox" checked={s.public} disabled={s.goal} onChange={(e) => patch(i, { public: e.target.checked })} /> {t('Browser event')}
@@ -183,13 +372,29 @@ function StageEditor({ campaign, saved, readOnly, onSaved }: { campaign: Campaig
                         ]}
                       />
                       <input className="input input-sm" placeholder={t('Name, e.g. Sent')} value={o.name} maxLength={64} onChange={(e) => renameOut(i, j, e.target.value)} />
-                      <input className="input input-sm mono" placeholder={t('key')} title={t('What postbacks send as outcome')} value={o.key} maxLength={32} onChange={(e) => patchOut(i, j, { key: e.target.value.toLowerCase().trim() })} />
+                      <label className={'stg-key input input-sm mono' + (o.linked ? ' linked' : '')} title={t('What postbacks send as outcome')}>
+                        {o.linked && <span>{prefix(s)}</span>}
+                        <input placeholder={t('key')} value={suffixOf(s, o)} maxLength={32} onChange={(e) => patchOut(i, j, { key: outKey(s, o.linked, e.target.value.toLowerCase().trim()) })} />
+                      </label>
+                      <button
+                        className={'icon-btn' + (o.linked ? ' on' : '')}
+                        aria-pressed={!!o.linked}
+                        title={o.linked ? t('Linked: the key starts with the stage key and follows it. Click to edit the key freely.') : t('Not linked: the key is free. Click to prefix it with the stage key.')}
+                        onClick={() => setLinked(i, j, !o.linked)}
+                      >
+                        {o.linked ? <Link2 size={13} /> : <Unlink2 size={13} />}
+                      </button>
                       <button className="icon-btn" title={t('Remove outcome')} onClick={() => setOuts(i, outs(s).filter((_, k) => k !== j))}>
                         <X size={13} />
                       </button>
-                      {o.key !== '' && outError(s, o) && <div className="field-error">{t('Key: {error}', { error: outError(s, o) })}</div>}
+                      {suffixOf(s, o) !== '' && outError(s, o) && <div className="field-error">{t('Key: {error}', { error: outError(s, o) })}</div>}
                     </div>
                   ))}
+                  {!readOnly && outs(s).length < maxOut && (
+                    <button className="btn small ghost stg-add" onClick={() => addOut(i)}>
+                      <Plus size={13} /> {t('Add outcome')}
+                    </button>
+                  )}
                   {s.goal && outs(s).some((o) => o.kind === 'ok') && <div className="field-help">{t('Only a successful outcome of the goal counts as the conversion.')}</div>}
                 </div>
               )}
@@ -213,24 +418,16 @@ function StageEditor({ campaign, saved, readOnly, onSaved }: { campaign: Campaig
       </fieldset>
       {rows.length === 0 && <div className="muted pad-s">{t('No stages yet.')}</div>}
       {rows.length > 0 && !rows.some((s) => s.goal) && <div className="field-help">{t('No goal picked: the last stage will be the goal.')}</div>}
-      {dirty && saved.length > 0 && <div className="field-help">{t('Events already collected keep the key they arrived with: renaming a key starts that stage from zero.')}</div>}
-      {error && <div className="field-error">{error}</div>}
+      {children}
       {!readOnly && (
         <div className="form-actions">
           <button className="btn" disabled={rows.length >= max} onClick={() => setRows((r) => [...r, { key: '', name: '', goal: false, public: false }])}>
             <Plus size={14} /> {t('Add stage')}
           </button>
-          <button className="btn primary" disabled={busy || !dirty || invalid} onClick={save}>
-            {busy ? t('Saving…') : t('Save funnel')}
-          </button>
-          {dirty && (
-            <button className="btn ghost" onClick={() => setRows(saved)}>
-              {t('Discard')}
-            </button>
-          )}
+          {actions}
         </div>
       )}
-    </Card>
+    </>
   )
 }
 
@@ -269,6 +466,9 @@ export function StageLinks({ stages, domain, onInsert }: { stages: Stage[]; doma
   const eventUrl = (stage: string) => `${base}${meta.event_prefix ?? '/_e/'}${stage}?cid=CLICK_ID`
   const rows: (Stage & { url: string })[] = stages.length > 0 ? stages.map((st) => ({ ...st, url: st.public ? eventUrl(st.key) : postback(st.key) })) : [{ key: key?.default_type ?? 'lead', name: t('Conversion'), goal: false, public: false, url: postback(key?.default_type ?? 'lead') }]
   const split = rows.some((r) => (r.outcomes ?? []).length > 0)
+  // An outcome key that names nothing else in the funnel can be sent as the type on its own.
+  const names = stages.flatMap((st) => [st.key, ...(st.outcomes ?? []).map((o) => o.key)])
+  const outUrl = (r: Stage & { url: string }, key: string) => (names.filter((n) => n === key).length === 1 ? (r.public ? eventUrl(key) : postback(key)) : `${r.url}&outcome=${key}`)
   const anyServer = rows.some((r) => !r.public)
 
   return (
@@ -319,8 +519,8 @@ export function StageLinks({ stages, domain, onInsert }: { stages: Stage[]; doma
             <div className="slink-out" key={o.key}>
               <span className={'tag ' + (o.kind === 'ok' ? 'ok' : o.kind === 'fail' ? 'err' : '')}>{o.name}</span>
               <div className="url-line">
-                <code>{`${r.url}&outcome=${o.key}`}</code>
-                <CopyButton text={`${r.url}&outcome=${o.key}`} label={t('Copy')} />
+                <code>{outUrl(r, o.key)}</code>
+                <CopyButton text={outUrl(r, o.key)} label={t('Copy')} />
               </div>
             </div>
           ))}
@@ -329,7 +529,7 @@ export function StageLinks({ stages, domain, onInsert }: { stages: Stage[]; doma
       <div className="field-help">
         {split && (
           <>
-            {tx('An outcome is the same event with <code>&outcome=…</code>; without it the event only says the stage was started. Add any parameter of your own to keep details with it, for example <code>&reason=timeout</code> on an error.', { code: (c) => <code>{c}</code> })}{' '}
+            {tx('An outcome is sent as its own key in <code>type</code>, or as the stage key with <code>&outcome=…</code> when the outcome key is not unique in the funnel. The stage key alone only says the stage was started. Add any parameter of your own to keep details with the event, for example <code>&reason=timeout</code> on an error.', { code: (c) => <code>{c}</code> })}{' '}
           </>
         )}
         {anyServer && key?.attribution !== 'ip' && key?.attribution !== 'none' && (

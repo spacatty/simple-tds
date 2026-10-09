@@ -134,6 +134,19 @@ export interface Outcome {
   key: string
   name: string
   kind: '' | 'ok' | 'fail'
+  /** The key is the stage key, "_" and a suffix, and follows the stage key when that changes. */
+  linked?: boolean
+}
+
+/** A user's reusable set of funnel stages; applying it copies the stages into a campaign. */
+export interface FunnelPreset {
+  id: number
+  name: string
+  note: string
+  stages: Stage[]
+  /** Grows every time the stages change. */
+  rev: number
+  created_at: string
 }
 
 export interface FunnelRow {
@@ -160,6 +173,9 @@ export interface Campaign {
   currency: string
   unique_hours: number
   stages?: Stage[] | null
+  /** The preset the stages were copied from, and its revision then; the preset is visible to its owner only. */
+  funnel_preset_id?: number | null
+  funnel_preset_rev?: number
   note: string
   created_at: string
   owner_id: number
@@ -205,6 +221,49 @@ export interface Whitepage {
   file_count: number
   size: number
   created_at: string
+}
+
+export interface LandingVar {
+  /** Without the prefix: TITLE for the token CRELLA_VAR_TITLE. */
+  name: string
+  label: string
+  /** text | html | url | js | server — where the value goes, and so how it is escaped. */
+  kind: string
+  default: string
+  /** The token occurs in the landing's files. */
+  used: boolean
+}
+
+export interface LandingPreset {
+  id: number
+  name: string
+  /** Variables the preset sets; the rest keep their defaults. */
+  values: Record<string, string> | null
+}
+
+export interface Landing {
+  id: number
+  name: string
+  key: string
+  kind: string
+  entry: string
+  inject_base: boolean
+  note: string
+  file_count: number
+  size: number
+  vars: LandingVar[] | null
+  presets: LandingPreset[] | null
+  /** Files other than pages that carry variables and are rendered per visitor. */
+  templated: string[] | null
+  created_at: string
+}
+
+/** What a stream form knows of a landing. For someone else's landing the values are not included. */
+export interface LandingRef {
+  id: number
+  name: string
+  vars: { name: string; label: string; kind: string; default?: string }[] | null
+  presets: { id: number; name: string; values?: Record<string, string> | null }[] | null
 }
 
 export interface ConvKey {
@@ -370,6 +429,8 @@ export interface Meta {
   max_stages?: number
   max_outcomes?: number
   reserved_aliases: string[]
+  landing_var_prefix?: string
+  landing_var_kinds?: string[]
   stream_presets?: StreamPreset[] | null
   report_filters?: string[] | null
   reputation_providers?: RepProviderDef[] | null

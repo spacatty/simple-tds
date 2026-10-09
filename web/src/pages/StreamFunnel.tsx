@@ -4,11 +4,11 @@ import { Link, useNavigate } from 'react-router-dom'
 import { AlertTriangle, ArrowRight, BarChart3, ChevronDown, Copy, CornerDownRight, Eye, GripVertical, MoreVertical, MousePointerClick, Pencil, Plus, RefreshCw, ShieldCheck, Trash2, Wallet } from 'lucide-react'
 import { del, get, post, put } from '../api'
 import { canEdit, useLoad, useMeta } from '../hooks'
-import type { ActionConfig, ActionDef, Campaign, Filter, FilterDef, GeoPreset, ReportRow, Stream, StreamPreset, Whitepage } from '../types'
+import type { ActionConfig, ActionDef, Campaign, Filter, FilterDef, GeoPreset, LandingRef, ReportRow, Stream, StreamPreset, Whitepage } from '../types'
 import { Dropdown, ErrorBox, MenuItem, Skeleton, Toggle, confirmDialog, toast } from '../components/ui'
 import { DateRangePicker } from '../components/DateRangePicker'
 import type { DateRange } from '../components/DateRangePicker'
-import StreamEditor, { ACTION_ICONS, draftFromStream, newDraft, presetName, streamBody } from './StreamEditor'
+import StreamEditor, { ACTION_ICONS, draftFromStream, landingPresets, newDraft, presetName, streamBody } from './StreamEditor'
 import type { RefNames, StreamDraft } from './StreamEditor'
 import StreamStats from './StreamStats'
 import FunnelDrawer from './FunnelDrawer'
@@ -24,6 +24,7 @@ interface StreamsResp {
   /** Names of every whitepage / target campaign the streams reference, including ones the viewer does not own. */
   whitepages?: Record<string, string> | null
   campaigns?: Record<string, string> | null
+  landings?: Record<string, LandingRef> | null
 }
 
 const KINDS = ['forced', 'regular', 'default'] as const
@@ -87,7 +88,7 @@ export default function StreamFunnel({
 
   const streams = useMemo(() => res.data?.streams ?? [], [res.data])
   const errors = res.data?.errors ?? {}
-  const refNames: RefNames = useMemo(() => ({ whitepages: res.data?.whitepages ?? {}, campaigns: res.data?.campaigns ?? {} }), [res.data])
+  const refNames: RefNames = useMemo(() => ({ whitepages: res.data?.whitepages ?? {}, campaigns: res.data?.campaigns ?? {}, landings: res.data?.landings ?? {} }), [res.data])
   const streamPresets = useMemo(() => [...(meta.stream_presets ?? []), ...(own.data ?? [])], [meta.stream_presets, own.data])
   const byKind = useMemo(() => {
     const m: Record<string, Stream[]> = { forced: [], regular: [], default: [] }
@@ -446,6 +447,12 @@ export function actionSummary(s: Stream, actions: ActionDef[], whitepages: White
       const w = whitepages.find((x) => x.id === Number(cfg.whitepage_id))
       // In a shared campaign the owner's whitepages are not in the viewer's own list: the server supplies their names.
       detail = w ? w.name : cfg.whitepage_id ? refNames?.whitepages[str('whitepage_id')] ?? t('#{id} (missing)', { id: str('whitepage_id') }) : t('not chosen@@whitepage')
+      break
+    }
+    case 'landing': {
+      const l = refNames?.landings[str('landing_id')]
+      const shown = landingPresets(cfg.presets).map((p) => (l?.presets ?? []).find((x) => x.id === p.id)?.name ?? `#${p.id}`)
+      detail = l ? l.name + (shown.length ? ` · ${shown.join(' / ')}` : '') : cfg.landing_id ? t('#{id} (missing)', { id: str('landing_id') }) : t('not chosen@@landing')
       break
     }
     case 'campaign': {
