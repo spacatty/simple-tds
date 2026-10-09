@@ -115,6 +115,9 @@ func (u *uniqStore) forgetCampaign(campaignID int64) {
 	u.genMu.Unlock()
 }
 
+// ForgetVisitor makes one visitor of a campaign unique again.
+func (e *Engine) ForgetVisitor(campaignID int64, ip, ua string) { e.uniq.forget(campaignID, ip, ua) }
+
 // ForgetVisitors resets visitor uniqueness for a campaign.
 func (e *Engine) ForgetVisitors(campaignID int64) { e.uniq.forgetCampaign(campaignID) }
 

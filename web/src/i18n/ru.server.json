@@ -220,6 +220,8 @@
   "upload a .zip archive, or a single .html or .php file": "загрузите архив .zip либо один файл .html или .php",
   "the upload contains no usable files": "в загруженном архиве или файле нет подходящих файлов",
   "too many files (limit {1})": "слишком много файлов (лимит {1})",
+  "too many addresses (limit 5000)": "слишком много адресов (лимит 5000)",
+  "enter at least one IP address or CIDR": "укажите хотя бы один IP-адрес или CIDR",
   "upload is larger than {1} MB unpacked": "после распаковки файлы занимают больше {1} МБ",
   "no index.html or index.php found at the top level of the upload": "в корне архива не найден index.html или index.php",
   "provider paused after repeated failures": "провайдер приостановлен после повторных сбоев",

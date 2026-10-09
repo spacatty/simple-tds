@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Copy, Download, Eraser, MoreHorizontal, RefreshCw, Save, Trash2 } from 'lucide-react'
+import { ArrowLeft, Copy, Download, Eraser, MoreHorizontal, RefreshCw, Save, ShieldX, Trash2 } from 'lucide-react'
 import { del, errMsg, get, post, put } from '../api'
 import { canEdit, canRead, isOwner, useLoad, useMeta, useTitle } from '../hooks'
 import type { Campaign, CampaignGroup, Domain, GeoPreset, IntegrationSnippets, Whitepage } from '../types'
-import { Card, CodeBlock, CopyButton, Dropdown, ErrorBox, Field, MenuItem, Notice, NumberInput, Segmented, Select, Skeleton, Toggle, confirmDialog, toast } from '../components/ui'
+import { Card, CodeBlock, CopyButton, Dropdown, ErrorBox, Field, MenuItem, Modal, Notice, NumberInput, Segmented, Select, Skeleton, Toggle, confirmDialog, toast } from '../components/ui'
 import { useDateRange } from '../components/DateRangePicker'
 import StreamFunnel from './StreamFunnel'
 import Simulator from './Simulator'
@@ -39,6 +39,51 @@ interface Form {
 }
 const formOf = (c: Campaign): Form => ({ name: c.name, rotation: c.rotation, cost_model: c.cost_model, cost_value: c.cost_value, currency: c.currency, unique_hours: c.unique_hours, note: c.note, group_id: c.group_id ?? null })
 
+/** Deletes what a list of addresses left in the campaign: test visits, spam. */
+function PurgeIPs({ campaign, onClose, onDone }: { campaign: Campaign; onClose: () => void; onDone: () => void }) {
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const ips = text.split(/[\s,;]+/).filter(Boolean)
+  const run = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      const res = await post<{ clicks: number; conversions: number }>(`campaigns/${campaign.id}/purge-ips`, { ips })
+      toast.ok(t('Deleted: clicks {clicks}, conversions {conversions}', { clicks: res.clicks, conversions: res.conversions }))
+      onDone()
+      onClose()
+    } catch (e) {
+      setError(errMsg(e))
+      setBusy(false)
+    }
+  }
+  return (
+    <Modal
+      title={t('Delete data by IP')}
+      onClose={onClose}
+      footer={
+        <>
+          {error && <div className="field-error grow">{error}</div>}
+          <button className="btn" onClick={onClose}>
+            {t('Cancel')}
+          </button>
+          <button className="btn danger" disabled={busy || ips.length === 0} onClick={run}>
+            <Trash2 size={14} /> {busy ? t('Deleting…') : t('Delete their data')}
+          </button>
+        </>
+      }
+    >
+      <Field
+        label={t('IP addresses')}
+        help={tx('One address or CIDR per line. Every click of <b>{name}</b> from these addresses is deleted for good, together with the conversions of those clicks, and these visitors count as unique again. Other campaigns are not touched.', { b: (c) => <b>{c}</b>, name: campaign.name })}
+      >
+        <textarea className="input mono" rows={8} autoFocus spellCheck={false} value={text} onChange={(e) => setText(e.target.value)} placeholder={'198.51.100.7\n203.0.113.0/24\n2001:db8::/32'} />
+      </Field>
+    </Modal>
+  )
+}
+
 export default function CampaignEditor() {
   const params = useParams()
   const nav = useNavigate()
@@ -69,6 +114,7 @@ export default function CampaignEditor() {
   const [formError, setFormError] = useState('')
   // Bumped after the statistics are cleared, so the tabs that show them load again.
   const [statsRev, setStatsRev] = useState(0)
+  const [purging, setPurging] = useState(false)
   useEffect(() => {
     setForm(campaign ? formOf(campaign) : null)
     setFormError('')
@@ -287,6 +333,16 @@ export default function CampaignEditor() {
                     </MenuItem>
                     <MenuItem
                       danger
+                      title={t('Delete the clicks and conversions that came from certain IP addresses: your own tests, or spam')}
+                      onClick={() => {
+                        close()
+                        setPurging(true)
+                      }}
+                    >
+                      <ShieldX size={14} /> {t('Delete data by IP…')}
+                    </MenuItem>
+                    <MenuItem
+                      danger
                       onClick={() => {
                         close()
                         remove()
@@ -299,6 +355,7 @@ export default function CampaignEditor() {
               </div>
             )}
           </Dropdown>
+          {purging && <PurgeIPs campaign={campaign} onClose={() => setPurging(false)} onDone={() => setStatsRev((n) => n + 1)} />}
         </header>
       </div>
 

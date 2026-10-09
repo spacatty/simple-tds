@@ -7,10 +7,12 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"reflect"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/net/idna"
@@ -731,6 +733,7 @@ func (s *Server) routes(r chi.Router) {
 	r.Post("/campaigns/{id}/clone", handler(s.campaignClone))
 	r.Post("/campaigns/{id}/alias", handler(s.campaignNewAlias))
 	r.Post("/campaigns/{id}/reset-stats", handler(s.campaignResetStats))
+	r.Post("/campaigns/{id}/purge-ips", handler(s.campaignPurgeIPs))
 	mount(s, r, "/stream-presets", resource[model.StreamPreset]{table: "stream_presets", order: "kind, name", validate: s.validatePreset})
 	r.Get("/campaigns/{id}/streams", handler(s.campaignStreams))
 	r.Put("/campaigns/{id}/streams/order", handler(s.streamsReorder))
@@ -1018,6 +1021,49 @@ func (s *Server) campaignResetStats(r *http.Request) (any, error) {
 	}
 	s.eng.ForgetVisitors(c.ID)
 	return nil, nil
+}
+
+// campaignPurgeIPs deletes what the given addresses left in a campaign: their
+// clicks, the conversions of those clicks, and their "seen before" mark.
+// Meant for the owner's own test visits and for spam.
+func (s *Server) campaignPurgeIPs(r *http.Request) (any, error) {
+	var in struct {
+		IPs []string `json:"ips"`
+	}
+	if err := readJSON(r, &in); err != nil {
+		return nil, err
+	}
+	c, err := s.campaign(r.Context(), pathID(r), model.AccessOwner)
+	if err != nil {
+		return nil, err
+	}
+	var prefixes []netip.Prefix
+	for _, line := range in.IPs {
+		for _, f := range strings.FieldsFunc(line, func(r rune) bool { return r == ',' || r == ';' || unicode.IsSpace(r) }) {
+			if p, err := netip.ParsePrefix(f); err == nil {
+				prefixes = append(prefixes, netip.PrefixFrom(p.Addr().Unmap(), p.Bits()).Masked())
+			} else if a, err := netip.ParseAddr(f); err == nil {
+				a = a.Unmap()
+				prefixes = append(prefixes, netip.PrefixFrom(a, a.BitLen()))
+			} else {
+				return nil, bad(fmt.Sprintf("bad IP or CIDR %q", f))
+			}
+		}
+	}
+	if len(prefixes) == 0 {
+		return nil, bad("enter at least one IP address or CIDR")
+	}
+	if len(prefixes) > 5000 {
+		return nil, bad("too many addresses (limit 5000)")
+	}
+	res, err := s.ev.DeleteIPs(r.Context(), c.ID, prefixes)
+	if err != nil {
+		return nil, err
+	}
+	for _, v := range res.Visitors {
+		s.eng.ForgetVisitor(c.ID, v[0], v[1])
+	}
+	return res, nil
 }
 
 func (s *Server) campaignClone(r *http.Request) (any, error) {

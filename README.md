@@ -219,7 +219,10 @@ and which filter decided it.
 After testing, the campaign owner can wipe what the tests left behind with
 ⋯ → **Clear statistics**: it deletes every click and conversion of that
 campaign for good and makes its visitors unique again. The campaign itself is
-not touched.
+not touched. To remove only certain visitors — your own test visits on a live
+campaign, or a spammer — use ⋯ → **Delete data by IP** with a list of
+addresses or CIDR ranges: their clicks go, together with the conversions of
+those clicks.
 
 ## Conversions
 

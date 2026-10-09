@@ -6,7 +6,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"reflect"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -197,6 +199,70 @@ func (db *DB) DeleteCampaign(ctx context.Context, campaignID int64) error {
 		}
 	}
 	return nil
+}
+
+// Purged is what DeleteIPs removed.
+type Purged struct {
+	Clicks      uint64 `json:"clicks"`
+	Conversions uint64 `json:"conversions"`
+	// Visitors are the (ip, user agent) pairs behind the removed clicks.
+	Visitors [][2]string `json:"-"`
+}
+
+// DeleteIPs removes the clicks a campaign received from the given addresses
+// and networks, together with the conversions of those clicks.
+func (db *DB) DeleteIPs(ctx context.Context, campaignID int64, prefixes []netip.Prefix) (Purged, error) {
+	var out Purged
+	// Everything below is formatted by netip, so it is safe inside the query.
+	var single, conds []string
+	for _, p := range prefixes {
+		if p.IsSingleIP() {
+			single = append(single, "'"+p.Addr().String()+"'")
+		} else {
+			conds = append(conds, "isIPAddressInRange(ip, '"+p.Masked().String()+"')")
+		}
+	}
+	if len(conds) > 0 {
+		// Short-circuits, so a row without a parsable address never reaches the range check.
+		conds = []string{"((isIPv4String(ip) OR isIPv6String(ip)) AND (" + strings.Join(conds, " OR ") + "))"}
+	}
+	if len(single) > 0 {
+		conds = append(conds, "ip IN ("+strings.Join(single, ",")+")")
+	}
+	if len(conds) == 0 {
+		return out, nil
+	}
+	time.Sleep(flushEvery + 200*time.Millisecond) // let queued clicks land first
+	clicks := fmt.Sprintf("campaign_id = %d AND (%s)", campaignID, strings.Join(conds, " OR "))
+	convs := fmt.Sprintf("campaign_id = %d AND click_id IN (SELECT click_id FROM clicks WHERE %s)", campaignID, clicks)
+
+	if err := db.conn.QueryRow(ctx, "SELECT count() FROM clicks WHERE "+clicks).Scan(&out.Clicks); err != nil {
+		return out, err
+	}
+	if err := db.conn.QueryRow(ctx, "SELECT count() FROM conversions WHERE "+convs).Scan(&out.Conversions); err != nil {
+		return out, err
+	}
+	rows, err := db.conn.Query(ctx, "SELECT DISTINCT ip, ua FROM clicks WHERE "+clicks+" LIMIT 100000")
+	if err != nil {
+		return out, err
+	}
+	for rows.Next() {
+		var v [2]string
+		if err := rows.Scan(&v[0], &v[1]); err != nil {
+			rows.Close()
+			return out, err
+		}
+		out.Visitors = append(out.Visitors, v)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return out, err
+	}
+	// Conversions first: they are found through the clicks.
+	if err := db.conn.Exec(ctx, "DELETE FROM conversions WHERE "+convs); err != nil {
+		return out, err
+	}
+	return out, db.conn.Exec(ctx, "DELETE FROM clicks WHERE "+clicks)
 }
 
 // AddClick never blocks: when ClickHouse cannot keep up the click is dropped
