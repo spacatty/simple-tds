@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Ban, BookmarkPlus, Braces, Check, ChevronRight, Code2, CornerDownRight, ExternalLink, Eye, FileCode2, FileText, Pencil, Plus, Search, Split, Trash2, X } from 'lucide-react'
+import { Ban, BookmarkPlus, CircleSlash, Braces, Check, ChevronRight, Code2, CornerDownRight, ExternalLink, Eye, FileCode2, FileText, Pencil, Plus, Search, Split, Trash2, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { del, errMsg, get, post, put } from '../api'
 import { useMeta } from '../hooks'
@@ -72,7 +72,7 @@ export function newDraft(campaignId: number, kind: string, actions: ActionDef[])
 /** Built-in presets come from the server in English; own presets are shown as the user named them. */
 export const presetName = (p: StreamPreset) => (p.builtin ? ts(p.name) : p.name)
 
-const cloneFilters = (fs: Filter[] | null | undefined): Filter[] => (fs ?? []).map((f) => ({ type: f.type, mode: f.mode === 'is_not' ? 'is_not' : 'is', values: [...(f.values ?? [])] }))
+const cloneFilters = (fs: Filter[] | null | undefined): Filter[] => (fs ?? []).map((f) => ({ type: f.type, mode: f.mode === 'is_not' ? 'is_not' : 'is', values: [...(f.values ?? [])], ...(f.bypass ? { bypass: true } : {}) }))
 
 export function draftFromStream(s: Stream): StreamDraft {
   return {
@@ -118,7 +118,7 @@ export function cleanConfig(def: ActionDef | undefined, cfg: ActionConfig): Acti
   return out
 }
 
-const cleanFilters = (fs: Filter[]) => fs.map((f) => ({ type: f.type, mode: f.mode, values: f.values.map((v) => v.trim()).filter(Boolean) }))
+const cleanFilters = (fs: Filter[]) => fs.map((f) => ({ type: f.type, mode: f.mode, values: f.values.map((v) => v.trim()).filter(Boolean), ...(f.bypass ? { bypass: true } : {}) }))
 
 export function streamBody(d: StreamDraft, actions: ActionDef[]) {
   return {
@@ -318,7 +318,15 @@ export default function StreamEditor({ draft: initial, campaign, campaigns, whit
                 { value: 'or', label: t('OR'), title: t('Any filter may match') },
               ]}
             />
-            <span className="muted grow ellipsis">{d.filters.length === 0 ? t('No filters: matches every visitor.') : d.filter_op === 'or' ? t('Matches when any filter passes.') : t('Matches when all filters pass.')}</span>
+            <span className="muted grow ellipsis">
+              {d.filters.length === 0
+                ? t('No filters: matches every visitor.')
+                : d.filters.every((f) => f.bypass)
+                  ? t('Every filter is bypassed: matches every visitor.')
+                  : d.filter_op === 'or'
+                    ? t('Matches when any filter passes.')
+                    : t('Matches when all filters pass.')}
+            </span>
             <PresetControls
               kind="filters"
               presets={streamPresets}
@@ -334,7 +342,7 @@ export default function StreamEditor({ draft: initial, campaign, campaigns, whit
               const def = filterDefs.get(f.type)
               const err = tried ? filterError(f) : ''
               return (
-                <div className={'filter-row' + (err ? ' invalid' : '')} key={i}>
+                <div className={'filter-row' + (err ? ' invalid' : '') + (f.bypass ? ' bypass' : '')} key={i}>
                   <span className={'filter-join' + (i === 0 ? '' : d.filter_op === 'or' ? ' or' : ' and')}>{i === 0 ? t('IF') : d.filter_op === 'or' ? t('OR') : t('AND')}</span>
                   <Select className="filter-type" value={f.type} options={filterOptions} onChange={(type) => setFilter(i, { type, values: [] })} />
                   <div className={'mode-pill ' + (f.mode === 'is_not' ? 'not' : 'is')}>
@@ -349,6 +357,15 @@ export default function StreamEditor({ draft: initial, campaign, campaigns, whit
                     <FilterValue def={def} values={f.values} onChange={(values) => setFilter(i, { values })} presets={presets} />
                     {err ? <div className="field-error">{err}</div> : def?.help && def.input !== 'none' ? <div className="field-help">{ts(def.help)}</div> : null}
                   </div>
+                  <button
+                    type="button"
+                    className={'icon-btn filter-bypass' + (f.bypass ? ' active' : '')}
+                    aria-pressed={!!f.bypass}
+                    title={f.bypass ? t('Bypassed: this filter is ignored. Click to apply it again.') : t('Bypass: keep this filter but ignore it when matching')}
+                    onClick={() => setFilter(i, { bypass: !f.bypass })}
+                  >
+                    <CircleSlash size={15} />
+                  </button>
                   <button type="button" className="icon-btn danger" title={t('Remove filter')} onClick={() => set({ filters: d.filters.filter((_, j) => j !== i) })}>
                     <X size={15} />
                   </button>

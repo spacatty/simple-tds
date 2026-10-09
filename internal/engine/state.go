@@ -76,10 +76,14 @@ type uniqShard struct {
 type uniqStore struct {
 	seed   maphash.Seed
 	shards [uniqShards]uniqShard
+	// gens is mixed into the key, so bumping a campaign's number makes all of
+	// its visitors new again without walking the shards.
+	genMu sync.RWMutex
+	gens  map[int64]uint64
 }
 
 func newUniqStore() *uniqStore {
-	u := &uniqStore{seed: maphash.MakeSeed()}
+	u := &uniqStore{seed: maphash.MakeSeed(), gens: map[int64]uint64{}}
 	for i := range u.shards {
 		u.shards[i].m = map[uint64]int64{}
 	}
@@ -90,14 +94,29 @@ func newUniqStore() *uniqStore {
 func (u *uniqStore) key(campaignID int64, ip, ua string) uint64 {
 	var h maphash.Hash
 	h.SetSeed(u.seed)
-	var id [8]byte
-	binary.LittleEndian.PutUint64(id[:], uint64(campaignID))
+	u.genMu.RLock()
+	gen := u.gens[campaignID]
+	u.genMu.RUnlock()
+	var id [16]byte
+	binary.LittleEndian.PutUint64(id[:8], uint64(campaignID))
+	binary.LittleEndian.PutUint64(id[8:], gen)
 	h.Write(id[:])
 	h.WriteString(ip)
 	h.WriteByte(0)
 	h.WriteString(ua)
 	return h.Sum64()
 }
+
+// forgetCampaign makes every visitor of a campaign unique again. The old
+// entries stay until they expire.
+func (u *uniqStore) forgetCampaign(campaignID int64) {
+	u.genMu.Lock()
+	u.gens[campaignID]++
+	u.genMu.Unlock()
+}
+
+// ForgetVisitors resets visitor uniqueness for a campaign.
+func (e *Engine) ForgetVisitors(campaignID int64) { e.uniq.forgetCampaign(campaignID) }
 
 // forget undoes first, for a hit that turned out not to be a click.
 func (u *uniqStore) forget(campaignID int64, ip, ua string) {

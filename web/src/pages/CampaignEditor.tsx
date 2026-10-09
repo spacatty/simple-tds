@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Copy, Download, MoreHorizontal, RefreshCw, Save, Trash2 } from 'lucide-react'
+import { ArrowLeft, Copy, Download, Eraser, MoreHorizontal, RefreshCw, Save, Trash2 } from 'lucide-react'
 import { del, errMsg, get, post, put } from '../api'
 import { canEdit, canRead, isOwner, useLoad, useMeta, useTitle } from '../hooks'
 import type { Campaign, CampaignGroup, Domain, GeoPreset, IntegrationSnippets, Whitepage } from '../types'
@@ -67,6 +67,8 @@ export default function CampaignEditor() {
   const [form, setForm] = useState<Form | null>(null)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
+  // Bumped after the statistics are cleared, so the tabs that show them load again.
+  const [statsRev, setStatsRev] = useState(0)
   useEffect(() => {
     setForm(campaign ? formOf(campaign) : null)
     setFormError('')
@@ -159,6 +161,22 @@ export default function CampaignEditor() {
       await del(`campaigns/${id}`)
       toast.ok(t('Campaign deleted'))
       nav('/campaigns')
+    } catch (e) {
+      toast.err(e)
+    }
+  }
+  const resetStats = async () => {
+    if (!campaign) return
+    const ok = await confirmDialog({
+      title: t('Clear statistics?'),
+      confirmLabel: t('Clear statistics'),
+      message: tx('All clicks and conversions of <b>{name}</b> will be deleted for good, and its visitors will count as unique again. The campaign, its streams and its link stay as they are.', { b: (c) => <b>{c}</b>, name: campaign.name }),
+    })
+    if (!ok) return
+    try {
+      await post(`campaigns/${id}/reset-stats`)
+      toast.ok(t('Statistics cleared'))
+      setStatsRev((n) => n + 1)
     } catch (e) {
       toast.err(e)
     }
@@ -259,6 +277,16 @@ export default function CampaignEditor() {
                     <div className="menu-sep" />
                     <MenuItem
                       danger
+                      title={t('Delete every click and conversion of this campaign, for a clean start after testing')}
+                      onClick={() => {
+                        close()
+                        resetStats()
+                      }}
+                    >
+                      <Eraser size={14} /> {t('Clear statistics')}
+                    </MenuItem>
+                    <MenuItem
+                      danger
                       onClick={() => {
                         close()
                         remove()
@@ -304,7 +332,7 @@ export default function CampaignEditor() {
         )}
 
         {tab === 'streams' && (
-          <StreamFunnel key={id} campaign={campaign} campaigns={camps.data ?? []} whitepages={wps.data ?? []} presets={presets.data ?? []} readOnly={!editable} range={range} setRange={setRange} domain={domain} />
+          <StreamFunnel key={id + ':' + statsRev} campaign={campaign} campaigns={camps.data ?? []} whitepages={wps.data ?? []} presets={presets.data ?? []} readOnly={!editable} range={range} setRange={setRange} domain={domain} />
         )}
 
         {tab === 'settings' && (
@@ -359,7 +387,7 @@ export default function CampaignEditor() {
 
         {tab === 'funnel' && (
           <div className="ce-form">
-            <Stages key={id} campaign={campaign} domain={domain} range={range} setRange={setRange} readOnly={!editable} onSaved={update} />
+            <Stages key={id + ':' + statsRev} campaign={campaign} domain={domain} range={range} setRange={setRange} readOnly={!editable} onSaved={update} />
           </div>
         )}
         {tab === 'integration' && editable && (

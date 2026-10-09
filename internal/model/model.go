@@ -217,6 +217,8 @@ type Filter struct {
 	Type   string   `json:"type"`
 	Mode   string   `json:"mode"`
 	Values []string `json:"values"`
+	// Bypass keeps the filter in the stream but leaves it out of matching.
+	Bypass bool `json:"bypass,omitempty"`
 }
 
 // Stream kinds, evaluated in this order.

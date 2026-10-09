@@ -415,7 +415,7 @@ function filterChip(f: Filter, def: FilterDef | undefined) {
   if (def && def.input !== 'none') {
     text = vals.slice(0, 3).join(', ') + (vals.length > 3 ? ` +${vals.length - 3}` : '')
   }
-  return { label, not, text, vals, flag: !def || def.input === 'none', title: `${label} ${not ? t('is not') : t('is')}${vals.length ? ': ' + vals.join(', ') : ''}` }
+  return { label, not, text, vals, flag: !def || def.input === 'none', title: `${label} ${not ? t('is not') : t('is')}${vals.length ? ': ' + vals.join(', ') : ''}${f.bypass ? ` (${t('bypassed@@filter')})` : ''}` }
 }
 
 /** How many filter chips a row shows before the rest fold into "+N more". */
@@ -663,7 +663,7 @@ function StreamCard({
             {shown.map((f, i) => {
               const c = filterChip(f, filterDefs.get(f.type))
               return (
-                <span key={i} className={'fchip' + (c.not ? ' not' : '')} title={c.title}>
+                <span key={i} className={'fchip' + (c.not ? ' not' : '') + (f.bypass ? ' bypass' : '')} title={c.title}>
                   {c.flag ? (
                     <>
                       {c.not && <em>{t('not')}</em>}

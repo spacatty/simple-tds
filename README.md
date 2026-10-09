@@ -164,7 +164,9 @@ at `/` on domains that name it as their default campaign.
 
 Streams are evaluated top to bottom: **intercepting** → **regular** (by position, or
 by weight) → **default**. Each stream has filters (IS / IS NOT, combined with
-AND or OR) and one action:
+AND or OR) and one action. A filter can be **bypassed** in the stream editor:
+it stays in the stream but is ignored when matching — handy for testing a link
+yourself without deleting the rule. The actions:
 
 | Action | |
 |---|---|
@@ -213,6 +215,11 @@ GeoLite2, or upload `.mmdb` files by hand.
 
 Use Campaign → Simulator to see which stream a given IP / User-Agent would get
 and which filter decided it.
+
+After testing, the campaign owner can wipe what the tests left behind with
+⋯ → **Clear statistics**: it deletes every click and conversion of that
+campaign for good and makes its visitors unique again. The campaign itself is
+not touched.
 
 ## Conversions
 

@@ -2875,6 +2875,11 @@ tr.camp-off .tnum {
 .tf.fail svg {
   color: var(--err);
 }
+.tf.bypass {
+  color: var(--text-3);
+  border-style: dashed;
+  text-decoration: line-through;
+}
 
 /* ---- conversion stages (campaign funnel tab) --------------------------------- */
 .stg-row {
@@ -3793,6 +3798,10 @@ tr.camp-off .tnum {
 .fchip.not {
   background: var(--err-soft);
 }
+.fchip.bypass {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
 .fchip.any,
 .fchip.more {
   background: none;
@@ -4464,7 +4473,7 @@ a.fnl-num:hover {
 }
 .filter-row {
   display: grid;
-  grid-template-columns: 28px 164px auto minmax(0, 1fr) 28px;
+  grid-template-columns: 28px 164px auto minmax(0, 1fr) 28px 28px;
   gap: 8px;
   align-items: start;
   padding: 8px;
@@ -4474,6 +4483,16 @@ a.fnl-num:hover {
 }
 .filter-row.invalid {
   border-color: var(--err);
+}
+/* A bypassed filter stays editable but reads as switched off. */
+.filter-row.bypass {
+  border-style: dashed;
+}
+.filter-row.bypass > :not(.icon-btn) {
+  opacity: 0.45;
+}
+.filter-bypass.active {
+  color: var(--warn);
 }
 .filter-row select.input {
   height: 28px;
@@ -4500,7 +4519,7 @@ a.fnl-num:hover {
 }
 @media (max-width: 720px) {
   .filter-row {
-    grid-template-columns: 34px minmax(0, 1fr) auto 28px;
+    grid-template-columns: 34px minmax(0, 1fr) auto 28px 28px;
   }
   .filter-value {
     grid-column: 1 / -1;

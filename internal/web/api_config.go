@@ -730,6 +730,7 @@ func (s *Server) routes(r chi.Router) {
 	s.dashboardRoutes(r)
 	r.Post("/campaigns/{id}/clone", handler(s.campaignClone))
 	r.Post("/campaigns/{id}/alias", handler(s.campaignNewAlias))
+	r.Post("/campaigns/{id}/reset-stats", handler(s.campaignResetStats))
 	mount(s, r, "/stream-presets", resource[model.StreamPreset]{table: "stream_presets", order: "kind, name", validate: s.validatePreset})
 	r.Get("/campaigns/{id}/streams", handler(s.campaignStreams))
 	r.Put("/campaigns/{id}/streams/order", handler(s.streamsReorder))
@@ -1002,6 +1003,21 @@ func (s *Server) streamsReorder(r *http.Request) (any, error) {
 		}
 	}
 	return nil, s.reload(r.Context())
+}
+
+// campaignResetStats deletes the campaign's clicks and conversions and makes
+// its visitors unique again: a clean start after testing. Owner only, like
+// deleting the campaign.
+func (s *Server) campaignResetStats(r *http.Request) (any, error) {
+	c, err := s.campaign(r.Context(), pathID(r), model.AccessOwner)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.ev.DeleteCampaign(r.Context(), c.ID); err != nil {
+		return nil, err
+	}
+	s.eng.ForgetVisitors(c.ID)
+	return nil, nil
 }
 
 func (s *Server) campaignClone(r *http.Request) (any, error) {

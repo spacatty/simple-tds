@@ -187,6 +187,18 @@ func (db *DB) SetRetention(ctx context.Context, days int) error {
 	return nil
 }
 
+// DeleteCampaign removes every click and conversion of a campaign. Clicks
+// still in the write queue land afterwards, so the caller waits out a flush.
+func (db *DB) DeleteCampaign(ctx context.Context, campaignID int64) error {
+	time.Sleep(flushEvery + 200*time.Millisecond)
+	for _, t := range []string{"clicks", "conversions"} {
+		if err := db.conn.Exec(ctx, fmt.Sprintf("DELETE FROM %s WHERE campaign_id = %d", t, campaignID)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // AddClick never blocks: when ClickHouse cannot keep up the click is dropped
 // and counted rather than slowing the visitor down.
 func (db *DB) AddClick(c *Click) {

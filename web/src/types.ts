@@ -124,6 +124,8 @@ export interface Filter {
   type: string
   mode: string
   values: string[]
+  /** Kept in the stream but left out of matching. */
+  bypass?: boolean
 }
 
 export type ActionConfig = Record<string, unknown>
@@ -378,6 +380,7 @@ export interface FilterTrace {
   type: string
   negated: boolean
   passed: boolean
+  bypassed?: boolean
 }
 
 export interface StreamTrace {

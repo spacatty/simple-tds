@@ -192,9 +192,10 @@ var filterIndex = func() map[string]*FilterDef {
 func FilterDefs() []FilterDef { return filterDefs }
 
 type compiledFilter struct {
-	typ   string
-	neg   bool
-	match func(*Visit) bool
+	typ    string
+	neg    bool
+	bypass bool
+	match  func(*Visit) bool
 }
 
 func compileFilters(fs []model.Filter) ([]compiledFilter, error) {
@@ -211,7 +212,7 @@ func compileFilters(fs []model.Filter) ([]compiledFilter, error) {
 		if err != nil {
 			return nil, fmt.Errorf("filter %q: %w", def.Label, err)
 		}
-		out = append(out, compiledFilter{typ: f.Type, neg: f.Mode == "is_not", match: m})
+		out = append(out, compiledFilter{typ: f.Type, neg: f.Mode == "is_not", bypass: f.Bypass, match: m})
 	}
 	return out, nil
 }

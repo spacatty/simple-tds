@@ -25,6 +25,11 @@ func stream(op string, js bool, fs ...model.Filter) *StreamRT {
 	return s
 }
 
+func bypassed(f model.Filter) model.Filter {
+	f.Bypass = true
+	return f
+}
+
 func TestStreamMatching(t *testing.T) {
 	ru := model.Filter{Type: "country", Mode: "is", Values: []string{"RU", "kz"}}
 	notMobile := model.Filter{Type: "device_type", Mode: "is_not", Values: []string{"mobile"}}
@@ -46,6 +51,9 @@ func TestStreamMatching(t *testing.T) {
 		{"bot flag", stream("and", false, isBot), visit("US", "bot", true), true},
 		{"param", stream("and", false, hasUTM), visit("US", "desktop", false), true},
 		{"js check stream never takes bots", stream("and", true), visit("US", "desktop", true), false},
+		{"and: failing filter bypassed", stream("and", false, ru, bypassed(notMobile)), visit("RU", "mobile", false), true},
+		{"or: passing filter bypassed", stream("or", false, bypassed(ru), isBot), visit("RU", "mobile", false), false},
+		{"or: every filter bypassed", stream("or", false, bypassed(ru), bypassed(isBot)), visit("US", "mobile", false), true},
 	}
 	for _, c := range cases {
 		if got := c.s.matches(c.v, nil); got != c.want {

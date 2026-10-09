@@ -304,7 +304,15 @@ func (s *StreamRT) matches(v *Visit, trace *StreamTrace) bool {
 	}
 	or := s.FilterOp == "or"
 	result := !or
+	active := false
 	for _, f := range s.filters {
+		if f.bypass {
+			if trace != nil {
+				trace.Filters = append(trace.Filters, FilterTrace{Type: f.typ, Negated: f.neg, Bypassed: true})
+			}
+			continue
+		}
+		active = true
 		ok := f.match(v) != f.neg
 		if trace != nil {
 			trace.Filters = append(trace.Filters, FilterTrace{Type: f.typ, Negated: f.neg, Passed: ok})
@@ -317,13 +325,15 @@ func (s *StreamRT) matches(v *Visit, trace *StreamTrace) bool {
 			result = result && ok
 		}
 	}
-	return result
+	// With every filter bypassed the stream has none left, and takes everyone.
+	return result || !active
 }
 
 type FilterTrace struct {
-	Type    string `json:"type"`
-	Negated bool   `json:"negated"`
-	Passed  bool   `json:"passed"`
+	Type     string `json:"type"`
+	Negated  bool   `json:"negated"`
+	Passed   bool   `json:"passed"`
+	Bypassed bool   `json:"bypassed,omitempty"`
 }
 
 type StreamTrace struct {
