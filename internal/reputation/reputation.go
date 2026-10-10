@@ -90,14 +90,21 @@ type Checker struct {
 	// lookup resolves host through the given DNS server ("" is the system
 	// resolver). A name that does not exist is an empty answer, not an error.
 	lookup func(ctx context.Context, server, host string) ([]netip.Addr, error)
+	// dns is the resolver the DNS blocklists are asked through: "host" or
+	// "host:port", "" for the system resolver. The lists refuse public
+	// resolvers, so this is normally a recursive one of our own.
+	dns string
 
 	gsbURL, vtURL string
 }
 
-func New() *Checker {
+// New returns a checker that asks the DNS blocklists through the resolver dns
+// ("" is the system resolver).
+func New(dns string) *Checker {
 	return &Checker{
 		http:   &http.Client{Timeout: 20 * time.Second},
 		lookup: dnsLookup,
+		dns:    strings.TrimSpace(dns),
 		gsbURL: "https://safebrowsing.googleapis.com/v4/threatMatches:find",
 		vtURL:  "https://www.virustotal.com/api/v3/domains/",
 	}
@@ -107,7 +114,11 @@ func dnsLookup(ctx context.Context, server, host string) ([]netip.Addr, error) {
 	r := net.DefaultResolver
 	if server != "" {
 		r = &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
-			return (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, network, net.JoinHostPort(server, "53"))
+			addr := server
+			if _, _, err := net.SplitHostPort(addr); err != nil {
+				addr = net.JoinHostPort(server, "53")
+			}
+			return (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, network, addr)
 		}}
 	}
 	// Generous: Windows takes about 11 seconds to say that a name does not
@@ -209,7 +220,7 @@ func names(domain string) []string {
 // dnsbl queries name.zone; code turns an answer into a listing or a refusal.
 func (c *Checker) dnsbl(ctx context.Context, zone, domain string, code func([4]byte) (string, error)) (bool, string, error) {
 	for _, name := range names(domain) {
-		addrs, err := c.lookup(ctx, "", name+"."+zone)
+		addrs, err := c.lookup(ctx, c.dns, name+"."+zone)
 		if err != nil {
 			return false, "", err
 		}

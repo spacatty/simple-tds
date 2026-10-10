@@ -55,7 +55,7 @@ cd web && npm install && npm run dev  # panel with hot reload at http://localhos
 | `web/` | panel sources (React + TypeScript + Vite) → built into `internal/web/ui/dist` |
 | `web/src/i18n` | panel translations: `t()` helpers, `ru.json` (UI text), `ru.server.json` (text sent by the server) |
 | `dev/` | development runner and its compose file |
-| `deploy/` | PHP sandbox image and ClickHouse config |
+| `deploy/` | PHP sandbox image, ClickHouse config, and the resolver image for the DNS blocklists |
 
 ## Rules that are easy to break
 

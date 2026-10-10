@@ -81,10 +81,12 @@ and summed up by the **Domains** widget that can be added to any personal
 dashboard. They are information only: a listed domain keeps serving traffic
 until you decide otherwise.
 
-- Spamhaus, SURBL and URIBL are asked over DNS through the server's resolver
-  and refuse public resolvers (8.8.8.8, 1.1.1.1): the provider then shows "no
-  answer" with the reason. Use the server's own or the hosting provider's
-  resolver, or a Spamhaus DQS key.
+- Spamhaus, SURBL and URIBL are asked over DNS and refuse public resolvers
+  (8.8.8.8, 1.1.1.1): the provider then shows "no answer" with the reason. The
+  compose file therefore runs a small recursive resolver (`unbound`) that only
+  these lookups go through; it needs outbound port 53. `TDS_BLOCKLIST_DNS`
+  points them at another resolver (`host` or `host:port`), and set empty sends
+  them through the system resolver. A Spamhaus DQS key works from anywhere.
 - A provider that fails (timeout, spent quota) does not erase its last verdict
   for three check intervals, so an outage never turns a listed domain clean.
 - With VirusTotal's free key, multiply the number of domains by the checks per

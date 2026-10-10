@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -30,7 +31,7 @@ type repState struct {
 }
 
 func newRepState() repState {
-	return repState{checker: reputation.New(), inflight: map[int64]bool{}, next: map[string]time.Time{}}
+	return repState{checker: reputation.New(os.Getenv("TDS_BLOCKLIST_DNS")), inflight: map[int64]bool{}, next: map[string]time.Time{}}
 }
 
 const (

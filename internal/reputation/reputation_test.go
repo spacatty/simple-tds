@@ -28,7 +28,7 @@ func fakeDNS(table map[string]string) func(context.Context, string, string) ([]n
 }
 
 func TestDNSProviders(t *testing.T) {
-	c := New()
+	c := New("")
 	c.lookup = fakeDNS(map[string]string{
 		"|bad.example.com.dbl.spamhaus.org":         "127.0.1.4",
 		"|open.example.com.dbl.spamhaus.org":        "127.255.255.254",
@@ -98,7 +98,7 @@ func TestHTTPProviders(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	c := New()
+	c := New("")
 	c.gsbURL, c.vtURL = srv.URL+"/gsb", srv.URL+"/vt/"
 
 	for _, tc := range []struct {

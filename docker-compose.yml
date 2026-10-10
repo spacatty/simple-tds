@@ -4,7 +4,7 @@ services:
   tds:
     build: .
     restart: unless-stopped
-    depends_on: [postgres, clickhouse, php]
+    depends_on: [postgres, clickhouse, php, unbound]
     environment:
       TDS_POSTGRES_DSN: postgres://tds:${POSTGRES_PASSWORD:-tds}@postgres:5432/tds
       TDS_CLICKHOUSE_ADDR: clickhouse:9000
@@ -14,6 +14,7 @@ services:
       TDS_PHP_FCGI: php:9000
       TDS_FORCE_PANEL_IP: ${TDS_FORCE_PANEL_IP:-}
       TDS_PUBLIC_IP: ${TDS_PUBLIC_IP:-}
+      TDS_BLOCKLIST_DNS: ${TDS_BLOCKLIST_DNS-unbound:5353}
     ports:
       - "${HTTP_BIND:-80}:80"
       - "${HTTPS_BIND:-443}:443"
@@ -24,7 +25,7 @@ services:
     volumes:
       - data:/data
       - whitepages:/data/whitepages
-    networks: [edge, backend, phpnet]
+    networks: [edge, backend, phpnet, dns]
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
 
@@ -38,6 +39,16 @@ services:
     volumes:
       - whitepages:/data/whitepages:ro
     networks: [phpnet]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  # Resolver for the DNS blocklists of the reputation checks: they refuse
+  # public resolvers, so tds asks them through this one. Nothing else uses it.
+  unbound:
+    build: deploy/unbound
+    restart: unless-stopped
+    read_only: true
+    networks: [dns]
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
 
@@ -69,6 +80,7 @@ services:
 
 networks:
   edge: {}
+  dns: {}
   backend: { internal: true }
   phpnet: { internal: true }
 
