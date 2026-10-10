@@ -112,6 +112,15 @@ cd web && npm install && npm run dev  # panel with hot reload at http://localhos
   only report funnel stages its campaign takes from a browser
   (`checkLandingStream`, `checkLandingUse`); a co-editor never receives the
   owner's variable values.
+- **Report and log filters are one grammar, kept in the URL**
+  (`web/src/filters.ts`, parsed by `parseQuery` in `internal/web/api_data.go`):
+  `f.<dimension>` (repeatable, alternatives), `like.<field>` (contains),
+  `campaign_id`/`stream_id`/`key_id`, `bots`, `ip`. Pages do not build their
+  own filter bars: they list field ids from the catalogue in
+  `web/src/components/Filters.tsx` and send `urlFilterParams(sp)`. A new
+  dimension in `events.dims` is filterable at once; give it a catalogue entry
+  to offer it. A filter on a column one table lacks must match nothing there
+  (`Query.drill`), never everything.
 - `internal/web/ui/dist` is build output and is not committed.
 
 ## Translations

@@ -493,7 +493,8 @@ export interface ReportRow {
   types: Record<string, number> | null
 }
 
-export interface ReferrerRow extends ReportRow {
+/** A report row with its clicks split by device class (the referrer and geo reports). */
+export interface SplitRow extends ReportRow {
   /** Clicks from phones and tablets. */
   mobile: number
   desktop: number

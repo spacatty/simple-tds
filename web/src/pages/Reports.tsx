@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ChevronRight, CornerDownRight, Download, MousePointerClick, RefreshCw, X } from 'lucide-react'
+import { CornerDownRight, Download, MousePointerClick, RefreshCw } from 'lucide-react'
 import { get } from '../api'
+import type { Params } from '../api'
 import { useLoad, useMeta } from '../hooks'
 import type { Campaign, ConvKey, Landing, ReportRow, Stream } from '../types'
 import { DataTable } from '../components/DataTable'
@@ -9,11 +10,11 @@ import type { Column } from '../components/DataTable'
 import { DateRangePicker, currentRange, rememberRange } from '../components/DateRangePicker'
 import type { DateRange } from '../components/DateRangePicker'
 import { CategoryBarChart, TimeChart } from '../components/charts'
-import { Card, Empty, ErrorBox, FilterBar, FilterField, PageHeader, Segmented, Select } from '../components/ui'
+import { Card, Empty, ErrorBox, FilterField, PageHeader, Select } from '../components/ui'
+import { FilterPanel } from '../components/Filters'
 import { METRICS, loadReport, sumRows } from '../reports'
 import type { MetricKey } from '../reports'
-import { CLICK_ONLY, CONV_ONLY, bucketRange, buildSearch, dimLabel, filterParams, paramFor, parseFilters, rangeFromSearch, writeRange } from '../filters'
-import type { Crumb } from '../filters'
+import { CLICK_ONLY, CONV_ONLY, bucketRange, buildSearch, dimLabel, filterParams, paramFor, parseFilters, rangeApiParams, rangeFromSearch, writeRange } from '../filters'
 import { csvEscape, downloadText, fmtInt, humanize, ymd } from '../format'
 import { countryName } from '../countries'
 import { dimIcon } from '../components/icons'
@@ -153,13 +154,11 @@ export default function Reports() {
     })
 
   const clicksSearch = (extra?: { param: string; value: string }, rowRange?: DateRange | null) => {
-    const f: Record<string, string> = {}
-    for (const c of filters.crumbs) if (c.param !== 'key_id' && c.dim !== 'type') f[c.param] = c.value
+    const f: Params = {}
+    for (const c of filters.crumbs) if (c.param !== 'key_id' && c.dim !== 'type') f[c.param] = c.values
     if (extra && extra.param !== 'key_id' && extra.param !== 'f.type') f[extra.param] = extra.value
     return buildSearch({ range: rowRange ?? range, filters: f, bots: filters.bots })
   }
-
-  const crumbText = (c: Crumb) => valueText(c.dim, c.value)
 
   const columns: Column<ReportRow>[] = [
     {
@@ -206,7 +205,6 @@ export default function Reports() {
     downloadText(`report-${group}-${ymd(new Date(range.from * 1000))}_${ymd(new Date(range.to * 1000 - 1000))}.csv`, '﻿' + lines.join('\r\n'), 'text/csv')
   }
 
-  const campaignId = filters.crumbs.find((c) => c.dim === 'campaign')?.value ?? ''
   const canDrill = group !== 'total' && (timeline || !!rowParam) && drillTargets.length > 0
 
   return (
@@ -224,71 +222,32 @@ export default function Reports() {
         </button>
       </PageHeader>
 
-      <FilterBar
-        onReset={
-          filters.crumbs.length > 0 || filters.bots
-            ? () =>
-                update((n) => {
-                  filters.crumbs.forEach((c) => n.delete(c.param))
-                  n.delete('bots')
-                })
-            : undefined
-        }
-        chips={
-          filters.crumbs.length > 0 && (
-            <>
-              <span className="muted">{t('Filtered by')}</span>
-              {filters.crumbs.map((c, i) => (
-                <span className="crumb-wrap" key={c.param}>
-                  {i > 0 && <ChevronRight size={13} className="muted" />}
-                  <span className="crumb">
-                    <span className="muted">{dimLabel(c.dim)}:</span> <b>{crumbText(c)}</b>
-                    <button aria-label={t('Remove filter {name}', { name: dimLabel(c.dim) })} title={t('Remove this filter')} onClick={() => update((n) => n.delete(c.param))}>
-                      <X size={12} />
-                    </button>
-                  </span>
-                </span>
-              ))}
-            </>
-          )
-        }
-      >
-        <FilterField label={t('Group by')}>
-          <Select value={group} onChange={(g) => update((n) => n.set('group', g))} options={groupOptions} />
-        </FilterField>
-        <FilterField label={t('Campaign')} active={!!campaignId}>
-          <Select
-            value={campaignId}
-            onChange={(v) =>
-              update((n) => {
-                n.delete('campaign_id')
-                n.delete('stream_id') // a stream belongs to one campaign
-                if (v) n.set('campaign_id', v)
-              })
-            }
-            placeholder={t('All campaigns')}
-            options={(camps.data ?? []).map((c) => ({ value: String(c.id), label: c.name }))}
-          />
-        </FilterField>
-        <FilterField label={t('Traffic')} size="auto">
-          <Segmented
-            small
-            className="bots"
-            value={filters.bots}
-            onChange={(bots) =>
-              update((n) => {
-                if (bots) n.set('bots', bots)
-                else n.delete('bots')
-              })
-            }
-            options={[
-              { value: '', label: t('All traffic') },
-              { value: 'exclude', label: t('No bots') },
-              { value: 'only', label: t('Bots only') },
-            ]}
-          />
-        </FilterField>
-      </FilterBar>
+      <FilterPanel
+        id="reports"
+        sp={sp}
+        update={update}
+        lookup={rangeApiParams(range)}
+        campaigns={camps.data}
+        streams={streams.data}
+        keys={keys.data}
+        names={(dim, v) => (dim === 'landing' || dim === 'landing_preset' ? valueText(dim, v) : undefined)}
+        main={[
+          {
+            key: 'group',
+            node: (
+              <FilterField label={t('Group by')}>
+                <Select value={group} onChange={(g) => update((n) => n.set('group', g))} options={groupOptions} />
+              </FilterField>
+            ),
+          },
+          'campaign',
+          'country',
+          'device_type',
+          'os',
+          'bots',
+        ]}
+        more={['stream', 'domain', 'action', 'region', 'city', 'isp', 'lang', 'browser', 'ref_domain', 'keyword', 'sub1', 'sub2', 'sub3', 'sub4', 'sub5', 'bot_reason', 'key']}
+      />
 
       <ErrorBox error={rep.error} retry={rep.reload} />
 

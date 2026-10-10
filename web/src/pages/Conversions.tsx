@@ -1,17 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { Columns3, Download, RefreshCw, X } from 'lucide-react'
+import { Columns3, Download, RefreshCw } from 'lucide-react'
 import { get, qs } from '../api'
 import type { Params } from '../api'
-import { useDebounced, useLoad, useMeta } from '../hooks'
-import type { Campaign, ConvKey, ConvRow, Stage } from '../types'
+import { useLoad, useMeta } from '../hooks'
+import type { Campaign, ConvKey, ConvRow, Stage, Stream } from '../types'
 import { DataTable } from '../components/DataTable'
 import type { Column } from '../components/DataTable'
-import { DateRangePicker, useDateRange } from '../components/DateRangePicker'
-import { Badge, CopyButton, Dropdown, Empty, ErrorBox, FilterBar, FilterField, PageHeader, Pagination, Select } from '../components/ui'
+import { DateRangePicker, currentRange, rememberRange } from '../components/DateRangePicker'
+import type { DateRange } from '../components/DateRangePicker'
+import { Badge, CopyButton, Dropdown, Empty, ErrorBox, FilterField, PageHeader, Pagination, Select } from '../components/ui'
+import { FilterPanel } from '../components/Filters'
+import type { CustomFilter } from '../components/Filters'
 import type { Tone } from '../components/ui'
-import { rangeParams } from '../reports'
+import { rangeApiParams, rangeFromSearch, urlFilterParams, writeRange } from '../filters'
 import { fmtDateTime, fmtMoney, fmtSpan, humanize, num, secondsBetween } from '../format'
 import { Browser, Country, Device, Os } from '../components/icons'
 import { Journey, stageName } from '../components/Journey'
@@ -93,26 +96,41 @@ const LIMIT = 100
 
 function ConvLog() {
   const meta = useMeta()
-  const [range, setRange] = useDateRange()
-  const [search] = useSearchParams()
-  // The click log links here with ?click_id=… to show the conversions of one click, the funnel with ?type=… for one stage.
-  const [f, setF] = useState({ key_id: '', campaign_id: search.get('campaign_id') ?? '', type: search.get('type') ?? '', outcome: search.get('outcome') ?? '', click_id: search.get('click_id') ?? '', ip: '' })
-  const [pf, setPf] = useState<Record<string, string>>({})
+  const [sp, setSp] = useSearchParams()
+  const spKey = sp.toString()
   const [offset, setOffset] = useState(0)
   const [cols, setCols] = useState<Record<string, boolean>>(loadCols)
   const [newP, setNewP] = useState({ key: '', value: '' })
-  // Debounced one by one: an object would be new on every render and keep the timer running forever.
-  const clickId = useDebounced(f.click_id.trim(), 400)
-  const ip = useDebounced(f.ip.trim(), 400)
+
+  // Filters live in the URL: the click log links here with ?click_id=… to show the conversions of one click, the funnel with ?type=… for one stage.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const range = useMemo(() => rangeFromSearch(sp, currentRange()), [spKey])
+  const campaignId = sp.get('campaign_id') ?? ''
+  const type = sp.get('type') ?? ''
+  // An outcome belongs to the stage picked as the type.
+  const outcome = type ? (sp.get('outcome') ?? '') : ''
+
+  const update = (fn: (n: URLSearchParams) => void, replace = false) => {
+    const n = new URLSearchParams(sp)
+    fn(n)
+    setSp(n, { replace })
+  }
+  const setParam = (k: string, v: string) =>
+    update((n) => {
+      n.delete(k)
+      if (v !== '') n.set(k, v)
+    })
+  const setRange = (r: DateRange) => {
+    rememberRange(r)
+    update((n) => writeRange(n, r))
+  }
 
   const keys = useLoad(() => get<ConvKey[]>('conversion-keys'), [])
   const camps = useLoad(() => get<Campaign[]>('campaigns'), [])
+  const streams = useLoad(() => get<Stream[]>('streams'), [])
 
-  const query: Params = useMemo(() => {
-    const p: Params = { ...rangeParams(range), key_id: f.key_id, campaign_id: f.campaign_id, type: f.type, outcome: f.type ? f.outcome : '', click_id: clickId, ip }
-    for (const [k, v] of Object.entries(pf)) p['p.' + k] = v
-    return p
-  }, [range, f.key_id, f.campaign_id, f.type, f.outcome, clickId, ip, pf])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const query: Params = useMemo(() => ({ ...rangeApiParams(range), ...urlFilterParams(sp), type, outcome }), [range, spKey])
   const queryKey = JSON.stringify(query)
 
   useEffect(() => setOffset(0), [queryKey])
@@ -131,25 +149,25 @@ function ConvLog() {
   }
   const addParam = (k: string, v: string) => {
     if (!k || v === '') return
-    setPf((x) => ({ ...x, [k]: v }))
+    setParam('p.' + k, v)
   }
 
   const keyName = (id: unknown) => keys.data?.find((k) => k.id === Number(id))?.name ?? (Number(id) ? `#${id}` : '—')
   // Built-in types plus the funnel stages of the campaigns in view.
   const typeOptions = useMemo(() => {
-    const stages = (camps.data ?? []).filter((c) => !f.campaign_id || String(c.id) === f.campaign_id).flatMap((c) => c.stages ?? [])
+    const stages = (camps.data ?? []).filter((c) => !campaignId || String(c.id) === campaignId).flatMap((c) => c.stages ?? [])
     const extra = new Map(stages.filter((s) => !meta.conversion_types.includes(s.key)).map((s) => [s.key, s.key]))
     return [...meta.conversion_types.map((ty) => ({ value: ty, label: ts(humanize(ty)) })), ...[...extra.keys()].sort().map((k) => ({ value: k, label: k }))]
-  }, [camps.data, f.campaign_id, meta.conversion_types])
+  }, [camps.data, campaignId, meta.conversion_types])
   const campById = (id: unknown) => camps.data?.find((c) => c.id === Number(id))
   const stagesOf = (id: unknown): Stage[] => campById(id)?.stages ?? []
   const campName = (id: unknown) => camps.data?.find((c) => c.id === Number(id))?.name ?? (Number(id) ? `#${id}` : '—')
   // The outcomes of the stage picked as the type, across the campaigns in view.
   const outcomeOptions = useMemo(() => {
-    const stages = (camps.data ?? []).filter((c) => !f.campaign_id || String(c.id) === f.campaign_id).flatMap((c) => c.stages ?? [])
-    const all = new Map(stages.filter((s) => s.key === f.type).flatMap((s) => s.outcomes ?? []).map((o) => [o.key, o.name || o.key]))
+    const stages = (camps.data ?? []).filter((c) => !campaignId || String(c.id) === campaignId).flatMap((c) => c.stages ?? [])
+    const all = new Map(stages.filter((s) => s.key === type).flatMap((s) => s.outcomes ?? []).map((o) => [o.key, o.name || o.key]))
     return [...all].map(([value, label]) => ({ value, label }))
-  }, [camps.data, f.campaign_id, f.type])
+  }, [camps.data, campaignId, type])
   const outcomeOf = (r: ConvRow) => stagesOf(r.campaign_id).find((s) => s.key === r.type)?.outcomes?.find((o) => o.key === r.outcome)
 
   const cell = (key: string, r: ConvRow) => {
@@ -187,7 +205,7 @@ function ConvLog() {
             title={t('Filter by this click')}
             onClick={(e) => {
               e.stopPropagation()
-              setF((x) => ({ ...x, click_id: String(v) }))
+              setParam('click_id', String(v))
             }}
           >
             {String(v)}
@@ -207,7 +225,7 @@ function ConvLog() {
             title={t('Filter by this sender')}
             onClick={(e) => {
               e.stopPropagation()
-              setF((x) => ({ ...x, ip: String(v) }))
+              setParam('ip', String(v))
             }}
           >
             {String(v)}
@@ -257,8 +275,10 @@ function ConvLog() {
   ]
 
   const csvHref = 'api/conversions' + qs({ format: 'csv', ...query })
-  const activeFilters = Object.entries(pf)
-  const anyFilter = activeFilters.length > 0 || Object.values(f).some(Boolean)
+  const typeFilters: CustomFilter[] = [
+    ...(type ? [{ key: 'type', label: t('Type'), text: typeOptions.find((o) => o.value === type)?.label ?? type, params: ['type', 'outcome'] }] : []),
+    ...(outcome ? [{ key: 'outcome', label: t('Outcome'), text: outcomeOptions.find((o) => o.value === outcome)?.label ?? outcome, params: ['outcome'] }] : []),
+  ]
 
   return (
     <>
@@ -297,85 +317,94 @@ function ConvLog() {
         </button>
       </PageHeader>
 
-      <FilterBar
-        onReset={
-          anyFilter
-            ? () => {
-                setPf({})
-                setF({ key_id: '', campaign_id: '', type: '', outcome: '', click_id: '', ip: '' })
-              }
-            : undefined
-        }
-        chips={
-          activeFilters.length > 0 && (
-            <>
-              <span className="muted">{t('Filtered by')}</span>
-              {activeFilters.map(([k, v]) => (
-                <span className="crumb" key={k}>
-                  <span className="muted mono">{k}:</span> <b className="mono">{v}</b>
-                  <button
-                    aria-label={t('Remove filter {name}', { name: k })}
-                    onClick={() =>
-                      setPf((x) => {
-                        const n = { ...x }
-                        delete n[k]
-                        return n
+      <FilterPanel
+        id="conversions"
+        sp={sp}
+        update={update}
+        source="conversions"
+        lookup={{ ...rangeApiParams(range), type, outcome }}
+        campaigns={camps.data}
+        streams={streams.data}
+        keys={keys.data}
+        custom={typeFilters}
+        main={[
+          'key',
+          'campaign',
+          {
+            key: 'type',
+            node: (
+              <>
+                <FilterField label={t('Type')} size="sm" active={!!type}>
+                  <Select
+                    value={type}
+                    onChange={(v) =>
+                      update((n) => {
+                        n.delete('type')
+                        n.delete('outcome')
+                        if (v) n.set('type', v)
                       })
                     }
-                  >
-                    <X size={12} />
+                    placeholder={t('All types')}
+                    options={typeOptions}
+                  />
+                </FilterField>
+                {(outcomeOptions.length > 0 || !!outcome) && (
+                  <FilterField label={t('Outcome')} size="sm" active={!!outcome}>
+                    <Select value={outcome} onChange={(v) => setParam('outcome', v)} placeholder={t('Any outcome')} options={outcomeOptions.some((o) => o.value === outcome) || !outcome ? outcomeOptions : [...outcomeOptions, { value: outcome, label: outcome }]} />
+                  </FilterField>
+                )}
+              </>
+            ),
+          },
+          'country',
+          'click_id',
+          'sender_ip',
+        ]}
+        more={[
+          'stream',
+          'domain',
+          'region',
+          'city',
+          'isp',
+          'lang',
+          'device_type',
+          'os',
+          'browser',
+          'ref_domain',
+          'keyword', 'sub1', 'sub2', 'sub3', 'sub4', 'sub5',
+          'bots',
+          {
+            key: 'param',
+            section: 'conv',
+            node: (
+              <FilterField label={t('Postback parameter')} size="lg">
+                <form
+                  className="ff-pair"
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    if (newP.key.trim() && newP.value !== '') {
+                      addParam(newP.key.trim(), newP.value)
+                      setNewP({ key: '', value: '' })
+                    }
+                  }}
+                >
+                  <input className="input mono" list="conv-param-keys" placeholder={t('param')} value={newP.key} onChange={(e) => setNewP({ ...newP, key: e.target.value })} />
+                  <datalist id="conv-param-keys">
+                    {paramKeys.map((k) => (
+                      <option key={k} value={k} />
+                    ))}
+                  </datalist>
+                  <span className="muted">=</span>
+                  <input className="input mono" placeholder={t('value')} value={newP.value} onChange={(e) => setNewP({ ...newP, value: e.target.value })} />
+                  <button className="btn" disabled={!newP.key.trim() || newP.value === ''}>
+                    {t('Add')}
                   </button>
-                </span>
-              ))}
-            </>
-          )
-        }
-      >
-        <FilterField label={t('Key')} active={!!f.key_id}>
-          <Select value={f.key_id} onChange={(key_id) => setF({ ...f, key_id })} placeholder={t('All keys')} options={(keys.data ?? []).map((k) => ({ value: String(k.id), label: k.name }))} />
-        </FilterField>
-        <FilterField label={t('Campaign')} active={!!f.campaign_id}>
-          <Select value={f.campaign_id} onChange={(campaign_id) => setF({ ...f, campaign_id })} placeholder={t('All campaigns')} options={(camps.data ?? []).map((c) => ({ value: String(c.id), label: c.name }))} />
-        </FilterField>
-        <FilterField label={t('Type')} size="sm" active={!!f.type}>
-          <Select value={f.type} onChange={(type) => setF({ ...f, type, outcome: '' })} placeholder={t('All types')} options={typeOptions} />
-        </FilterField>
-        {(outcomeOptions.length > 0 || !!f.outcome) && (
-          <FilterField label={t('Outcome')} size="sm" active={!!f.outcome}>
-            <Select value={f.outcome} onChange={(outcome) => setF({ ...f, outcome })} placeholder={t('Any outcome')} options={outcomeOptions.some((o) => o.value === f.outcome) || !f.outcome ? outcomeOptions : [...outcomeOptions, { value: f.outcome, label: f.outcome }]} />
-          </FilterField>
-        )}
-        <FilterField label={t('Click ID')} active={!!f.click_id}>
-          <input className="input mono" placeholder={t('Exact match')} value={f.click_id} onChange={(e) => setF({ ...f, click_id: e.target.value })} />
-        </FilterField>
-        <FilterField label={t('Sender IP')} size="sm" active={!!f.ip}>
-          <input className="input mono" placeholder={t('Exact match')} value={f.ip} onChange={(e) => setF({ ...f, ip: e.target.value })} />
-        </FilterField>
-        <FilterField label={t('Postback parameter')} size="lg">
-          <form
-            className="ff-pair"
-            onSubmit={(e) => {
-              e.preventDefault()
-              if (newP.key.trim() && newP.value !== '') {
-                addParam(newP.key.trim(), newP.value)
-                setNewP({ key: '', value: '' })
-              }
-            }}
-          >
-            <input className="input mono" list="conv-param-keys" placeholder={t('param')} value={newP.key} onChange={(e) => setNewP({ ...newP, key: e.target.value })} />
-            <datalist id="conv-param-keys">
-              {paramKeys.map((k) => (
-                <option key={k} value={k} />
-              ))}
-            </datalist>
-            <span className="muted">=</span>
-            <input className="input mono" placeholder={t('value')} value={newP.value} onChange={(e) => setNewP({ ...newP, value: e.target.value })} />
-            <button className="btn" disabled={!newP.key.trim() || newP.value === ''}>
-              {t('Add')}
-            </button>
-          </form>
-        </FilterField>
-      </FilterBar>
+                </form>
+              </FilterField>
+            ),
+          },
+        ]}
+      />
 
       <ErrorBox error={res.error} retry={res.reload} />
       <div className="card">

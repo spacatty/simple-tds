@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/netip"
 	"reflect"
 	"regexp"
 	"sort"
@@ -36,9 +37,15 @@ type Query struct {
 	// of text to look for in the parameters or the refusal reason.
 	Status, Search string
 	Params     map[string]string // conversion postback params, exact match
-	// Dims narrows to exact values of report dimensions ("os" → "Android"),
-	// which is what drilling into a report row does.
-	Dims map[string]string
+	// Dims narrows to values of report dimensions ("os" → Android, iOS), which
+	// is what drilling into a report row and the filter panel do. Several
+	// values of one dimension are alternatives.
+	Dims map[string][]string
+	// Like narrows to rows whose text column contains every word of the value,
+	// whatever the case: "referer" → "google shop".
+	Like map[string]string
+	// Unique and DC are click-only: "" | only | exclude.
+	Unique, DC string
 	// Scoped limits results to Campaigns (and, for conversions, to events
 	// received through Keys). Unset means unrestricted.
 	Scoped    bool
@@ -185,16 +192,83 @@ func idList(ids []uint32) string {
 // cannot match anything there: filtering clicks by conversion type must not
 // leave the click totals unfiltered next to it.
 func (q *Query) drill(w *where, clicks bool) {
-	for name, val := range q.Dims {
+	for name, vals := range q.Dims {
 		d, ok := dims[name]
-		if !ok || !d.filterable() {
+		if !ok || !d.filterable() || len(vals) == 0 {
 			continue
 		}
 		if (clicks && !d.clicks) || (!clicks && !d.convs) {
 			w.add("0")
 			continue
 		}
-		w.add(d.expr+" = ?", val)
+		if len(vals) == 1 {
+			w.add(d.expr+" = ?", vals[0])
+		} else {
+			w.add(d.expr+" IN (?)", vals)
+		}
+	}
+	for name, text := range q.Like {
+		col := likeColumn(name, clicks)
+		if col == "" {
+			w.add("0")
+			continue
+		}
+		for _, word := range strings.Fields(text) {
+			w.add("positionCaseInsensitiveUTF8("+col+", ?) > 0", word)
+		}
+	}
+}
+
+// likeColumn is the column a "contains" filter looks into: any dimension that
+// is a plain column, plus the two long click fields no report groups by.
+// Conversions keep only the referrer's domain, so that is what they match.
+func likeColumn(name string, clicks bool) string {
+	switch name {
+	case "referer":
+		if clicks {
+			return "referer"
+		}
+		return "ref_domain"
+	case "ua":
+		if clicks {
+			return "ua"
+		}
+		return ""
+	}
+	if d, ok := dims[name]; ok && d.filterable() && ((clicks && d.clicks) || (!clicks && d.convs)) {
+		return d.expr
+	}
+	return ""
+}
+
+// Searchable reports whether name accepts a like.<name> filter.
+func Searchable(name string) bool {
+	return likeColumn(name, true) != "" || likeColumn(name, false) != ""
+}
+
+// ipCond matches an address column against one address, a network in CIDR
+// form, or the beginning of an address ("203.0.113." or "203.0.113.*").
+func ipCond(w *where, col, v string) {
+	if p, err := netip.ParsePrefix(v); err == nil {
+		// Short-circuits, so a row without a parsable address never reaches the range check.
+		w.add("((isIPv4String("+col+") OR isIPv6String("+col+")) AND isIPAddressInRange("+col+", ?))", p.Masked().String())
+		return
+	}
+	if head := strings.TrimSuffix(v, "*"); head != v || strings.HasSuffix(v, ".") || strings.HasSuffix(v, ":") {
+		w.add("startsWith("+col+", ?)", head)
+		return
+	}
+	w.add(col+" = ?", v)
+}
+
+// flag narrows by a 0/1 column: "only" keeps the rows that have it set,
+// "exclude" the rest.
+func flag(w *where, col, mode string) {
+	switch mode {
+	case "only":
+		w.add(col + " = 1")
+	case "exclude":
+		w.add(col + " = 0")
 	}
 }
 
@@ -204,14 +278,11 @@ func (q *Query) clickWhere() *where {
 	if q.Scoped {
 		w.add("campaign_id IN (" + idList(q.Campaigns) + ")")
 	}
-	switch q.Bots {
-	case "only":
-		w.add("is_bot = 1")
-	case "exclude":
-		w.add("is_bot = 0")
-	}
+	flag(w, "is_bot", q.Bots)
+	flag(w, "is_unique", q.Unique)
+	flag(w, "is_dc", q.DC)
 	if q.IP != "" {
-		w.add("ip = ?", q.IP)
+		ipCond(w, "ip", q.IP)
 	}
 	return w
 }
@@ -224,12 +295,7 @@ func (q *Query) convWhereAt(ts string) *where {
 	if q.Scoped {
 		w.add("(campaign_id IN (" + idList(q.Campaigns) + ") OR key_id IN (" + idList(q.Keys) + "))")
 	}
-	switch q.Bots {
-	case "only":
-		w.add("is_bot = 1")
-	case "exclude":
-		w.add("is_bot = 0")
-	}
+	flag(w, "is_bot", q.Bots)
 	if q.KeyID != 0 {
 		w.add("key_id = ?", q.KeyID)
 	}
@@ -240,7 +306,7 @@ func (q *Query) convWhereAt(ts string) *where {
 		w.add("outcome = ?", q.Outcome)
 	}
 	if q.IP != "" {
-		w.add("sender_ip = ?", q.IP)
+		ipCond(w, "sender_ip", q.IP)
 	}
 	for k, v := range q.Params {
 		w.add("JSONExtractString(params, ?) = ?", k, v)
@@ -354,9 +420,8 @@ func (db *DB) Report(ctx context.Context, group string, q Query) ([]ReportRow, e
 	return out, nil
 }
 
-// ReferrerRow is a report row for one referring site (or, in the page list,
-// one referring URL) with its clicks split by device class.
-type ReferrerRow struct {
+// SplitRow is a report row with its clicks split by device class.
+type SplitRow struct {
 	ReportRow
 	Mobile  int64 `json:"mobile"` // phones and tablets
 	Desktop int64 `json:"desktop"`
@@ -364,15 +429,22 @@ type ReferrerRow struct {
 
 const deviceSplit = "countIf(device_type IN ('mobile', 'tablet')) AS mobile, countIf(device_type = 'desktop') AS desktop"
 
-// Referrers is the report by referrer domain plus the device split. Clicks
-// that came without a referrer are the row with an empty key.
-func (db *DB) Referrers(ctx context.Context, q Query) ([]ReferrerRow, error) {
-	rows, err := db.Report(ctx, "ref_domain", q)
+// Split is Report by one dimension plus the device split of its clicks.
+func (db *DB) Split(ctx context.Context, group string, q Query) ([]SplitRow, error) {
+	rows, err := db.Report(ctx, group, q)
 	if err != nil {
 		return nil, err
 	}
+	d := dims[group]
+	out := make([]SplitRow, len(rows))
+	for i, r := range rows {
+		out[i] = SplitRow{ReportRow: r}
+	}
+	if !d.clicks {
+		return out, nil
+	}
 	w := q.clickWhere()
-	split, err := db.query(ctx, "SELECT ref_domain AS k, "+deviceSplit+" FROM clicks WHERE "+w.sql()+" GROUP BY k", w.args...)
+	split, err := db.query(ctx, "SELECT "+d.expr+" AS k, "+deviceSplit+" FROM clicks WHERE "+w.sql()+" GROUP BY k", w.args...)
 	if err != nil {
 		return nil, err
 	}
@@ -380,30 +452,99 @@ func (db *DB) Referrers(ctx context.Context, q Query) ([]ReferrerRow, error) {
 	for _, r := range split {
 		byKey[fmt.Sprint(r["k"])] = r
 	}
-	out := make([]ReferrerRow, len(rows))
-	for i, r := range rows {
-		out[i] = ReferrerRow{ReportRow: r}
-		if s := byKey[r.Key]; s != nil {
+	for i := range out {
+		if s := byKey[out[i].Key]; s != nil {
 			out[i].Mobile, out[i].Desktop = int64(num(s["mobile"])), int64(num(s["desktop"]))
 		}
 	}
 	return out, nil
 }
 
+// Referrers is the report by referrer domain. Clicks that came without a
+// referrer are the row with an empty key.
+func (db *DB) Referrers(ctx context.Context, q Query) ([]SplitRow, error) {
+	return db.Split(ctx, "ref_domain", q)
+}
+
+// GeoLevels are the groupings of the geo report, widest first.
+var GeoLevels = []string{"country", "region", "city"}
+
+// ValueRow is one value of a dimension and how many rows carry it.
+type ValueRow struct {
+	Value string `json:"value"`
+	Count uint64 `json:"count"`
+}
+
+// Values lists the values a dimension takes in the selection, the most
+// frequent first: the options of a filter. With search, values that contain
+// it come first, then those that merely resemble it, which forgives a typo.
+// The dimension's own filter is left out, or the list would shrink to what is
+// already picked.
+func (db *DB) Values(ctx context.Context, dim, search string, convs bool, limit int, q Query) ([]ValueRow, error) {
+	d, ok := dims[dim]
+	if !ok || !d.filterable() {
+		return nil, fmt.Errorf("unknown grouping %q", dim)
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 50
+	}
+	q.Dims, q.Like = without(q.Dims, dim), without(q.Like, dim)
+	table, w := "clicks", (*where)(nil)
+	if (convs && d.convs) || !d.clicks {
+		table, w = "conversions", q.convWhere()
+	} else {
+		w = q.clickWhere()
+	}
+	order := "n DESC, k"
+	if search != "" {
+		cond := "positionCaseInsensitiveUTF8(" + d.expr + ", ?) > 0"
+		args := []any{search}
+		// Too short a word resembles everything.
+		if len([]rune(search)) >= 4 {
+			cond = "(" + cond + " OR ngramSearchCaseInsensitiveUTF8(" + d.expr + ", ?) >= 0.5)"
+			args = append(args, search)
+		}
+		w.add(cond, args...)
+		// Placeholders are filled in the order they appear: this one comes last.
+		order = "positionCaseInsensitiveUTF8(k, ?) = 0, " + order
+		w.args = append(w.args, search)
+	}
+	rows, err := db.query(ctx, fmt.Sprintf("SELECT toString(%s) AS k, count() AS n FROM %s WHERE %s GROUP BY k ORDER BY %s LIMIT %d", d.expr, table, w.sql(), order, limit), w.args...)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ValueRow, len(rows))
+	for i, r := range rows {
+		out[i] = ValueRow{Value: fmt.Sprint(r["k"]), Count: uint64(num(r["n"]))}
+	}
+	return out, nil
+}
+
+// without copies m leaving one key out, so the caller's map stays as it was.
+func without[V any](m map[string]V, key string) map[string]V {
+	out := make(map[string]V, len(m))
+	for k, v := range m {
+		if k != key {
+			out[k] = v
+		}
+	}
+	return out
+}
+
 const referrerURLLimit = 50
 
 // ReferrerURLs lists the referring pages that sent the most clicks. Only
 // clicks keep the full referrer, so the rows carry no conversions.
-func (db *DB) ReferrerURLs(ctx context.Context, q Query) ([]ReferrerRow, error) {
+func (db *DB) ReferrerURLs(ctx context.Context, q Query) ([]SplitRow, error) {
 	w := q.clickWhere()
 	rows, err := db.query(ctx, fmt.Sprintf("SELECT referer AS k, count() AS clicks, sum(is_unique) AS uniques, sum(is_bot) AS bots, %s FROM clicks WHERE %s GROUP BY k ORDER BY clicks DESC, k LIMIT %d",
 		deviceSplit, w.sql(), referrerURLLimit), w.args...)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]ReferrerRow, len(rows))
+	out := make([]SplitRow, len(rows))
 	for i, r := range rows {
-		out[i] = ReferrerRow{
+		out[i] = SplitRow{
 			ReportRow: ReportRow{Key: fmt.Sprint(r["k"]), Clicks: int64(num(r["clicks"])), Uniques: int64(num(r["uniques"])), Bots: int64(num(r["bots"]))},
 			Mobile:    int64(num(r["mobile"])), Desktop: int64(num(r["desktop"])),
 		}
@@ -581,7 +722,7 @@ func (db *DB) Postbacks(ctx context.Context, q Query) ([]Row, uint64, error) {
 		w.add("type = ?", q.Type)
 	}
 	if q.IP != "" {
-		w.add("sender_ip = ?", q.IP)
+		ipCond(w, "sender_ip", q.IP)
 	}
 	if q.ClickID != "" {
 		w.add("click_id = ?", q.ClickID)

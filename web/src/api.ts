@@ -18,16 +18,19 @@ export function onUnauthorized(fn: () => void) {
   unauthorizedHandler = fn
 }
 
-export type Params = Record<string, string | number | boolean | null | undefined>
+/** A list is sent as a repeated parameter: several values of one filter. */
+export type Params = Record<string, string | number | boolean | null | undefined | string[]>
 
 export function qs(params?: Params): string {
   if (!params) return ''
   const sp = new URLSearchParams()
   for (const [k, v] of Object.entries(params)) {
     if (v === undefined || v === null) continue
-    // An empty f.<dimension> is a real filter ("no country"); every other empty value means "not set".
-    if (v === '' && !k.startsWith('f.')) continue
-    sp.set(k, String(v))
+    for (const one of Array.isArray(v) ? v : [v]) {
+      // An empty f.<dimension> is a real filter ("no country"); every other empty value means "not set".
+      if (one === '' && !k.startsWith('f.')) continue
+      sp.append(k, String(one))
+    }
   }
   const s = sp.toString()
   return s ? '?' + s : ''

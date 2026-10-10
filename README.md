@@ -372,6 +372,34 @@ same click.
   whenever the events arrived, in any order or strictly in order. Give keys a
   window long enough for the late stages.
 
+## Reports and logs
+
+**Reports** has three views of the same data: **Breakdown** (any grouping,
+drill into a row), **Referrers** (referring sites, and the pages of each) and
+**Geo** (countries, and the cities or regions of each). The last two also
+split clicks into mobile and desktop. **Tracking** holds the raw click,
+conversion and postback logs.
+
+They share one filter panel. A few filters sit on the first row, **More
+filters** unfolds the rest by subject (routing, geo, device, source, quality),
+and everything in force is listed underneath, each with its own ✕.
+
+- A value filter (country, device, OS, browser, referrer, sub1–5 …) offers the
+  values the selection really has, most frequent first, and takes several:
+  `OS: iOS, Android`.
+- Typing in one narrows the list and forgives a typo (`gogle` still offers
+  `www.google.com`). Where it makes sense — referrer, city, ISP, keyword,
+  subs, User-Agent — the typed text can be applied as it is: **Contains**
+  keeps every row that has all of its words. For clicks the referrer filter
+  looks through the whole referring URL.
+- The IP filter takes an address, a CIDR network or the beginning of an
+  address (`203.0.113.`).
+- The click log can also be narrowed to unique or repeat visits and to
+  datacenter addresses.
+
+Filters live in the address bar, so a filtered view can be bookmarked or sent
+to someone, and the links between the pages carry them along.
+
 ## Whitepages
 
 Upload a `.zip` (or a single `.html` / `.php`). Relative asset URLs keep

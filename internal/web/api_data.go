@@ -280,7 +280,7 @@ func (s *Server) dataRoutes(r chi.Router) {
 		return map[string]any{"rows": rows}, nil
 	}))
 	// Referrer analytics: sites by default, the pages of the selection with /urls.
-	referrers := func(load func(context.Context, events.Query) ([]events.ReferrerRow, error)) http.HandlerFunc {
+	referrers := func(load func(context.Context, events.Query) ([]events.SplitRow, error)) http.HandlerFunc {
 		return handler(func(r *http.Request) (any, error) {
 			q, err := parseQuery(r)
 			if err != nil {
@@ -298,6 +298,48 @@ func (s *Server) dataRoutes(r chi.Router) {
 	}
 	r.Get("/reports/referrers", referrers(s.ev.Referrers))
 	r.Get("/reports/referrers/urls", referrers(s.ev.ReferrerURLs))
+	// The same figures by place: countries, or with by= the regions or cities of the selection.
+	r.Get("/reports/geo", handler(func(r *http.Request) (any, error) {
+		q, err := parseQuery(r)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.scope(r.Context(), &q); err != nil {
+			return nil, err
+		}
+		by := r.URL.Query().Get("by")
+		if by == "" {
+			by = events.GeoLevels[0]
+		}
+		if !oneOf(by, events.GeoLevels...) {
+			return nil, bad(fmt.Sprintf("unknown grouping %q", by))
+		}
+		rows, err := s.ev.Split(r.Context(), by, q)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"rows": rows}, nil
+	}))
+	// What a filter can be set to: the values of one dimension in the selection.
+	r.Get("/reports/values", handler(func(r *http.Request) (any, error) {
+		q, err := parseQuery(r)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.scope(r.Context(), &q); err != nil {
+			return nil, err
+		}
+		v := r.URL.Query()
+		search := strings.TrimSpace(v.Get("search"))
+		if len(search) > maxFilterText {
+			return nil, bad("the filter text is too long")
+		}
+		rows, err := s.ev.Values(r.Context(), v.Get("dim"), search, v.Get("source") == "conversions", q.Limit, q)
+		if err != nil {
+			return nil, bad(err.Error())
+		}
+		return map[string]any{"rows": rows}, nil
+	}))
 	r.Get("/reports/funnel", handler(func(r *http.Request) (any, error) {
 		q, err := parseQuery(r)
 		if err != nil {
@@ -384,12 +426,21 @@ func parseTime(v string) (time.Time, error) {
 	return time.Parse(time.RFC3339, v)
 }
 
+// What one request may carry in its filters.
+const (
+	maxFilterValues = 200
+	maxFilterText   = 200
+)
+
 // parseQuery reads the filters shared by reports and logs. from/to are unix
-// seconds or RFC 3339; p.<name>=<value> filters conversions by postback param.
+// seconds or RFC 3339; p.<name>=<value> filters conversions by postback
+// param, f.<dimension>=<value> (repeatable) by the values of a dimension,
+// like.<field>=<text> by text the field contains.
 func parseQuery(r *http.Request) (events.Query, error) {
 	v := r.URL.Query()
 	q := events.Query{TZ: v.Get("tz"), Country: strings.ToUpper(v.Get("country")), Domain: v.Get("domain"), Type: v.Get("type"), Outcome: v.Get("outcome"),
-		IP: v.Get("ip"), ClickID: v.Get("click_id"), Bots: v.Get("bots"), Params: map[string]string{}, Dims: map[string]string{}}
+		IP: strings.TrimSpace(v.Get("ip")), ClickID: v.Get("click_id"), Bots: v.Get("bots"), Unique: v.Get("unique"), DC: v.Get("dc"),
+		Params: map[string]string{}, Dims: map[string][]string{}, Like: map[string]string{}}
 	var err error
 	if q.From, err = parseTime(v.Get("from")); err != nil {
 		return q, bad("bad from")
@@ -410,7 +461,19 @@ func parseQuery(r *http.Request) (events.Query, error) {
 		}
 		// f.<dimension>=<value>; an empty value is a real filter ("no country").
 		if name, ok := strings.CutPrefix(k, "f."); ok && name != "" && len(vals) > 0 {
-			q.Dims[name] = vals[0]
+			if len(vals) > maxFilterValues {
+				return q, bad("too many values in one filter")
+			}
+			q.Dims[name] = vals
+		}
+		if name, ok := strings.CutPrefix(k, "like."); ok && len(vals) > 0 && strings.TrimSpace(vals[0]) != "" {
+			if !events.Searchable(name) {
+				return q, bad(fmt.Sprintf("unknown filter %q", name))
+			}
+			if len(vals[0]) > maxFilterText {
+				return q, bad("the filter text is too long")
+			}
+			q.Like[name] = vals[0]
 		}
 	}
 	return q, nil

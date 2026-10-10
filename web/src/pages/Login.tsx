@@ -46,7 +46,7 @@ export default function Login({ onLogin, notice, theme, toggleTheme }: { onLogin
       <form className="login card" onSubmit={submit}>
         <div className="brand">
           <Logo size={28} />
-          <span>{APP_NAME}</span>
+          <span className="wordmark">{APP_NAME}</span>
         </div>
         <h1>{t('Sign in@@title')}</h1>
         {notice && <div className="field-error">{notice}</div>}

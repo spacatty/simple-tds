@@ -43,7 +43,7 @@ export default function Setup({ onDone, onTaken, theme, toggleTheme }: { onDone:
       <form className="login card" onSubmit={submit}>
         <div className="brand">
           <Logo size={28} />
-          <span>{APP_NAME}</span>
+          <span className="wordmark">{APP_NAME}</span>
         </div>
         <h1>{t('Create the administrator')}</h1>
         <p className="login-lead">{t('This panel has no users yet. The account you create here has full access.')}</p>

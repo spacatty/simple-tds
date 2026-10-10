@@ -204,6 +204,8 @@
   "bad IP or CIDR \"{1}\"": "некорректный IP или CIDR «{1}»",
   "bad ASN \"{1}\"": "некорректный ASN «{1}»",
   "unknown filter \"{1}\"": "неизвестный фильтр «{1}»",
+  "the filter text is too long": "текст фильтра слишком длинный",
+  "too many values in one filter": "слишком много значений в одном фильтре",
   "filter \"{1}\" has no values": "в фильтре «{1}» нет значений",
   "filter \"{1}\": {2}": "фильтр «{1}»: {2}",
   "address {1} is not public": "адрес {1} не является публичным",

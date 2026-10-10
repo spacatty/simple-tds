@@ -1,18 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { BarChart3, Bot, FlaskConical, RefreshCw, X } from 'lucide-react'
+import { BarChart3, Bot, FlaskConical, RefreshCw } from 'lucide-react'
 import { get } from '../api'
 import type { Params } from '../api'
-import { canRead, useDebounced, useLoad } from '../hooks'
+import { canRead, useLoad } from '../hooks'
 import type { Campaign, ClickEvent, ConvKey, Row, Stage, Stream } from '../types'
 import { DataTable } from '../components/DataTable'
 import type { Column } from '../components/DataTable'
 import { DateRangePicker, currentRange, rememberRange } from '../components/DateRangePicker'
 import type { DateRange } from '../components/DateRangePicker'
-import { Badge, CopyButton, Empty, ErrorBox, FilterBar, FilterField, PageHeader, Pagination, Segmented, Select } from '../components/ui'
-import { COUNTRY_SELECT_OPTIONS } from '../components/CountrySelect'
-import { buildSearch, dimLabel, filterParams, parseFilters, rangeApiParams, rangeFromSearch, writeRange } from '../filters'
+import { Badge, CopyButton, Empty, ErrorBox, FilterField, PageHeader, Pagination, Select } from '../components/ui'
+import { FilterPanel } from '../components/Filters'
+import type { CustomFilter } from '../components/Filters'
+import { buildSearch, filterParams, parseFilters, rangeApiParams, rangeFromSearch, urlFilterParams, writeRange } from '../filters'
 import { fmtDateTime, humanize, num } from '../format'
 import { countryName } from '../countries'
 import { Browser, BrowserIcon, Country, Device, DeviceIcon, Flag, Os, OsIcon } from '../components/icons'
@@ -33,8 +34,6 @@ export default function Clicks() {
   const range = useMemo(() => rangeFromSearch(sp, currentRange()), [spKey])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const filters = useMemo(() => parseFilters(sp), [spKey])
-  const urlIP = sp.get('ip') ?? ''
-  const urlClick = sp.get('click_id') ?? ''
   const reached = sp.get('reached') ?? ''
   const notReached = sp.get('not_reached') ?? ''
 
@@ -53,27 +52,12 @@ export default function Clicks() {
     update((n) => writeRange(n, r))
   }
 
-  // Free-text fields are typed locally and pushed to the URL once the user pauses.
-  const [text, setText] = useState({ ip: urlIP, click_id: urlClick })
-  useEffect(() => setText({ ip: urlIP, click_id: urlClick }), [urlIP, urlClick])
-  const debounced = useDebounced(text, 400)
-  useEffect(() => {
-    if (debounced.ip.trim() !== urlIP || debounced.click_id.trim() !== urlClick) {
-      update((n) => {
-        n.delete('ip')
-        n.delete('click_id')
-        if (debounced.ip.trim()) n.set('ip', debounced.ip.trim())
-        if (debounced.click_id.trim()) n.set('click_id', debounced.click_id.trim())
-      }, true)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debounced])
-
   const camps = useLoad(() => get<Campaign[]>('campaigns'), [])
   const streams = useLoad(() => get<Stream[]>('streams'), [])
   const keys = useLoad(() => get<ConvKey[]>('conversion-keys'), [])
 
-  const query: Params = useMemo(() => ({ ...rangeApiParams(range), ...filterParams(filters), ip: urlIP, click_id: urlClick, reached, not_reached: notReached }), [range, filters, urlIP, urlClick, reached, notReached])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const query: Params = useMemo(() => ({ ...rangeApiParams(range), ...urlFilterParams(sp), reached, not_reached: notReached }), [range, spKey])
   const queryKey = JSON.stringify(query)
   useEffect(() => setOffset(0), [queryKey])
 
@@ -86,22 +70,7 @@ export default function Clicks() {
   const eventsOf = (r: Row) => (Array.isArray(r.events) ? (r.events as ClickEvent[]) : [])
   const streamName = (id: unknown) => streams.data?.find((s) => s.id === Number(id))?.name ?? (Number(id) ? `#${id}` : '—')
 
-  const crumb = (dim: string) => filters.crumbs.find((c) => c.dim === dim)?.value
-  const campaignId = crumb('campaign') ?? ''
-  const streamId = crumb('stream') ?? ''
-  const streamOptions = (streams.data ?? []).filter((s) => !campaignId || String(s.campaign_id) === campaignId).map((s) => ({ value: String(s.id), label: campaignId ? s.name : `${s.name} · ${campName(s.campaign_id)}` }))
-
-  const crumbText = (dim: string, v: string) => (dim === 'campaign' ? campName(v) : dim === 'stream' ? streamName(v) : dim === 'country' ? (v ? `${countryName(v)} (${v})` : t('(unknown)')) : v === '' ? t('(empty)') : dim === 'action' ? ts(v) : v)
-  const anyFilter = filters.crumbs.length > 0 || !!filters.bots || !!urlIP || !!urlClick || !!reached || !!notReached
-  // Filters that came with a link (a drill-down in Reports) and have no field in the bar.
-  const extraCrumbs = filters.crumbs.filter((c) => c.dim !== 'campaign' && c.dim !== 'stream' && c.dim !== 'country')
-  const resetFilters = () => {
-    setText({ ip: '', click_id: '' })
-    update((n) => {
-      filters.crumbs.forEach((c) => n.delete(c.param))
-      for (const k of ['reached', 'not_reached', 'bots', 'ip', 'click_id']) n.delete(k)
-    })
-  }
+  const campaignId = sp.get('campaign_id') ?? ''
 
   // Funnel progress: "got to a stage" or "stopped right before it" (got to the one before, not to this one).
   const stages = stagesOf(campaignId)
@@ -125,6 +94,7 @@ export default function Clicks() {
     ]),
     ...stages.map((s) => ({ value: 'n:' + s.key, label: t('Stopped before: {stage}', { stage: s.name }) })),
   ]
+  const funnelFilters: CustomFilter[] = progress ? [{ key: 'funnel', label: t('Funnel'), text: progressOptions.find((o) => o.value === progress)?.label ?? progress.slice(2), params: ['reached', 'not_reached'] }] : []
   const showFunnel = (res.data?.rows ?? []).some((r) => stagesOf(r.campaign_id).length > 0 || eventsOf(r).length > 0)
 
   const columns: Column<Row>[] = [
@@ -185,16 +155,31 @@ export default function Clicks() {
       ),
     },
     { key: 'action', title: t('Action'), render: (r) => <Badge tone={r.action === 'error' || r.action === 'no_stream' ? 'err' : 'neutral'}>{ts(str(r.action))}</Badge> },
-    { key: 'ref', title: t('Referrer'), render: (r) => (r.ref_domain ? <span className="ellipsis cell-w">{str(r.ref_domain)}</span> : <span className="muted">—</span>) },
+    {
+      key: 'ref',
+      title: t('Referrer'),
+      render: (r) =>
+        r.ref_domain ? (
+          <button
+            className="link ellipsis cell-w"
+            title={t('Filter by this referrer')}
+            onClick={(e) => {
+              e.stopPropagation()
+              setParam('f.ref_domain', str(r.ref_domain))
+            }}
+          >
+            {str(r.ref_domain)}
+          </button>
+        ) : (
+          <span className="muted">—</span>
+        ),
+    },
   ]
-
-  const reportFilters: Record<string, string> = {}
-  for (const c of filters.crumbs) reportFilters[c.param] = c.value
 
   return (
     <div className="page">
       <PageHeader title={t('Clicks')} sub={t('Raw click log, newest first. Click a row to see every recorded field and what the click went on to do.')}>
-        <Link className="btn" to={'/reports' + buildSearch({ range, filters: reportFilters, bots: filters.bots })} title={t('Open Reports with the same filters')}>
+        <Link className="btn" to={'/reports' + buildSearch({ range, filters: filterParams(filters) })} title={t('Open Reports with the same filters')}>
           <BarChart3 size={14} /> {t('Report')}
         </Link>
         <DateRangePicker value={range} onChange={setRange} />
@@ -203,71 +188,38 @@ export default function Clicks() {
         </button>
       </PageHeader>
 
-      <FilterBar
-        onReset={anyFilter ? resetFilters : undefined}
-        chips={
-          extraCrumbs.length > 0 && (
-            <>
-              <span className="muted">{t('Filtered by')}</span>
-              {extraCrumbs.map((c) => (
-                <span className="crumb" key={c.param}>
-                  <span className="muted">{dimLabel(c.dim)}:</span> <b>{crumbText(c.dim, c.value)}</b>
-                  <button aria-label={t('Remove filter {name}', { name: dimLabel(c.dim) })} onClick={() => update((n) => n.delete(c.param))}>
-                    <X size={12} />
-                  </button>
-                </span>
-              ))}
-            </>
-          )
-        }
-      >
-        <FilterField label={t('Campaign')} active={!!campaignId}>
-          <Select
-            value={campaignId}
-            onChange={(v) =>
-              update((n) => {
-                n.delete('campaign_id')
-                n.delete('stream_id')
-                n.delete('reached')
-                n.delete('not_reached')
-                if (v) n.set('campaign_id', v)
-              })
-            }
-            placeholder={t('All campaigns')}
-            options={(camps.data ?? []).map((c) => ({ value: String(c.id), label: c.name }))}
-          />
-        </FilterField>
-        <FilterField label={t('Stream')} active={!!streamId}>
-          <Select value={streamId} onChange={(v) => setParam('stream_id', v)} placeholder={t('All streams')} options={streamOptions} />
-        </FilterField>
-        {(stages.length > 0 || progress) && (
-          <FilterField label={t('Funnel')} active={!!progress}>
-            <Select value={progress} onChange={setProgress} placeholder={t('Any funnel progress')} options={progressOptions} />
-          </FilterField>
-        )}
-        <FilterField label={t('Country')} active={!!crumb('country')}>
-          <Select value={crumb('country') ?? ''} onChange={(v) => setParam('f.country', v)} placeholder={t('All countries')} options={COUNTRY_SELECT_OPTIONS} />
-        </FilterField>
-        <FilterField label={t('IP address')} size="sm" active={!!urlIP}>
-          <input className="input mono" placeholder={t('Exact match')} value={text.ip} onChange={(e) => setText({ ...text, ip: e.target.value })} />
-        </FilterField>
-        <FilterField label={t('Click ID')} active={!!urlClick}>
-          <input className="input mono" placeholder={t('Exact match')} value={text.click_id} onChange={(e) => setText({ ...text, click_id: e.target.value })} />
-        </FilterField>
-        <FilterField label={t('Traffic')} size="auto">
-          <Segmented
-            small
-            className="bots"
-            value={filters.bots}
-            onChange={(v) => setParam('bots', v)}
-            options={[
-              { value: '', label: t('All') },
-              { value: 'exclude', label: t('Humans') },
-              { value: 'only', label: t('Bots') },
-            ]}
-          />
-        </FilterField>
-      </FilterBar>
+      <FilterPanel
+        id="clicks"
+        sp={sp}
+        update={update}
+        lookup={rangeApiParams(range)}
+        campaigns={camps.data}
+        streams={streams.data}
+        campaignDeps={['reached', 'not_reached']}
+        custom={funnelFilters}
+        main={[
+          'campaign',
+          'stream',
+          ...(stages.length > 0 || progress
+            ? [
+                {
+                  key: 'funnel',
+                  node: (
+                    <FilterField label={t('Funnel')} active={!!progress}>
+                      <Select value={progress} onChange={setProgress} placeholder={t('Any funnel progress')} options={progressOptions} />
+                    </FilterField>
+                  ),
+                },
+              ]
+            : []),
+          'country',
+          'device_type',
+          'os',
+          'ip',
+          'bots',
+        ]}
+        more={['domain', 'action', 'region', 'city', 'isp', 'lang', 'browser', 'ua', 'ref_domain', 'keyword', 'sub1', 'sub2', 'sub3', 'sub4', 'sub5', 'bot_reason', 'unique', 'dc', 'click_id']}
+      />
 
       <ErrorBox error={res.error} retry={res.reload} />
       <div className="card">

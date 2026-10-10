@@ -19,6 +19,7 @@ import Landings from './pages/Landings'
 import Conversions from './pages/Conversions'
 import Reports from './pages/Reports'
 import Referrers from './pages/Referrers'
+import Geo from './pages/Geo'
 import Clicks from './pages/Clicks'
 import Antibot from './pages/Antibot'
 import Suppress from './pages/Suppress'
@@ -137,6 +138,7 @@ export default function App() {
             <Route path="/conversions/:tab" element={<Conversions />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/reports/referrers" element={<Referrers />} />
+            <Route path="/reports/geo" element={<Geo />} />
             <Route path="/clicks" element={<Clicks />} />
             {user.role === 'admin' && <Route path="/antibot" element={<Antibot />} />}
             <Route path="/suppress/ips" element={<Suppress kind="ip" />} />

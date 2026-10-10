@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
-import { Activity, BarChart3, Check, ChevronDown, ChevronsUpDown, EyeOff, FileCode2, Globe, KeyRound, LayoutDashboard, LayoutTemplate, Layers, Link2, LogOut, Menu, Moon, MousePointerClick, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, ShieldCheck, Split, Sun, Target, Unlink, UserCog, Users as UsersIcon, Webhook } from 'lucide-react'
+import { Activity, BarChart3, Check, ChevronDown, ChevronsUpDown, Earth, EyeOff, FileCode2, Globe, KeyRound, LayoutDashboard, LayoutTemplate, Layers, Link2, LogOut, Menu, Moon, MousePointerClick, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, ShieldCheck, Split, Sun, Target, Unlink, UserCog, Users as UsersIcon, Webhook } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { User } from '../types'
 import type { Theme } from '../hooks'
@@ -60,6 +60,7 @@ const GROUPS: { id: string; label: string; items: Item[] }[] = [
       // "end": the other reports live under /reports/ and must not light this one up.
       { to: '/reports', label: t('Breakdown'), icon: BarChart3, end: true },
       { to: '/reports/referrers', label: t('Referrers'), icon: Link2 },
+      { to: '/reports/geo', label: t('Geo'), icon: Earth },
     ],
   },
   {
@@ -81,6 +82,9 @@ const GROUPS: { id: string; label: string; items: Item[] }[] = [
   },
 ]
 
+// Sidebar looks on trial (sidebar-variants.css); 'classic' is the one styles.css draws.
+const NAV_STYLES = ['classic', 'float', 'flat', 'tree', 'ink']
+
 function load<T>(key: string, fallback: T): T {
   try {
     const v = localStorage.getItem(key)
@@ -101,6 +105,7 @@ export function Sidebar({ user, theme, toggleTheme, logout }: { user: User; them
   const [rail, setRail] = useState<boolean>(() => load('tds_nav_rail', false))
   const [folded, setFolded] = useState<string[]>(() => load('tds_nav_folded', []))
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [navStyle, setNavStyle] = useState<string>(() => load('tds_nav_style', 'classic'))
   const loc = useLocation()
   const admin = user.role === 'admin'
   const role = admin ? t('Administrator') : t('User')
@@ -154,13 +159,13 @@ export function Sidebar({ user, theme, toggleTheme, logout }: { user: User; them
           <Menu size={20} />
         </button>
         <Logo size={24} />
-        <b>{APP_NAME}</b>
+        <b className="wordmark">{APP_NAME}</b>
       </header>
       {mobileOpen && <div className="sidebar-backdrop" onClick={() => setMobileOpen(false)} />}
-      <aside className={'sidebar' + (compact ? ' rail' : '') + (mobileOpen ? ' mobile-open' : '')}>
+      <aside className={'sidebar' + (compact ? ' rail' : '') + (mobileOpen ? ' mobile-open' : '')} data-nav={navStyle === 'classic' ? undefined : navStyle}>
         <div className="sidebar-head">
           <Logo />
-          <span className="brand-name">{APP_NAME}</span>
+          <span className="brand-name wordmark">{APP_NAME}</span>
           <button className="icon-btn rail-toggle" onClick={toggleRail} title={(rail ? t('Expand sidebar') : t('Collapse sidebar')) + ' (Ctrl+B)'} aria-label={rail ? t('Expand sidebar') : t('Collapse sidebar')}>
             {rail ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
           </button>
@@ -237,6 +242,15 @@ export function Sidebar({ user, theme, toggleTheme, logout }: { user: User; them
                 >
                   {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />} {theme === 'dark' ? t('Light theme') : t('Dark theme')}
                 </button>
+                <div className="menu-sep" />
+                <div className="menu-title">{t('Sidebar style')}</div>
+                <div className="nav-style-pick">
+                  {NAV_STYLES.map((s, i) => (
+                    <button key={s} className={'nav-style-btn' + (s === navStyle ? ' active' : '')} aria-pressed={s === navStyle} onClick={() => (save('tds_nav_style', s), setNavStyle(s))}>
+                      {i + 1}
+                    </button>
+                  ))}
+                </div>
                 <div className="menu-sep" />
                 <button
                   className="menu-item danger"

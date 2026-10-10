@@ -504,7 +504,7 @@ export function useOutside(ref: RefObject<HTMLElement | null>, onOutside: () => 
  * lived inside the anchor's container would be cut off by any scrolling
  * ancestor — a table, a modal body, a drawer.
  */
-function useFloating(anchor: RefObject<HTMLElement | null>, panel: RefObject<HTMLElement | null>, open: boolean, align: 'left' | 'right', matchWidth = false) {
+export function useFloating(anchor: RefObject<HTMLElement | null>, panel: RefObject<HTMLElement | null>, open: boolean, align: 'left' | 'right', matchWidth = false) {
   useLayoutEffect(() => {
     if (!open) return
     const place = () => {
