@@ -30,6 +30,38 @@ const STATUS_LABEL: Record<string, string> = { ok: t('ok@@domain'), pending: t('
 /** Visible name of a domain check status. */
 export const domainStatus = (s: string) => STATUS_LABEL[s] ?? s
 
+const connTone = (d: Domain) => STATUS_TONE[d.status] ?? 'neutral'
+
+/** The verdict of the connection check, and whether the domain sits behind a proxy. */
+function ConnBadges({ d }: { d: Domain }) {
+  return (
+    <>
+      <Badge tone={connTone(d)}>{d.status === 'pending' ? t('pending…@@domain') : domainStatus(d.status)}</Badge>
+      {d.proxied && (
+        <Badge tone="info" title={t('DNS points at a proxy or CDN, and it passes requests on to this server.')}>
+          {t('proxied')}
+        </Badge>
+      )}
+    </>
+  )
+}
+
+/** The addresses the domain resolved to at the last check; `max` of them, the rest in the tooltip. */
+function ConnIPs({ d, max = 2 }: { d: Domain; max?: number }) {
+  const ips = d.resolved_ips ?? []
+  if (!ips.length) return null
+  return (
+    <div className="conn-ips" title={ips.join('\n')}>
+      <span className="muted">{d.proxied ? t('Proxy IP') : 'IP'}</span>
+      {ips.slice(0, max).map((ip) => (
+        <code key={ip}>{ip}</code>
+      ))}
+      {ips.length > max && <span className="muted">+{ips.length - max}</span>}
+      <CopyButton text={ips.join('\n')} className="icon-btn" title={ips.length > 1 ? t('Copy the addresses') : t('Copy the address')} />
+    </div>
+  )
+}
+
 type View = 'cards' | 'table'
 type Order = 'name' | 'state' | 'new'
 const ORDERS: { value: Order; label: string }[] = [
@@ -129,7 +161,7 @@ export default function Domains() {
     try {
       await post('domains/check', { ids: which })
       // The check runs in the background; show it as pending until the poll picks the result up.
-      list.setData(domains.map((d) => (which.includes(d.id) ? { ...d, status: 'pending', status_msg: '' } : d)))
+      list.setData(domains.map((d) => (which.includes(d.id) ? { ...d, status: 'pending', status_msg: '', proxied: false } : d)))
       setWatch(Date.now() + WATCH_MS)
       toast.info(tn(which.length, 'Re-checking {n} domain…', 'Re-checking {n} domains…'))
     } catch (e) {
@@ -166,7 +198,6 @@ export default function Domains() {
     </a>
   )
   const connTitle = (d: Domain) => (d.status_msg ? ts(d.status_msg) + '\n' : '') + (d.checked_at ? t('Checked {time}', { time: fmtDateTime(d.checked_at) }) : t('Not checked yet'))
-  const connBadge = (d: Domain) => <Badge tone={STATUS_TONE[d.status] ?? 'neutral'}>{d.status === 'pending' ? t('pending…@@domain') : domainStatus(d.status)}</Badge>
   const panelToggle = (d: Domain, text?: ReactNode) => <Toggle checked={d.admin_enabled} onChange={(v) => patch(d, { admin_enabled: v })} label={text} title={t('Panel access on this domain')} />
   const enabledToggle = (d: Domain, text?: ReactNode) => <Toggle checked={d.enabled} onChange={(v) => patch(d, { enabled: v })} label={text} />
   const actions = (d: Domain) => (
@@ -207,11 +238,14 @@ export default function Domains() {
       title: t('Connection'),
       sort: (d) => d.status,
       render: (d) => (
-        <span title={connTitle(d)}>
-          {connBadge(d)}
-          {d.status === 'error' && d.status_msg && <span className="status-msg ellipsis">{ts(d.status_msg)}</span>}
-          <span className="muted small"> {d.checked_at ? fmtAgo(d.checked_at) : ''}</span>
-        </span>
+        <div className="conn-cell">
+          <div className="conn-line" title={connTitle(d)}>
+            <ConnBadges d={d} />
+            {d.status === 'error' && d.status_msg && <span className="status-msg ellipsis">{ts(d.status_msg)}</span>}
+            <span className="muted small">{d.checked_at ? fmtAgo(d.checked_at) : ''}</span>
+          </div>
+          <ConnIPs d={d} max={1} />
+        </div>
       ),
     },
     ...(hasRep ? [{ key: 'rep', title: t('Reputation'), headTitle: t('What the blocklists say about the domain'), sort: (d: Domain) => d.rep_status, render: (d: Domain) => <RepBadge d={d} active={repOn} /> } as Column<Domain>] : []),
@@ -393,13 +427,16 @@ export default function Domains() {
                     </div>
                   </dl>
                 </div>
-                <div className="dcard-col" title={connTitle(d)}>
-                  <div className="dcard-label">{t('Connection')}</div>
-                  <div className="row gap-s">
-                    {connBadge(d)}
-                    <span className="muted small">{d.checked_at ? fmtAgo(d.checked_at) : t('Not checked yet')}</span>
+                <div className="dcard-col">
+                  <div className="dcard-label">
+                    {t('Connection')}
+                    <span className="muted"> · {d.checked_at ? fmtAgo(d.checked_at) : t('Not checked yet')}</span>
                   </div>
-                  {d.status_msg && <div className={'dcard-msg' + (d.status === 'error' ? ' err' : '')}>{ts(d.status_msg)}</div>}
+                  <div className="conn-line" title={connTitle(d)}>
+                    <ConnBadges d={d} />
+                    <ConnIPs d={d} />
+                  </div>
+                  {d.status_msg && <div className={'dcard-msg' + (d.status === 'error' ? ' err' : '')} title={ts(d.status_msg)}>{ts(d.status_msg)}</div>}
                 </div>
                 {hasRep && (
                   <div className="dcard-col">
@@ -621,11 +658,15 @@ function EditDomain({ domain, isAdmin, groups, campaigns, onClose, onSaved }: { 
         </>
       }
     >
-      {domain.status !== 'ok' && (
-        <Notice tone={domain.status === 'error' ? 'err' : 'warn'} title={t('Status: {status}', { status: domainStatus(domain.status) })}>
-          {domain.status_msg ? ts(domain.status_msg) : t('Waiting for the check to finish.')} {domain.checked_at && <span className="muted">{t('(checked {time})', { time: fmtDateTime(domain.checked_at) })}</span>}
-        </Notice>
-      )}
+      <div className={'conn-box ' + connTone(domain)}>
+        <div className="conn-line">
+          <ConnBadges d={domain} />
+          <ConnIPs d={domain} max={4} />
+          <span className="grow" />
+          <span className="muted small">{domain.checked_at ? t('Checked {time}', { time: fmtDateTime(domain.checked_at) }) : t('Not checked yet')}</span>
+        </div>
+        <div className="conn-box-msg">{domain.status_msg ? ts(domain.status_msg) : t('Waiting for the check to finish.')}</div>
+      </div>
       <div className="form-grid">
         <Field label={t('Domain name')} help={t('Renaming or changing the TLS mode triggers a new check.')}>
           <input className="input mono" value={name} onChange={(e) => setName(e.target.value)} />

@@ -78,6 +78,10 @@ export interface Domain {
   status: string
   status_msg: string
   checked_at: string | null
+  /** What the name resolved to at the last check. */
+  resolved_ips: string[] | null
+  /** It reaches this server although DNS points at somebody else's address. */
+  proxied: boolean
   note: string
   created_at: string
   /** Sum of the blocklist answers: '' (not checked) | clean | listed | unknown */

@@ -408,17 +408,20 @@ func (s *Server) validateDomain(ctx context.Context, d *model.Domain, old *model
 	}
 	if old == nil {
 		d.Status, d.StatusMsg, d.CheckedAt = "pending", "", nil
+		d.ResolvedIPs, d.Proxied = nil, false
 		d.RepStatus, d.Reputation, d.RepCheckedAt = "", nil, nil
 		return nil
 	}
 	// Status and reputation are owned by their checkers.
 	d.Status, d.StatusMsg, d.CheckedAt = old.Status, old.StatusMsg, old.CheckedAt
+	d.ResolvedIPs, d.Proxied = old.ResolvedIPs, old.Proxied
 	d.RepStatus, d.Reputation, d.RepCheckedAt = old.RepStatus, old.Reputation, old.RepCheckedAt
 	if old.Name != d.Name || old.TLSMode != d.TLSMode {
 		d.Status, d.StatusMsg = "pending", ""
 	}
 	if old.Name != d.Name {
 		// What was said about the old name says nothing about the new one.
+		d.ResolvedIPs, d.Proxied = nil, false
 		d.RepStatus, d.Reputation, d.RepCheckedAt = "", nil, nil
 	}
 	losing := old.AdminEnabled && old.Status == "ok" && (!d.AdminEnabled || !d.Enabled || d.Status != "ok")

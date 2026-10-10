@@ -165,6 +165,8 @@ CREATE TABLE IF NOT EXISTS landings (
   note text NOT NULL DEFAULT '', file_count int NOT NULL DEFAULT 0, size bigint NOT NULL DEFAULT 0,
   vars jsonb NOT NULL DEFAULT '[]', presets jsonb NOT NULL DEFAULT '[]', templated jsonb NOT NULL DEFAULT '[]',
   next_id bigint NOT NULL DEFAULT 1, created_at timestamptz NOT NULL DEFAULT now());
+ALTER TABLE domains ADD COLUMN IF NOT EXISTS resolved_ips jsonb NOT NULL DEFAULT '[]';
+ALTER TABLE domains ADD COLUMN IF NOT EXISTS proxied boolean NOT NULL DEFAULT false;
 `
 
 // OwnedTables are the tables whose rows belong to a user.
@@ -474,6 +476,15 @@ func (s *Store) SetShare(ctx context.Context, campaignID, userID int64, access s
 
 func (s *Store) SetDomainStatus(ctx context.Context, id int64, status, msg string) {
 	s.Pool.Exec(ctx, "UPDATE domains SET status=$2, status_msg=$3, checked_at=now() WHERE id=$1", id, status, msg)
+}
+
+// SetDomainCheck stores the outcome of a connection check: the status, the
+// addresses the name resolved to and whether it is reached through a proxy.
+func (s *Store) SetDomainCheck(ctx context.Context, id int64, status, msg string, ips []string, proxied bool) {
+	if ips == nil {
+		ips = []string{}
+	}
+	s.Pool.Exec(ctx, "UPDATE domains SET status=$2, status_msg=$3, resolved_ips=$4, proxied=$5, checked_at=now() WHERE id=$1", id, status, msg, ips, proxied)
 }
 
 // SetDomainReputation stores the blocklist answers for a domain. A nil

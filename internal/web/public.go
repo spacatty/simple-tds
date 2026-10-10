@@ -97,9 +97,10 @@ func isSecure(r *http.Request, snap *engine.Snapshot) bool {
 	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") || strings.Contains(r.Header.Get("CF-Visitor"), "https")
 }
 
-func (s *Server) checkToken(host string) string {
+// checkToken is the answer to a one-time domain check key.
+func (s *Server) checkToken(key string) string {
 	m := hmac.New(sha256.New, s.cfg.Secret)
-	m.Write([]byte("domain-check|" + host))
+	m.Write([]byte("domain-check|" + key))
 	return "tds-" + hex.EncodeToString(m.Sum(nil)[:12])
 }
 
@@ -116,9 +117,11 @@ func (s *Server) servePublic(w http.ResponseWriter, r *http.Request) {
 	host := hostOnly(r.Host)
 	path := r.URL.Path
 
-	if strings.HasPrefix(path, checkPath) {
+	if key, ok := strings.CutPrefix(path, checkPath+"/"); ok {
 		// Proves to the domain checker that this hostname reaches this server.
-		io.WriteString(w, s.checkToken(host))
+		if !s.answerCheck(w, r, key) {
+			stock404(w)
+		}
 		return
 	}
 	d := snap.Domains[host]

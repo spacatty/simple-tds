@@ -168,8 +168,13 @@ type Domain struct {
 	Status       string     `db:"status" json:"status"` // pending | ok | error
 	StatusMsg    string     `db:"status_msg" json:"status_msg"`
 	CheckedAt    *time.Time `db:"checked_at" json:"checked_at"`
-	Note         string     `db:"note" json:"note"`
-	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
+	// ResolvedIPs is what the name resolved to at the last check; Proxied says
+	// it reached this server although those addresses are not the server's.
+	// Both are owned by the connection checker.
+	ResolvedIPs []string  `db:"resolved_ips" json:"resolved_ips"`
+	Proxied     bool      `db:"proxied" json:"proxied"`
+	Note        string    `db:"note" json:"note"`
+	CreatedAt   time.Time `db:"created_at" json:"created_at"`
 	// Reputation is what the blocklist providers said last; RepStatus sums it
 	// up. Both are owned by the reputation checker.
 	RepStatus    string      `db:"rep_status" json:"rep_status"` // "" (not checked) | clean | listed | unknown

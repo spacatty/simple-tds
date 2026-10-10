@@ -5772,6 +5772,76 @@ fieldset.plain:disabled .action-card {
   align-self: center;
   justify-self: end;
 }
+/* The connection check: verdict, "proxied" and the addresses DNS gives, on one line. */
+.conn-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-width: 0;
+}
+.conn-ips {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  min-width: 0;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.conn-ips code {
+  padding: 0;
+  background: none;
+  border: 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.conn-ips .icon-btn {
+  width: 20px;
+  height: 20px;
+  margin-left: -2px;
+}
+.conn-ips .icon-btn svg {
+  width: 12px;
+  height: 12px;
+}
+.conn-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.conn-cell .status-msg {
+  margin-left: 0;
+}
+.conn-box {
+  --tone: var(--border-strong);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--tone);
+  border-radius: var(--radius);
+}
+.conn-box.ok {
+  --tone: var(--ok);
+}
+.conn-box.warn {
+  --tone: var(--warn);
+}
+.conn-box.err {
+  --tone: var(--err);
+}
+.conn-box-msg {
+  font-size: 12.5px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.conn-box.err .conn-box-msg {
+  color: var(--err);
+}
 @media (max-width: 1280px) {
   .dcard,
   .dcards.with-rep .dcard {

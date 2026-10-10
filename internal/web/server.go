@@ -69,6 +69,9 @@ type Server struct {
 	publicIP atomic.Value // string; this server's public address, for DNS hints
 
 	checkMu sync.Mutex
+	// probes are the domain check requests on their way, by one-time key.
+	probeMu sync.Mutex
+	probes  map[string]*probeSeen
 	rep     repState
 	servers []*http.Server
 }
