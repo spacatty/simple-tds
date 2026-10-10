@@ -217,7 +217,7 @@ export default function SplitReport({ spec }: { spec: SplitSpec }) {
         </button>
       </PageHeader>
 
-      <FilterPanel id={spec.id} sp={sp} update={update} main={spec.main} more={spec.more} lookup={rangeParams(range)} campaigns={camps.data} streams={streams.data} />
+      <FilterPanel sp={sp} update={update} main={spec.main} more={spec.more} lookup={rangeParams(range)} campaigns={camps.data} streams={streams.data} />
 
       <ErrorBox error={rep.error} retry={rep.reload} />
 

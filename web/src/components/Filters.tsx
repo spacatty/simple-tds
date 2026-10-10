@@ -1,11 +1,11 @@
-// The filter panel shared by the reports and the logs. Pages pick fields from
-// one catalogue: the few they pin stay on the first row, the rest unfold in
-// sections, and whatever is in force is listed underneath. Everything is read
-// from and written to the URL (see ../filters).
+// The filter row shared by the reports and the logs. Pages pick fields from one
+// catalogue: the few they pin are always there as pills, the rest are added
+// from a menu and stay while they narrow the result. Everything is read from
+// and written to the URL (see ../filters).
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, ChevronDown, Search, SlidersHorizontal, TextSearch, X } from 'lucide-react'
+import { Check, Plus, Search, TextSearch, X } from 'lucide-react'
 import { errMsg, get } from '../api'
 import type { Params } from '../api'
 import { useDebounced } from '../hooks'
@@ -14,7 +14,7 @@ import { PLAIN_PARAMS, dimLabel, parseFilters, urlFilterParams, valueText } from
 import { fmtInt } from '../format'
 import { t } from '../i18n'
 import { dimIcon } from './icons'
-import { FilterField, Segmented, Select, useFloating, useOutside } from './ui'
+import { Dropdown, FilterField, Segmented, Select, useFloating, useOutside } from './ui'
 
 export type SectionId = 'routing' | 'geo' | 'device' | 'source' | 'quality' | 'conv'
 
@@ -83,8 +83,12 @@ const FIELDS: Record<string, FieldDef> = {
   sender_ip: { label: t('Sender IP'), section: 'conv', kind: 'text', param: 'ip', placeholder: t('Address, prefix or CIDR'), mono: true, size: 'sm' },
 }
 
-/** A catalogue field by its id, or a control of the page's own. */
-export type FilterItem = string | { key: string; node: ReactNode; section?: SectionId }
+/**
+ * A catalogue field by its id, or a control of the page's own. Among the extra
+ * filters a control with a label is offered in the menu like the rest; one
+ * without is always shown.
+ */
+export type FilterItem = string | { key: string; node: ReactNode; section?: SectionId; label?: string }
 
 /** A filter of the page's own that is in force, so the panel can list and reset it. */
 export interface CustomFilter {
@@ -95,24 +99,12 @@ export interface CustomFilter {
   params: string[]
 }
 
-const LS_OPEN = 'tds_filters_open'
-function loadOpen(): Record<string, boolean> {
-  try {
-    const v = JSON.parse(localStorage.getItem(LS_OPEN) ?? '{}')
-    return v && typeof v === 'object' ? v : {}
-  } catch {
-    return {}
-  }
-}
-
 interface PanelProps {
-  /** Names the page: whether its extra filters are unfolded is remembered under it. */
-  id: string
   sp: URLSearchParams
   update: (fn: (n: URLSearchParams) => void, replace?: boolean) => void
-  /** The first row. */
+  /** The filters that are always shown. */
   main: FilterItem[]
-  /** What unfolds under "More filters", grouped by section. */
+  /** What "Add filter" offers, grouped by section. */
   more?: FilterItem[]
   /** The period (and whatever else the page narrows by) for the lists of values. */
   lookup: Params
@@ -134,21 +126,15 @@ interface Chip {
   text: string
   params: string[]
   mono?: boolean
-  /** Its field is not on the first row. */
-  hidden: boolean
+  /** No field of the page shows it, so it gets a pill of its own. */
+  bare: boolean
 }
 
-export function FilterPanel({ id, sp, update, main, more = [], lookup, source = 'clicks', campaigns, streams, keys, custom = [], campaignDeps = [], names }: PanelProps) {
-  const [open, setOpen] = useState(() => loadOpen()[id] ?? false)
-  const toggle = () => {
-    const next = !open
-    setOpen(next)
-    try {
-      localStorage.setItem(LS_OPEN, JSON.stringify({ ...loadOpen(), [id]: next }))
-    } catch {
-      /* private mode */
-    }
-  }
+export function FilterPanel({ sp, update, main, more = [], lookup, source = 'clicks', campaigns, streams, keys, custom = [], campaignDeps = [], names }: PanelProps) {
+  // Extra filters picked from the menu: shown even while empty, until the reset.
+  const [added, setAdded] = useState<string[]>([])
+  // The one picked last opens (or takes the caret) as it appears.
+  const [fresh, setFresh] = useState('')
 
   const spKey = sp.toString()
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -173,17 +159,18 @@ export function FilterPanel({ id, sp, update, main, more = [], lookup, source = 
 
   const defs = (items: FilterItem[]) => items.flatMap((it) => (typeof it === 'string' && FIELDS[it] ? [FIELDS[it]] : []))
   const pageDefs = [...defs(main), ...defs(more)]
-  const mainParams = new Set(defs(main).flatMap((d) => (d.like ? [d.param, d.like] : [d.param])))
+  const pageParams = new Set(pageDefs.flatMap((d) => (d.like ? [d.param, d.like] : [d.param])))
   const defFor = (param: string) => pageDefs.find((d) => d.param === param || d.like === param) ?? Object.values(FIELDS).find((d) => d.param === param || d.like === param)
 
   const field = (fid: string): ReactNode => {
     const d = FIELDS[fid]
     if (!d) return null
     const cur = sp.get(d.param) ?? ''
+    const clear = () => setParam(d.param, '')
     switch (d.kind) {
       case 'campaign':
         return (
-          <FilterField key={fid} label={d.label} active={!!cur}>
+          <FilterField key={fid} label={d.label} active={!!cur} onClear={() => update((n) => ['campaign_id', 'stream_id', ...campaignDeps].forEach((k) => n.delete(k)))}>
             <Select
               value={cur}
               onChange={(v) =>
@@ -200,7 +187,7 @@ export function FilterPanel({ id, sp, update, main, more = [], lookup, source = 
         )
       case 'stream':
         return (
-          <FilterField key={fid} label={d.label} active={!!cur}>
+          <FilterField key={fid} label={d.label} active={!!cur} onClear={clear}>
             <Select
               value={cur}
               onChange={(v) => setParam(d.param, v)}
@@ -211,7 +198,7 @@ export function FilterPanel({ id, sp, update, main, more = [], lookup, source = 
         )
       case 'key':
         return (
-          <FilterField key={fid} label={d.label} active={!!cur}>
+          <FilterField key={fid} label={d.label} active={!!cur} onClear={clear}>
             <Select value={cur} onChange={(v) => setParam(d.param, v)} placeholder={t('All keys')} options={(keys ?? []).map((k) => ({ value: String(k.id), label: k.name }))} />
           </FilterField>
         )
@@ -219,9 +206,15 @@ export function FilterPanel({ id, sp, update, main, more = [], lookup, source = 
         const vals = sp.getAll(d.param)
         const like = d.like ? (sp.get(d.like) ?? '') : ''
         const likeParam = d.like
+        const clearAll = () =>
+          update((n) => {
+            n.delete(d.param)
+            if (likeParam) n.delete(likeParam)
+          })
         return (
-          <FilterField key={fid} label={d.label} active={vals.length > 0 || !!like}>
+          <FilterField key={fid} label={d.label} active={vals.length > 0 || !!like} onClear={clearAll}>
             <ValuePicker
+              autoOpen={fresh === fid}
               dim={d.dim ?? fid}
               label={d.label}
               values={vals}
@@ -230,12 +223,7 @@ export function FilterPanel({ id, sp, update, main, more = [], lookup, source = 
               lookup={scope}
               onChange={(v) => setValues(d.param, v)}
               onLike={likeParam ? (text) => setParam(likeParam, text) : undefined}
-              onClear={() =>
-                update((n) => {
-                  n.delete(d.param)
-                  if (likeParam) n.delete(likeParam)
-                })
-              }
+              onClear={clearAll}
               name={(v) => names?.(d.dim ?? fid, v) ?? valueText(d.dim ?? fid, v)}
             />
           </FilterField>
@@ -243,8 +231,8 @@ export function FilterPanel({ id, sp, update, main, more = [], lookup, source = 
       }
       case 'text':
         return (
-          <FilterField key={fid} label={d.label} size={d.size} active={!!cur}>
-            <TextFilter value={cur} onChange={(v) => setParam(d.param, v, true)} placeholder={d.placeholder} mono={d.mono} />
+          <FilterField key={fid} label={d.label} size={d.size} active={!!cur} onClear={clear}>
+            <TextFilter value={cur} onChange={(v) => setParam(d.param, v, true)} placeholder={d.placeholder} mono={d.mono} autoFocus={fresh === fid} />
           </FilterField>
         )
       case 'bots':
@@ -255,7 +243,7 @@ export function FilterPanel({ id, sp, update, main, more = [], lookup, source = 
         )
       case 'flag':
         return (
-          <FilterField key={fid} label={d.label} size={d.size} active={cur === 'only' || cur === 'exclude'}>
+          <FilterField key={fid} label={d.label} size={d.size} active={cur === 'only' || cur === 'exclude'} onClear={clear}>
             <Select
               value={cur}
               onChange={(v) => setParam(d.param, v)}
@@ -288,73 +276,95 @@ export function FilterPanel({ id, sp, update, main, more = [], lookup, source = 
       label: c.like ? t('{name} contains', { name: label }) : label,
       text: c.like ? c.values[0] : listed(c.values.map((v) => names?.(c.dim, v) ?? idName(c.dim, v) ?? valueText(c.dim, v))),
       params: [c.param],
-      hidden: !mainParams.has(c.param),
+      bare: !pageParams.has(c.param),
     })
   }
-  if (state.bots) chips.push({ key: 'bots', label: FIELDS.bots.label, text: BOTS[state.bots], params: ['bots'], hidden: !mainParams.has('bots') })
+  if (state.bots) chips.push({ key: 'bots', label: FIELDS.bots.label, text: BOTS[state.bots], params: ['bots'], bare: !pageParams.has('bots') })
   for (const p of PLAIN_PARAMS) {
     const v = sp.get(p)
     if (!v) continue
     const d = defFor(p)
-    chips.push({ key: p, label: d?.label ?? p, text: d?.kind === 'flag' ? ((v === 'only' ? d.only : v === 'exclude' ? d.exclude : v) ?? v) : v, params: [p], mono: d?.mono, hidden: !mainParams.has(p) })
+    chips.push({ key: p, label: d?.label ?? p, text: d?.kind === 'flag' ? ((v === 'only' ? d.only : v === 'exclude' ? d.exclude : v) ?? v) : v, params: [p], mono: d?.mono, bare: !pageParams.has(p) })
   }
   sp.forEach((v, k) => {
     // Postback parameters of a conversion.
-    if (k.startsWith('p.') && k.length > 2 && v !== '') chips.push({ key: k, label: k.slice(2), text: v, params: [k], mono: true, hidden: false })
+    if (k.startsWith('p.') && k.length > 2 && v !== '') chips.push({ key: k, label: k.slice(2), text: v, params: [k], mono: true, bare: true })
   })
-  for (const c of custom) chips.push({ ...c, hidden: false })
-  const hiddenCount = chips.filter((c) => c.hidden).length
+  // The page shows these in controls of its own; they are listed for the reset.
+  for (const c of custom) chips.push({ ...c, bare: false })
 
-  const sections = SECTIONS.map(([sid, title]) => ({ sid, title, items: more.filter((it) => (typeof it === 'string' ? FIELDS[it]?.section : it.section) === sid) })).filter((s) => s.items.length > 0)
+  // ---- the extra filters: in the row while set or just added, in the menu otherwise ----
+  const itemKey = (it: FilterItem) => (typeof it === 'string' ? it : it.key)
+  const inForce = (d: FieldDef) => sp.has(d.param) || (!!d.like && sp.has(d.like))
+  const inRow = (it: FilterItem) => added.includes(itemKey(it)) || (typeof it === 'string' ? !!FIELDS[it] && inForce(FIELDS[it]) : !it.label)
+  const offered = more.filter((it) => !inRow(it) && (typeof it !== 'string' || FIELDS[it]))
+  const sections = SECTIONS.map(([sid, title]) => ({ sid, title, items: offered.filter((it) => (typeof it === 'string' ? FIELDS[it].section : it.section) === sid) })).filter((s) => s.items.length > 0)
+  const add = (key: string) => {
+    setAdded((a) => [...a, key])
+    setFresh(key)
+  }
+  const reset = () => {
+    setAdded([])
+    setFresh('')
+    update((n) => chips.forEach((c) => c.params.forEach((p) => n.delete(p))))
+  }
 
   return (
     <div className="filterbar">
       <div className="filterbar-fields">
         {main.map(render)}
-        <div className="filterbar-actions">
-          {sections.length > 0 && (
-            <button type="button" className={'btn' + (open ? ' open' : '')} aria-expanded={open} onClick={toggle}>
-              <SlidersHorizontal size={14} /> {t('More filters')}
-              {hiddenCount > 0 && <span className="count-pill">{hiddenCount}</span>}
-              <ChevronDown size={14} className={open ? 'flip' : ''} />
-            </button>
-          )}
-          {chips.length > 0 && (
-            <button type="button" className="btn ghost" onClick={() => update((n) => chips.forEach((c) => c.params.forEach((p) => n.delete(p))))}>
-              <X size={14} /> {t('Reset filters')}
-            </button>
-          )}
-        </div>
-      </div>
-      {open && sections.length > 0 && (
-        <div className="filterbar-sections">
-          {sections.map((s) => (
-            <div className="fsec" key={s.sid} role="group" aria-label={s.title}>
-              <div className="fsec-title">{s.title}</div>
-              <div className="fsec-fields">{s.items.map(render)}</div>
-            </div>
-          ))}
-        </div>
-      )}
-      {chips.length > 0 && (
-        <nav className="filterbar-chips" aria-label={t('Active filters')}>
-          <span className="muted">{t('Filtered by')}</span>
-          {chips.map((c) => (
-            <span className="crumb" key={c.key}>
-              <span className={'muted' + (c.mono && c.key.startsWith('p.') ? ' mono' : '')}>{c.label}:</span> <b className={'ellipsis' + (c.mono ? ' mono' : '')} title={c.text}>{c.text}</b>
-              <button type="button" aria-label={t('Remove filter {name}', { name: c.label })} title={t('Remove this filter')} onClick={() => update((n) => c.params.forEach((p) => n.delete(p)))}>
+        {more.filter(inRow).map(render)}
+        {chips
+          .filter((c) => c.bare)
+          .map((c) => (
+            <span className="ff on ff-bare" key={c.key}>
+              <span className={'ff-label' + (c.key.startsWith('p.') ? ' mono' : '')}>{c.label}</span>
+              <b className={'ellipsis' + (c.mono ? ' mono' : '')} title={c.text}>
+                {c.text}
+              </b>
+              <button type="button" className="ff-clear" aria-label={t('Remove filter {name}', { name: c.label })} title={t('Remove this filter')} onClick={() => update((n) => c.params.forEach((p) => n.delete(p)))}>
                 <X size={12} />
               </button>
             </span>
           ))}
-        </nav>
-      )}
+        {sections.length > 0 && (
+          <Dropdown
+            className="ff-add"
+            chevron={false}
+            label={
+              <>
+                <Plus size={14} /> {t('Add filter')}
+              </>
+            }
+          >
+            {(close) => (
+              <div className="menu menu-cols ff-menu">
+                {sections.map((s) => (
+                  <div key={s.sid} role="group" aria-label={s.title}>
+                    <div className="menu-title">{s.title}</div>
+                    {s.items.map((it) => (
+                      <button type="button" className="menu-item" key={itemKey(it)} onClick={() => (close(), add(itemKey(it)))}>
+                        {typeof it === 'string' ? FIELDS[it].label : it.label}
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Dropdown>
+        )}
+        {(chips.length > 0 || added.length > 0) && (
+          <button type="button" className="btn ghost filterbar-reset" onClick={reset}>
+            <X size={14} /> {t('Reset filters')}
+          </button>
+        )}
+      </div>
     </div>
   )
 }
 
 /** A typed filter: kept locally while typing and handed over once the user pauses. */
-function TextFilter({ value, onChange, placeholder, mono }: { value: string; onChange: (v: string) => void; placeholder?: string; mono?: boolean }) {
+function TextFilter({ value, onChange, placeholder, mono, autoFocus }: { value: string; onChange: (v: string) => void; placeholder?: string; mono?: boolean; autoFocus?: boolean }) {
   const [text, setText] = useState(value)
   // The URL can change under the field (a reset, a link in a row); what is being typed is not overwritten by its own echo.
   useEffect(() => setText((cur) => (cur.trim() === value ? cur : value)), [value])
@@ -363,7 +373,7 @@ function TextFilter({ value, onChange, placeholder, mono }: { value: string; onC
     if (settled === text && settled.trim() !== value) onChange(settled.trim())
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settled])
-  return <input className={'input' + (mono ? ' mono' : '')} placeholder={placeholder} value={text} onChange={(e) => setText(e.target.value)} />
+  return <input className={'input' + (mono ? ' mono' : '')} placeholder={placeholder} value={text} autoFocus={autoFocus} onChange={(e) => setText(e.target.value)} />
 }
 
 interface ValueRow {
@@ -392,7 +402,10 @@ function ValuePicker({
   onLike,
   onClear,
   name,
+  autoOpen,
 }: {
+  /** Starts unfolded: the filter was just added and has nothing picked yet. */
+  autoOpen?: boolean
   dim: string
   label: string
   values: string[]
@@ -405,7 +418,7 @@ function ValuePicker({
   onClear: () => void
   name: (value: string) => string
 }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(!!autoOpen)
   const [q, setQ] = useState('')
   // Row under the keyboard cursor; -1 until an arrow key is pressed.
   const [active, setActive] = useState(-1)

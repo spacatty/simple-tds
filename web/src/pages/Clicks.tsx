@@ -189,7 +189,6 @@ export default function Clicks() {
       </PageHeader>
 
       <FilterPanel
-        id="clicks"
         sp={sp}
         update={update}
         lookup={rangeApiParams(range)}

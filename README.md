@@ -380,9 +380,10 @@ drill into a row), **Referrers** (referring sites, and the pages of each) and
 split clicks into mobile and desktop. **Tracking** holds the raw click,
 conversion and postback logs.
 
-They share one filter panel. A few filters sit on the first row, **More
-filters** unfolds the rest by subject (routing, geo, device, source, quality),
-and everything in force is listed underneath, each with its own ✕.
+They share one row of filters. Each filter is a pill with its name and value;
+a few are always there, **Add filter** offers the rest by subject (routing,
+geo, device, source, quality), and a filter in force is tinted and carries
+its own ✕.
 
 - A value filter (country, device, OS, browser, referrer, sub1–5 …) offers the
   values the selection really has, most frequent first, and takes several:

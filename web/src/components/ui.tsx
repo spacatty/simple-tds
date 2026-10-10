@@ -1,4 +1,4 @@
-import { Component, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Component, Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent, ReactNode, RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { AlertTriangle, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Copy, Inbox, Info, Search, X, XCircle } from 'lucide-react'
@@ -384,7 +384,14 @@ export interface SelectOption {
   disabled?: boolean
 }
 
-/** Native select with optional optgroups; values are strings. */
+/** A list this long gets a search box. */
+const SELECT_SEARCH_FROM = 9
+
+/**
+ * Picks one value from a list: a button that unfolds the options in a floating
+ * panel drawn in the panel's own theme. Options may be grouped; values are
+ * strings. `placeholder` is the name of the empty value ("All campaigns").
+ */
 export function Select({
   value,
   onChange,
@@ -402,42 +409,153 @@ export function Select({
   className?: string
   title?: string
 }) {
-  const groups = useMemo(() => {
-    const out: { group: string; items: SelectOption[] }[] = []
-    for (const o of options) {
-      const g = o.group ?? ''
-      let bucket = out.find((x) => x.group === g)
-      if (!bucket) {
-        bucket = { group: g, items: [] }
-        out.push(bucket)
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  // Row under the keyboard cursor.
+  const [active, setActive] = useState(-1)
+  const btn = useRef<HTMLButtonElement>(null)
+  const panel = useRef<HTMLDivElement>(null)
+
+  const all = useMemo(() => {
+    const list: SelectOption[] = []
+    if (placeholder !== undefined) list.push({ value: '', label: placeholder })
+    // A stored value the list no longer offers is still shown as what it is.
+    if (value !== '' && !options.some((o) => o.value === value)) list.push({ value, label: value })
+    // Options of one group stay together, groups in the order they first appear.
+    const groups: string[] = []
+    for (const o of options) if (!groups.includes(o.group ?? '')) groups.push(o.group ?? '')
+    for (const g of groups) list.push(...options.filter((o) => (o.group ?? '') === g))
+    return list
+  }, [options, placeholder, value])
+  const searchable = all.length >= SELECT_SEARCH_FROM
+  const needle = q.trim().toLowerCase()
+  const shown = needle ? all.filter((o) => o.label.toLowerCase().includes(needle)) : all
+  const current = all.find((o) => o.value === value)
+
+  useOutside(btn, () => setOpen(false), open, panel)
+  // Never narrower than the button; set before the panel is placed.
+  useLayoutEffect(() => {
+    if (open && panel.current && btn.current) panel.current.style.minWidth = btn.current.offsetWidth + 'px'
+  }, [open])
+  useFloating(btn, panel, open, 'left')
+  const dismiss = () => {
+    setOpen(false)
+    btn.current?.focus()
+  }
+  useOverlay(dismiss, open)
+
+  const scrollTo = (i: number) => panel.current?.querySelector(`[data-i="${i}"]`)?.scrollIntoView({ block: 'nearest' })
+  useEffect(() => {
+    if (!open) return
+    setQ('')
+    const i = all.findIndex((o) => o.value === value)
+    setActive(i)
+    scrollTo(i)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
+  const pick = (o: SelectOption) => {
+    if (o.disabled) return
+    dismiss()
+    if (o.value !== value) onChange(o.value)
+  }
+  const move = (from: number, step: number) => {
+    // The next row that can be picked, wrapping round.
+    for (let n = 0, i = from; n < shown.length; n++) {
+      i = (i + step + shown.length) % shown.length
+      if (!shown[i].disabled) {
+        setActive(i)
+        scrollTo(i)
+        return
       }
-      bucket.items.push(o)
     }
-    return out
-  }, [options])
-  const known = options.some((o) => o.value === value)
+  }
+  const onKey = (e: KeyboardEvent<HTMLElement>) => {
+    const typing = (e.target as HTMLElement).tagName === 'INPUT'
+    if (!open) {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+      e.preventDefault()
+      setOpen(true)
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      move(active, e.key === 'ArrowDown' ? 1 : -1)
+    } else if (e.key === 'Home' && !typing) {
+      e.preventDefault()
+      move(-1, 1)
+    } else if (e.key === 'End' && !typing) {
+      e.preventDefault()
+      move(shown.length, -1)
+    } else if (e.key === 'Enter' || (e.key === ' ' && !typing)) {
+      e.preventDefault()
+      // With a search typed and no row chosen, Enter takes the best match.
+      const o = shown[active] ?? (needle ? shown.find((x) => !x.disabled) : undefined)
+      if (o) pick(o)
+    } else if (e.key === 'Tab') {
+      setOpen(false)
+    } else if (!typing && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      // A letter jumps to the next option that starts with it.
+      const ch = e.key.toLowerCase()
+      const order = [...shown.keys()].map((n) => (active + 1 + n) % shown.length)
+      const i = order.find((n) => !shown[n].disabled && shown[n].label.toLowerCase().startsWith(ch))
+      if (i !== undefined) {
+        setActive(i)
+        scrollTo(i)
+      }
+    }
+  }
+
   return (
-    <select className={'input select' + (className ? ' ' + className : '')} title={title} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
-      {placeholder !== undefined && <option value="">{placeholder}</option>}
-      {!known && value !== '' && <option value={value}>{value}</option>}
-      {groups.map((g) =>
-        g.group ? (
-          <optgroup key={g.group} label={g.group}>
-            {g.items.map((o) => (
-              <option key={o.value} value={o.value} disabled={o.disabled}>
-                {o.label}
-              </option>
-            ))}
-          </optgroup>
-        ) : (
-          g.items.map((o) => (
-            <option key={o.value} value={o.value} disabled={o.disabled}>
-              {o.label}
-            </option>
-          ))
-        ),
-      )}
-    </select>
+    <>
+      <button
+        ref={btn}
+        type="button"
+        className={'input select' + (className ? ' ' + className : '') + (open ? ' open' : '')}
+        title={title}
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        onKeyDown={onKey}
+      >
+        <span className="ellipsis">{current?.label ?? ''}</span>
+      </button>
+      {open &&
+        createPortal(
+          // The panel is a React child of whatever holds the select: its clicks and keys must not reach a row or a form there.
+          <div ref={panel} className="popover floating sel-pop" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+            {searchable && (
+              <div className="vp-search">
+                <Search size={14} />
+                <input
+                  autoFocus
+                  className="input"
+                  value={q}
+                  placeholder={t('Search…')}
+                  onChange={(e) => {
+                    setQ(e.target.value)
+                    setActive(-1)
+                  }}
+                  onKeyDown={onKey}
+                />
+              </div>
+            )}
+            <div className="menu sel-list" role="listbox">
+              {shown.length === 0 && <div className="muted pad-s">{t('Nothing found')}</div>}
+              {shown.map((o, i) => (
+                <Fragment key={o.value}>
+                  {o.group && o.group !== shown[i - 1]?.group && <div className="menu-title">{o.group}</div>}
+                  {/* tabIndex -1 and no focus on press: the list is driven from the button or the search box. */}
+                  <button type="button" tabIndex={-1} role="option" aria-selected={o.value === value} disabled={o.disabled} data-i={i} className={'menu-item' + (o.value === value ? ' selected' : '') + (i === active ? ' active' : '')} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(o)}>
+                    <span className="grow ellipsis">{o.label}</span>
+                    {o.value === value && <Check size={14} className="menu-check" />}
+                  </button>
+                </Fragment>
+              ))}
+            </div>
+          </div>,
+          document.body,
+        )}
+    </>
   )
 }
 
@@ -1043,7 +1161,7 @@ export function SearchInput({ value, onChange, placeholder = t('Search…'), wid
 }
 
 /**
- * The filters of a log or a report: captioned fields on one panel. `chips`
+ * The filters of a log or a report: a row of pills. `chips`
  * lists the filters that have no field of their own (a drill-down from
  * Reports, say); `onReset` shows a button that drops every filter.
  */
@@ -1067,8 +1185,11 @@ export function FilterBar({ children, chips, onReset }: { children: ReactNode; c
   )
 }
 
-/** One captioned control of a FilterBar; `active` marks a filter that narrows the result. */
-export function FilterField({ label, children, active, size = 'md' }: { label: string; children: ReactNode; active?: boolean; size?: 'sm' | 'md' | 'lg' | 'auto' }) {
+/**
+ * One filter of a FilterBar: a pill holding its name and its control. `active`
+ * marks a filter that narrows the result; with `onClear` it then gets a ✕.
+ */
+export function FilterField({ label, children, active, size = 'md', onClear }: { label: string; children: ReactNode; active?: boolean; size?: 'sm' | 'md' | 'lg' | 'auto'; onClear?: () => void }) {
   const id = useId()
   return (
     <div className={'ff ff-' + size + (active ? ' on' : '')} role="group" aria-labelledby={id}>
@@ -1076,6 +1197,11 @@ export function FilterField({ label, children, active, size = 'md' }: { label: s
         {label}
       </span>
       {children}
+      {active && onClear && (
+        <button type="button" className="ff-clear" aria-label={t('Remove filter {name}', { name: label })} title={t('Remove this filter')} onClick={onClear}>
+          <X size={12} />
+        </button>
+      )}
     </div>
   )
 }

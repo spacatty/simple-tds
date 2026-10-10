@@ -223,7 +223,6 @@ export default function Reports() {
       </PageHeader>
 
       <FilterPanel
-        id="reports"
         sp={sp}
         update={update}
         lookup={rangeApiParams(range)}

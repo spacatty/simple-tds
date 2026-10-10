@@ -318,7 +318,6 @@ function ConvLog() {
       </PageHeader>
 
       <FilterPanel
-        id="conversions"
         sp={sp}
         update={update}
         source="conversions"
@@ -376,6 +375,7 @@ function ConvLog() {
           {
             key: 'param',
             section: 'conv',
+            label: t('Postback parameter'),
             node: (
               <FilterField label={t('Postback parameter')} size="lg">
                 <form

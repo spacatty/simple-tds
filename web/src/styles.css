@@ -711,14 +711,43 @@ textarea.input {
 .chips-input::placeholder {
   color: var(--text-3);
 }
-select.input {
+/* The button of a Select: its list unfolds in a floating panel. */
+.input.select {
+  display: flex;
+  align-items: center;
   padding-right: 26px;
-  appearance: none;
+  text-align: left;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23858b95' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 8px center;
   cursor: pointer;
-  text-overflow: ellipsis;
+}
+.input.select:disabled {
+  cursor: default;
+}
+.input.select > .ellipsis {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.input.select.open {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.popover.sel-pop {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: min(380px, calc(100vw - 16px));
+  overflow: hidden;
+}
+.sel-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 320px;
+}
+.sel-list .menu-item:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 .toolbar .input,
 .page-actions .input,
@@ -726,8 +755,8 @@ select.input {
 .bulkbar .input {
   width: auto;
 }
-.toolbar select.input,
-.card-head select.input {
+.toolbar .input.select,
+.card-head .input.select {
   max-width: 260px;
 }
 .input.file {
@@ -1512,16 +1541,17 @@ fieldset.plain:disabled .chips-box {
   border-collapse: separate;
   border-spacing: 0;
 }
+/* A quiet header on the card's own surface; the column sorted by is the one in ink. */
 .table th {
   position: sticky;
   top: 0;
   z-index: 2;
-  background: var(--surface-2);
+  background: var(--surface);
   text-align: left;
-  font-size: 11.5px;
-  font-weight: 650;
-  color: var(--text-2);
-  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-3);
+  padding: 11px 12px 9px;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
   user-select: none;
@@ -1529,8 +1559,20 @@ fieldset.plain:disabled .chips-box {
 .table th.sortable {
   cursor: pointer;
 }
-.table th.sortable:hover {
+.table th.sortable:hover,
+.table th[aria-sort] {
   color: var(--text);
+}
+.table th[aria-sort] svg {
+  color: var(--accent);
+}
+.table th:first-child,
+.table td:first-child {
+  padding-left: 16px;
+}
+.table th:last-child,
+.table td:last-child {
+  padding-right: 14px;
 }
 .table th.sortable:focus-visible,
 .table tr.clickable:focus-visible {
@@ -1542,10 +1584,11 @@ fieldset.plain:disabled .chips-box {
   gap: 4px;
 }
 .table td {
-  padding: 7px 10px;
-  border-bottom: 1px solid var(--border);
+  padding: 10px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
   vertical-align: middle;
   font-variant-numeric: tabular-nums;
+  transition: background-color 0.1s;
 }
 .table tbody tr:last-child td {
   border-bottom: 0;
@@ -1622,87 +1665,155 @@ fieldset.plain:disabled .chips-box {
   gap: 8px;
 }
 /* ---- filter bar ------------------------------------------------------------ */
+/* A row of pills straight on the page: a filter is its name and its control in
+   one outline, tinted once it narrows the result. */
 .filterbar {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  min-width: 0;
 }
 .filterbar-fields {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 12px;
-  padding: 12px 14px;
+  align-items: center;
+  gap: 8px;
 }
 .ff {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
+  display: inline-flex;
+  align-items: center;
   min-width: 0;
-  flex: 1 1 170px;
-  max-width: 230px;
-}
-.ff-sm {
-  flex-basis: 140px;
-  max-width: 170px;
-}
-.ff-lg {
-  flex-basis: 220px;
-  max-width: 300px;
-}
-.ff-auto {
-  flex: none;
   max-width: 100%;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  transition:
+    border-color 0.12s,
+    background-color 0.12s;
+}
+.ff:hover {
+  border-color: var(--border-strong);
+}
+.ff:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .ff-label {
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
+  flex: none;
+  padding-left: 10px;
+  font-size: 12.5px;
   color: var(--text-3);
   white-space: nowrap;
 }
-.ff.on .ff-label {
+/* The control gives its outline up to the pill. */
+.ff .input {
+  flex: 0 1 auto;
+  width: auto;
+  max-width: 220px;
+  height: 30px;
+  padding-left: 6px;
+  border: 0;
+  border-radius: 7px;
+  background-color: transparent;
+  box-shadow: none;
+  color: var(--text-2);
+  font-weight: 550;
+}
+.ff input.input {
+  width: 170px;
+  color: var(--text);
+  font-weight: 400;
+}
+.ff .input.select {
+  max-width: 190px;
+}
+.ff input.input.mono {
+  width: 188px;
+}
+.ff-sm input.input,
+.ff-sm input.input.mono {
+  width: 130px;
+}
+.ff-lg input.input {
+  width: 230px;
+}
+.ff.on {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.ff.on .ff-label,
+.ff.on .input {
   color: var(--accent-text);
 }
-.ff .input {
-  width: 100%;
-  max-width: none;
+.ff-clear {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin: 0 5px 0 -2px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--accent-text);
+  opacity: 0.7;
+  cursor: pointer;
 }
-.ff.on .input {
-  border-color: var(--accent);
-  background-color: var(--accent-soft);
+.ff-clear:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
-/* Same height as the inputs beside it. */
+/* A filter no field shows (it came by a link): its name and value, to remove only. */
+.ff-bare b {
+  min-width: 0;
+  max-width: 260px;
+  padding: 0 8px 0 6px;
+  color: var(--accent-text);
+  font-weight: 600;
+}
 .ff .segmented {
-  align-self: flex-start;
+  margin: 0 3px 0 6px;
+  padding: 0;
+  background: none;
 }
 .ff .segmented button {
-  height: 28px;
+  height: 24px;
 }
 .ff-pair {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  padding-right: 3px;
 }
-.ff-pair .input {
-  flex: 1 1 0;
+.ff .ff-pair .input {
+  width: 96px;
 }
-.filterbar-reset {
-  margin-left: auto;
-  flex: none;
+.ff-pair .btn {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 12px;
 }
-.filterbar-actions {
-  display: flex;
+.ff-add {
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin-left: auto;
-  flex: none;
+  gap: 5px;
+  height: 32px;
+  padding: 0 11px 0 9px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+  background: none;
+  color: var(--text-2);
+  font-weight: 550;
+  white-space: nowrap;
+  cursor: pointer;
 }
-.filterbar-actions .flip {
-  transform: rotate(180deg);
+.ff-add:hover,
+.ff-add.open {
+  border-style: solid;
+  background: var(--hover);
+  color: var(--text);
+}
+.ff-menu {
+  align-items: start;
 }
 .count-pill {
   flex: none;
@@ -1716,32 +1827,6 @@ fieldset.plain:disabled .chips-box {
   font-weight: 650;
   line-height: 18px;
   text-align: center;
-}
-/* The filters that are not on the first row, one line per subject. */
-.filterbar-sections {
-  padding: 2px 14px 4px;
-  border-top: 1px solid var(--border);
-}
-.fsec {
-  display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
-  gap: 12px;
-  padding: 10px 0;
-}
-.fsec + .fsec {
-  border-top: 1px dashed var(--border);
-}
-.fsec-title {
-  padding-top: 24px;
-  font-size: 12px;
-  font-weight: 650;
-  color: var(--text-2);
-}
-.fsec-fields {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 10px 12px;
 }
 .filterbar-chips .crumb b {
   max-width: 320px;
@@ -1761,6 +1846,10 @@ button.input.vp {
 button.input.vp.open {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.ff button.input.vp.open,
+.ff .input.select.open {
+  box-shadow: none;
 }
 .vp-text {
   flex: 1 1 auto;
@@ -1833,29 +1922,7 @@ button.input.vp.open {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  padding: 8px 14px;
-  border-top: 1px solid var(--border);
-  background: var(--surface-2);
-  border-radius: 0 0 var(--radius) var(--radius);
-}
-@media (max-width: 700px) {
-  .ff,
-  .ff-sm,
-  .ff-lg {
-    flex: 1 1 100%;
-    max-width: none;
-  }
-  .filterbar-reset,
-  .filterbar-actions {
-    margin-left: 0;
-  }
-  .fsec {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 8px;
-  }
-  .fsec-title {
-    padding-top: 0;
-  }
+  padding-top: 8px;
 }
 .bulkbar {
   display: flex;
@@ -2985,6 +3052,77 @@ tr.camp-off .camp-name,
 tr.camp-off .tnum {
   color: var(--text-3);
 }
+/* The totals: one strip, cells divided by hairlines however they wrap. */
+.tiles.camp-summary {
+  gap: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+.camp-summary .tile {
+  padding: 14px 18px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow:
+    -1px 0 0 var(--border),
+    0 -1px 0 var(--border);
+}
+.camp-summary .tile-label {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.camp-summary .tile-value {
+  margin-top: 4px;
+  font-size: 22px;
+}
+.camp-card .camp {
+  min-width: 190px;
+}
+.camp-card .camp-name {
+  font-size: 14.5px;
+}
+.camp-card .camp-meta {
+  gap: 4px 8px;
+  margin-top: 6px;
+  font-size: 12px;
+}
+.camp-card .camp-alias {
+  height: 22px;
+  padding: 0 1px 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+.camp-card .camp-alias code {
+  font-size: 12px;
+}
+.camp-card .camp-group,
+.camp-card .camp-funnel {
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 11px;
+  font-size: 12px;
+  font-weight: 550;
+}
+.camp-card .camp-funnel {
+  background: var(--accent-soft);
+}
+.camp-card .camp-funnel:hover {
+  text-decoration: none;
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+}
+.camp-card td > .tnum {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.camp-card .camp-clicks {
+  font-size: 14px;
+}
 
 /* Dashboard: four compact top lists and the live request log. */
 .dash-tops {
@@ -3530,7 +3668,7 @@ tr.camp-off .tnum {
 .sidebar {
   width: 244px;
   flex: none;
-  background: var(--surface);
+  background: var(--bg);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -3547,7 +3685,6 @@ tr.camp-off .tnum {
   gap: 10px;
   min-height: 52px;
   padding: 0 12px;
-  border-bottom: 1px solid var(--border);
   flex: none;
 }
 .brand-name {
@@ -3568,14 +3705,15 @@ tr.camp-off .tnum {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 8px;
+  padding: 2px 10px 8px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 14px;
 }
 /* The rail never scrolls, and must not clip its hover tooltips. */
 .rail .sidebar-nav {
   overflow: visible;
+  padding: 8px;
   gap: 0;
 }
 .nav-group {
@@ -3587,15 +3725,13 @@ tr.camp-off .tnum {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 10px 4px;
+  padding: 2px 8px 4px;
   border: 0;
   background: none;
   border-radius: 5px;
   cursor: pointer;
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--text-3);
 }
 .nav-group-head:hover {
@@ -3624,37 +3760,37 @@ tr.camp-off .tnum {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 11px;
-  height: 34px;
-  padding: 0 10px;
-  border-radius: 7px;
+  gap: 9px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 6px;
   color: var(--text-2);
-  font-weight: 550;
+  font-weight: 500;
   text-decoration: none;
   white-space: nowrap;
 }
 .nav-item svg {
   flex: none;
+  width: 15px;
+  height: 15px;
+  color: var(--text-3);
 }
 .nav-item:hover {
   background: var(--hover);
   color: var(--text);
   text-decoration: none;
 }
+/* The sidebar is part of the page; the current item is a chip raised off it. */
 .nav-item.active {
-  background: var(--accent-soft);
-  color: var(--accent-text);
-  font-weight: 650;
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow:
+    0 0 0 1px var(--border),
+    var(--shadow);
 }
-.nav-item.active::before {
-  content: '';
-  position: absolute;
-  left: -8px;
-  top: 7px;
-  bottom: 7px;
-  width: 3px;
-  border-radius: 0 3px 3px 0;
-  background: var(--accent);
+.nav-item.active svg {
+  color: var(--accent);
 }
 .rail .nav-item {
   justify-content: center;
@@ -3664,7 +3800,6 @@ tr.camp-off .tnum {
   display: none;
 }
 .sidebar-foot {
-  border-top: 1px solid var(--border);
   padding: 10px;
   display: flex;
   flex-direction: column;
@@ -4334,21 +4469,164 @@ tr.camp-off .tnum {
   background: var(--warn-soft);
   color: var(--warn);
 }
-/* Funnel presets: a funnel at a glance, and the campaigns copied from it. */
-.fp-stages,
-.fp-used {
+/* Funnel presets: one card per preset, its stages drawn as steps along a line. */
+.fpc-list {
+  display: grid;
+  gap: 12px;
+}
+.fpc {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  min-width: 0;
+}
+.fpc-loading {
+  padding: 18px;
+}
+.fpc-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 12px 0 18px;
+}
+.fpc-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.fpc-name {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+.fpc-name:hover {
+  color: var(--accent-text);
+}
+.fpc-meta {
+  margin-left: 10px;
+  color: var(--text-3);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.fpc-note {
+  margin-top: 2px;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.fpc-flow {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 16px 0;
+  margin: 0;
+  padding: 16px 18px;
+  list-style: none;
+}
+.fpc-step {
+  min-width: 0;
+  padding-right: 12px;
+}
+/* The step's number, and the line that carries on to the next one. */
+.fpc-rail {
+  display: flex;
+  align-items: center;
+  margin: 0 -12px 8px 0;
+}
+.fpc-rail::after {
+  content: '';
+  flex: 1 1 auto;
+  height: 2px;
+  margin: 0 6px;
+  border-radius: 1px;
+  background: var(--border);
+}
+.fpc-step:last-child .fpc-rail::after {
+  visibility: hidden;
+}
+.fpc-num {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-weight: 650;
+}
+.fpc-step.goal .fpc-num {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.fpc-stage {
+  font-weight: 600;
+}
+.fpc-step.goal .fpc-stage {
+  color: var(--accent-text);
+}
+/* An outcome: a dot in its colour and its name. */
+.fpc-out {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.fpc-out::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+.fpc-out.ok::before {
+  background: var(--ok);
+}
+.fpc-out.fail::before {
+  background: var(--err);
+}
+.fpc-foot {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 6px;
+  gap: 6px;
+  padding: 9px 18px;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 12px 12px;
+  background: var(--surface-2);
+  font-size: 12px;
 }
-.fp-stage {
+.fpc-camp {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-weight: 550;
+  text-decoration: none;
 }
-.fp-stage > .muted {
-  margin-right: 3px;
+.fpc-camp:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+  text-decoration: none;
+}
+.fpc-camp.behind {
+  border-color: transparent;
+  background: var(--warn-soft);
+  color: var(--warn);
 }
 a.tag:hover {
   color: var(--accent-text);
@@ -5189,7 +5467,7 @@ a.fnl-out:hover {
 .filter-bypass.active:active .knob {
   transform: translateX(-6px);
 }
-.filter-row select.input {
+.filter-row .input.select {
   height: 28px;
   font-size: 12.5px;
 }
@@ -5390,7 +5668,7 @@ fieldset.plain:disabled .action-card {
   margin: 0;
   white-space: nowrap;
 }
-.slinks-head select.input {
+.slinks-head .input.select {
   width: auto;
   max-width: 280px;
 }

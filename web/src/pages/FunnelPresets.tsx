@@ -1,12 +1,10 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Copy, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Copy, Pencil, Plus, Star, Trash2 } from 'lucide-react'
 import { del, errMsg, get, post, put } from '../api'
 import { useLoad } from '../hooks'
 import type { Campaign, FunnelPreset, Stage } from '../types'
-import { DataTable } from '../components/DataTable'
-import type { Column } from '../components/DataTable'
-import { Drawer, Empty, ErrorBox, Field, PageHeader, confirmDialog, toast, useBusy } from '../components/ui'
+import { Drawer, Empty, ErrorBox, Field, PageHeader, Skeleton, confirmDialog, toast, useBusy } from '../components/ui'
 import { StageRows, stagesInvalid } from './Stages'
 import { t, tn } from '../i18n'
 
@@ -49,59 +47,8 @@ export default function FunnelPresets() {
     }
   }
 
-  const columns: Column<FunnelPreset>[] = [
-    {
-      key: 'name',
-      title: t('Name'),
-      sort: (p) => p.name.toLowerCase(),
-      render: (p) => (
-        <div>
-          <button className="link" onClick={() => setDraft({ id: p.id, name: p.name, note: p.note, stages: p.stages })}>
-            <b>{p.name}</b>
-          </button>
-          {p.note && <div className="muted small">{p.note}</div>}
-        </div>
-      ),
-    },
-    { key: 'stages', title: t('Stages'), render: (p) => <StageChips stages={p.stages} /> },
-    {
-      key: 'used',
-      title: t('Campaigns'),
-      sort: (p) => usage.get(p.id)?.all.length ?? 0,
-      render: (p) => {
-        const u = usage.get(p.id)
-        if (!u || u.all.length === 0) return <span className="muted">—</span>
-        return (
-          <span className="fp-used">
-            {u.all.slice(0, 4).map((c) => (
-              <Link key={c.id} className={'tag' + (c.funnel_preset_rev !== p.rev ? ' warn' : '')} to={`/campaigns/${c.id}?tab=funnel`} title={c.funnel_preset_rev !== p.rev ? t('Copied from an earlier version of the preset: open its funnel to update it.') : undefined}>
-                {c.name}
-              </Link>
-            ))}
-            {u.all.length > 4 && <span className="muted small">{t('+{n} more', { n: u.all.length - 4 })}</span>}
-          </span>
-        )
-      },
-    },
-    {
-      key: 'actions',
-      title: '',
-      align: 'right',
-      render: (p) => (
-        <span className="row-actions">
-          <button className="icon-btn" title={t('Edit')} onClick={() => setDraft({ id: p.id, name: p.name, note: p.note, stages: p.stages })}>
-            <Pencil size={14} />
-          </button>
-          <button className="icon-btn" title={t('Duplicate')} onClick={() => setDraft({ name: t('{name} (copy)', { name: p.name }), note: p.note, stages: p.stages })}>
-            <Copy size={14} />
-          </button>
-          <button className="icon-btn danger" title={t('Delete')} onClick={() => remove(p)}>
-            <Trash2 size={14} />
-          </button>
-        </span>
-      ),
-    },
-  ]
+  const edit = (p: FunnelPreset) => setDraft({ id: p.id, name: p.name, note: p.note, stages: p.stages })
+  const list = useMemo(() => [...(presets.data ?? [])].sort((a, b) => a.name.localeCompare(b.name)), [presets.data])
 
   return (
     <div className="page">
@@ -111,19 +58,64 @@ export default function FunnelPresets() {
         </button>
       </PageHeader>
       <ErrorBox error={presets.error} retry={presets.reload} />
-      <div className="card">
-        <DataTable
-          columns={columns}
-          rows={presets.data ? (presets.data ?? []) : presets.error ? [] : undefined}
-          rowKey={(p) => p.id}
-          loading={presets.loading}
-          defaultSort={{ key: 'name', dir: 'asc' }}
-          empty={
-            <Empty title={t('No funnel presets yet')}>
-              {t('Create one here, or open a campaign’s Funnel tab and save its stages as a preset.')}
-            </Empty>
-          }
-        />
+      {!presets.data && presets.loading && (
+        <div className="fpc fpc-loading">
+          <Skeleton rows={4} />
+        </div>
+      )}
+      {presets.data && list.length === 0 && (
+        <div className="card">
+          <Empty title={t('No funnel presets yet')}>{t('Create one here, or open a campaign’s Funnel tab and save its stages as a preset.')}</Empty>
+        </div>
+      )}
+      <div className="fpc-list">
+        {list.map((p) => {
+          const used = usage.get(p.id)?.all ?? []
+          const outcomes = p.stages.reduce((n, st) => n + (st.outcomes?.length ?? 0), 0)
+          return (
+            <article className="fpc" key={p.id}>
+              <header className="fpc-head">
+                <div className="fpc-title">
+                  <button className="fpc-name" onClick={() => edit(p)}>
+                    {p.name}
+                  </button>
+                  <span className="fpc-meta">
+                    {tn(p.stages.length, '{n} stage', '{n} stages')}
+                    {outcomes > 0 && <> · {tn(outcomes, '{n} outcome', '{n} outcomes')}</>}
+                  </span>
+                  {p.note && <div className="fpc-note">{p.note}</div>}
+                </div>
+                <span className="row-actions">
+                  <button className="icon-btn" title={t('Edit')} onClick={() => edit(p)}>
+                    <Pencil size={14} />
+                  </button>
+                  <button className="icon-btn" title={t('Duplicate')} onClick={() => setDraft({ name: t('{name} (copy)', { name: p.name }), note: p.note, stages: p.stages })}>
+                    <Copy size={14} />
+                  </button>
+                  <button className="icon-btn danger" title={t('Delete')} onClick={() => remove(p)}>
+                    <Trash2 size={14} />
+                  </button>
+                </span>
+              </header>
+              <StageFlow stages={p.stages} />
+              <footer className="fpc-foot">
+                {used.length === 0 ? (
+                  <span className="muted">{t('Not used by any campaign yet')}</span>
+                ) : (
+                  <>
+                    <span className="muted">{t('Campaigns')}</span>
+                    {used.slice(0, 6).map((c) => (
+                      <Link key={c.id} className={'fpc-camp' + (c.funnel_preset_rev !== p.rev ? ' behind' : '')} to={`/campaigns/${c.id}?tab=funnel`} title={c.funnel_preset_rev !== p.rev ? t('Copied from an earlier version of the preset: open its funnel to update it.') : undefined}>
+                        {c.name}
+                      </Link>
+                    ))}
+                    {used.length > 6 && <span className="muted">{t('+{n} more', { n: used.length - 6 })}</span>}
+                  </>
+                )}
+              </footer>
+            </article>
+          )
+        })}
       </div>
       {draft && (
         <PresetEditor
@@ -140,25 +132,28 @@ export default function FunnelPresets() {
   )
 }
 
-/** A funnel at a glance: its stages in order, each with the outcomes it is split into. */
-export function StageChips({ stages }: { stages: Stage[] }) {
+/** A funnel at a glance: its stages as numbered steps on one line, each with the outcomes it is split into. */
+function StageFlow({ stages }: { stages: Stage[] }) {
   return (
-    <span className="fp-stages">
+    <ol className="fpc-flow">
       {stages.map((s, i) => (
-        <span className="fp-stage" key={s.key}>
-          {i > 0 && <span className="muted">→</span>}
-          <span className={'tag' + (s.goal ? ' info' : '')} title={s.key}>
-            {s.name || s.key}
-            {s.goal && ' ★'}
-          </span>
-          {(s.outcomes ?? []).map((o) => (
-            <span key={o.key} className={'tag ' + (o.kind === 'ok' ? 'ok' : o.kind === 'fail' ? 'err' : '')} title={o.key}>
-              {o.name || o.key}
+        <li className={'fpc-step' + (s.goal ? ' goal' : '')} key={s.key}>
+          <div className="fpc-rail">
+            <span className="fpc-num" title={s.goal ? t('Goal') : undefined}>
+              {s.goal ? <Star size={12} /> : i + 1}
             </span>
+          </div>
+          <div className="fpc-stage ellipsis" title={s.key}>
+            {s.name || s.key}
+          </div>
+          {(s.outcomes ?? []).map((o) => (
+            <div key={o.key} className={'fpc-out ' + (o.kind === 'ok' ? 'ok' : o.kind === 'fail' ? 'fail' : '')} title={o.key}>
+              <span className="ellipsis">{o.name || o.key}</span>
+            </div>
           ))}
-        </span>
+        </li>
       ))}
-    </span>
+    </ol>
   )
 }
 

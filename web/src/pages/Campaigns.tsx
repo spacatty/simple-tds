@@ -6,7 +6,7 @@ import { canEdit, canRead, isOwner, useLoad } from '../hooks'
 import type { Campaign, CampaignGroup, Domain, FunnelPreset, ReportRow, Stream } from '../types'
 import { DataTable } from '../components/DataTable'
 import type { Column } from '../components/DataTable'
-import { Badge, CopyButton, Dropdown, Empty, ErrorBox, Field, MenuItem, Modal, PageHeader, SearchInput, Segmented, Select, Skeleton, Toggle, confirmDialog, toast, useBusy } from '../components/ui'
+import { Badge, CopyButton, Dropdown, Empty, ErrorBox, Field, MenuItem, Modal, PageHeader, SearchInput, Select, Skeleton, Toggle, confirmDialog, toast, useBusy } from '../components/ui'
 import { DateRangePicker, rangeLabel, useDateRange } from '../components/DateRangePicker'
 import { loadReport, sumRows } from '../reports'
 import { buildSearch } from '../filters'
@@ -310,7 +310,7 @@ export default function Campaigns() {
       <ErrorBox error={list.error} retry={list.reload} />
       {rep.error && <ErrorBox error={t('Statistics are unavailable: {error}', { error: rep.error })} retry={rep.reload} />}
 
-      <div className="tiles compact">
+      <div className="tiles compact camp-summary">
         {tiles.map((x) => (
           <div className={'tile ' + (x.metric ?? '')} key={x.label}>
             <div className="tile-label">{x.label}</div>
@@ -322,28 +322,26 @@ export default function Campaigns() {
 
       <div className="card camp-card">
         <div className="card-head camp-bar">
-          <Segmented
-            small
+          <Select
+            className="input-sm"
             value={show}
-            onChange={setShow}
+            onChange={(v) => setShow(v as Show)}
             options={[
               { value: 'all', label: t('All {n}', { n: all.length }) },
               { value: 'active', label: t('Active {n}', { n: active }) },
               { value: 'paused', label: t('Paused {n}', { n: all.length - active }) },
             ]}
           />
-          {groupList.length > 0 && (
-            <Select
-              className="input-sm"
-              value={groupFilter}
-              onChange={setGroupFilter}
-              options={[
-                { value: '', label: t('All groups') },
-                ...groupList.map((g) => ({ value: String(g.id), label: `${g.name} (${all.filter((c) => c.group_id === g.id).length})` })),
-                { value: 'none', label: t('No group ({n})', { n: all.filter((c) => !c.group_id).length }) },
-              ]}
-            />
-          )}
+          <Select
+            className="input-sm"
+            value={groupFilter}
+            onChange={setGroupFilter}
+            options={[
+              { value: '', label: t('All groups') },
+              ...groupList.map((g) => ({ value: String(g.id), label: `${g.name} (${all.filter((c) => c.group_id === g.id).length})` })),
+              { value: 'none', label: t('No group ({n})', { n: all.filter((c) => !c.group_id).length }) },
+            ]}
+          />
           {groupList.some((g) => String(g.id) === groupFilter && ownsGroup(g)) && (
             <button className="btn small" onClick={() => setManaging({ shareId: Number(groupFilter) })} title={t('Choose who gets the campaigns of this group')}>
               <Users size={13} /> {t('Share group')}
