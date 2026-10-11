@@ -31,6 +31,19 @@ func TestFilterConditions(t *testing.T) {
 		{"network", Query{IP: "203.0.113.0/24"}, []string{"isIPAddressInRange(ip, ?)"}, []string{"isIPAddressInRange(sender_ip, ?)"}},
 		{"beginning of an address", Query{IP: "203.0.*"}, []string{"startsWith(ip, ?)"}, []string{"startsWith(sender_ip, ?)"}},
 		{"click flags", Query{Unique: "only", DC: "exclude", Bots: "exclude"}, []string{"is_bot = 0", "is_unique = 1", "is_dc = 0"}, []string{"is_bot = 0"}},
+		// What the viewer suppressed is left out unless asked for; a conversion finds the address through its click.
+		{"banned address", Query{BannedSets: []BannedSet{{Campaigns: []uint32{3, 4}, IPs: []string{"203.0.113.7"}}}},
+			[]string{"NOT ((campaign_id IN (3,4) AND (ip IN ('203.0.113.7'))))"},
+			[]string{"NOT ((campaign_id IN (3,4) AND (click_id IN (SELECT click_id FROM clicks WHERE campaign_id IN (3,4) AND (ip IN ('203.0.113.7'))))))"}},
+		{"banned network and referrer", Query{BannedSets: []BannedSet{{Campaigns: []uint32{3}, Nets: []string{"203.0.113.0/24"}, Refs: []string{"spy.example"}}}},
+			[]string{"ref_domain IN ('spy.example') OR arrayExists(d -> endsWith(ref_domain, concat('.', d)), ['spy.example'])", "arrayExists(n -> isIPAddressInRange(ip, n), ['203.0.113.0/24'])"},
+			[]string{"NOT ((campaign_id IN (3) AND (ref_domain IN ('spy.example')"}},
+		{"only the banned", Query{Banned: "only", BannedSets: []BannedSet{{Campaigns: []uint32{3}, Refs: []string{"spy.example"}}}},
+			[]string{"((campaign_id IN (3) AND (ref_domain IN ('spy.example')"}, []string{"((campaign_id IN (3) AND (ref_domain IN ('spy.example')"}},
+		{"only the banned, nothing suppressed", Query{Banned: "only"}, []string{"0"}, []string{"0"}},
+		{"banned included", Query{Banned: "all", BannedSets: []BannedSet{{Campaigns: []uint32{3}, Refs: []string{"spy.example"}}}}, []string{"1"}, []string{"1"}},
+		// Rules that cover no campaign of the viewer's change nothing.
+		{"banned nowhere", Query{BannedSets: []BannedSet{{Refs: []string{"spy.example"}}}}, []string{"1"}, []string{"1"}},
 	}
 	for _, c := range cases {
 		for i, want := range [][]string{c.clicks, c.convs} {
@@ -136,7 +149,7 @@ func TestFilterQueries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(vals) != 4 || vals[0] != (ValueRow{"iOS", 2}) {
+	if len(vals) != 4 || vals[0] != (ValueRow{Value: "iOS", Count: 2}) {
 		t.Errorf("os values: %+v", vals)
 	}
 	if len(q.Dims["os"]) != 1 {

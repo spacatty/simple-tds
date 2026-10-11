@@ -167,6 +167,11 @@ CREATE TABLE IF NOT EXISTS landings (
   next_id bigint NOT NULL DEFAULT 1, created_at timestamptz NOT NULL DEFAULT now());
 ALTER TABLE domains ADD COLUMN IF NOT EXISTS resolved_ips jsonb NOT NULL DEFAULT '[]';
 ALTER TABLE domains ADD COLUMN IF NOT EXISTS proxied boolean NOT NULL DEFAULT false;
+CREATE TABLE IF NOT EXISTS report_presets (
+  id bigserial PRIMARY KEY, owner_id bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name text NOT NULL, query text NOT NULL DEFAULT '', pinned boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS report_presets_owner ON report_presets(owner_id);
 `
 
 // OwnedTables are the tables whose rows belong to a user.

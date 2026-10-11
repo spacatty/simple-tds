@@ -101,7 +101,10 @@ cd web && npm install && npm run dev  # panel with hot reload at http://localhos
   owner owns, a rule naming campaigns covers those its owner runs
   (`UsableBy`). They are checked first in `Engine.Process`; a suppressed
   request must never become a click. Its counters and log live in their own
-  ClickHouse tables, read by owner.
+  ClickHouse tables, read by owner. Reports and logs also leave out what a
+  source sent before the viewer suppressed it (`Query.banned`, fed by
+  `bannedSets` from `s.scope`; `banned=all|only` turns that off or around), so
+  a data endpoint that skips `s.scope` shows numbers the others do not.
 - **Landings are whitepages with variables** (`internal/whitepage/landing.go`,
   `internal/engine/landing.go`, `internal/web/landings.go`); their files live
   in `landings/` inside the whitepage directory, so the PHP sandbox needs no
@@ -115,7 +118,7 @@ cd web && npm install && npm run dev  # panel with hot reload at http://localhos
 - **Report and log filters are one grammar, kept in the URL**
   (`web/src/filters.ts`, parsed by `parseQuery` in `internal/web/api_data.go`):
   `f.<dimension>` (repeatable, alternatives), `like.<field>` (contains),
-  `campaign_id`/`stream_id`/`key_id`, `bots`, `ip`. Pages do not build their
+  `campaign_id`/`stream_id`/`key_id`, `bots`, `ip`, `banned`. Pages do not build their
   own filter bars: they list field ids from the catalogue in
   `web/src/components/Filters.tsx` and send `urlFilterParams(sp)`. A new
   dimension in `events.dims` is filterable at once; give it a catalogue entry

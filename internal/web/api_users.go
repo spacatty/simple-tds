@@ -161,6 +161,9 @@ func (s *Server) visibleCampaigns(ctx context.Context, all []model.Campaign) []m
 // current user may see. Admins are unrestricted.
 func (s *Server) scope(ctx context.Context, q *events.Query) error {
 	u := userFrom(ctx)
+	if err := s.bannedSets(ctx, u.ID, q); err != nil {
+		return err
+	}
 	if u.IsAdmin() {
 		return nil
 	}

@@ -2275,32 +2275,47 @@ button.input.vp.open {
 .recharts-wrapper *:focus {
   outline: none;
 }
+/* The values share one column, so every bar is measured against the same width. */
 .barlist {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-.barlist-row {
   display: grid;
-  grid-template-columns: minmax(80px, 34%) minmax(40px, 1fr) auto;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 14px;
   align-items: center;
 }
-.barlist-track {
-  height: 8px;
-  border-radius: 4px;
-  background: var(--surface-3);
-  overflow: hidden;
+.barlist-row {
+  display: contents;
 }
+.barlist-main {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 6px;
+}
+/* A tint of the series colour behind the name, not a line beside it. */
 .barlist-bar {
-  height: 100%;
-  border-radius: 4px;
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 6px;
+  opacity: 0.2;
+  transition: opacity 0.12s;
+}
+.barlist-row:hover .barlist-bar {
+  opacity: 0.32;
+}
+.barlist-label {
+  position: relative;
+  min-width: 0;
+  font-weight: 500;
 }
 .barlist-value {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  text-align: right;
   font-weight: 600;
-  font-size: 12px;
+  font-size: 12.5px;
 }
 .barlist-value .muted {
   font-weight: 400;
@@ -2839,6 +2854,23 @@ button.input.vp.open {
   min-width: 250px;
   max-width: 320px;
 }
+/* A saved report view in the presets menu: its name, then pin and delete. */
+.preset-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 4px;
+}
+.preset-row .menu-item {
+  flex: 1;
+  min-width: 0;
+}
+.preset-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warn);
+}
 @media (max-width: 1000px) {
   .board > .wdg {
     grid-column: span 6 !important;
@@ -3141,15 +3173,12 @@ tr.camp-off .tnum {
   padding: 10px 12px 12px;
 }
 .dash-tops .barlist {
-  gap: 6px;
+  gap: 3px 8px;
   font-size: 12.5px;
 }
-.dash-tops .barlist-row {
-  grid-template-columns: minmax(70px, 42%) minmax(24px, 1fr) auto;
-  gap: 8px;
-}
-.dash-tops .barlist-track {
-  height: 6px;
+.dash-tops .barlist-main {
+  min-height: 26px;
+  padding: 0 8px;
 }
 .top-link {
   color: inherit;
@@ -4627,6 +4656,9 @@ tr.camp-off .tnum {
   border-color: transparent;
   background: var(--warn-soft);
   color: var(--warn);
+}
+.tag-gap {
+  margin-left: 8px;
 }
 a.tag:hover {
   color: var(--accent-text);

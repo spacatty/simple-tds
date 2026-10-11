@@ -16,7 +16,7 @@ import type { CustomFilter } from '../components/Filters'
 import { buildSearch, filterParams, parseFilters, rangeApiParams, rangeFromSearch, urlFilterParams, writeRange } from '../filters'
 import { fmtDateTime, humanize, num } from '../format'
 import { countryName } from '../countries'
-import { Browser, BrowserIcon, Country, Device, DeviceIcon, Flag, Os, OsIcon } from '../components/icons'
+import { Browser, BrowserIcon, Country, Device, DeviceIcon, Flag, Os, OsIcon, dimIcon } from '../components/icons'
 import { Journey, StagePips } from '../components/Journey'
 import { t, ts } from '../i18n'
 
@@ -216,6 +216,7 @@ export default function Clicks() {
           'os',
           'ip',
           'bots',
+          'banned',
         ]}
         more={['domain', 'action', 'region', 'city', 'isp', 'lang', 'browser', 'ua', 'ref_domain', 'keyword', 'sub1', 'sub2', 'sub3', 'sub4', 'sub5', 'bot_reason', 'unique', 'dc', 'click_id']}
       />
@@ -308,7 +309,7 @@ function ClickDetail({ r, campaign, stream, canSimulate, stages, currency, keyNa
           {item(t('Device'), r.device_type ? <Device type={str(r.device_type)} /> : '')}
           {item(t('OS'), r.os ? <Os os={str(r.os)} version={str(r.os_version)} /> : '')}
           {item(t('Browser'), r.browser ? <Browser browser={str(r.browser)} version={str(r.browser_version)} /> : '')}
-          {item(t('Language'), str(r.lang))}
+          {item(t('Language'), r.lang ? <span className="with-icon">{dimIcon('lang', str(r.lang))}{str(r.lang)}</span> : '')}
           {item('JA3', str(r.ja3), true)}
           {item('JA4', str(r.ja4), true)}
           {item(t('Keyword'), str(r.keyword))}

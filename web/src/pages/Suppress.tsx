@@ -141,6 +141,7 @@ export default function Suppress({ kind }: { kind: Kind }) {
   const columns: Column<Entry>[] = [
     { key: 'value', title: text.entry, sort: (e) => e.value, render: (e) => <span className="mono">{e.value}</span> },
     { key: 'scope', title: t('Applies to'), sort: (e) => (e.campaign_ids ?? []).length, render: scope },
+    { key: 'created', title: t('Suppressed since'), sort: (e) => e.created_at, render: (e) => <span className="nowrap" title={fmtAgo(e.created_at)}>{fmtDateTime(e.created_at, false)}</span> },
     { key: 'store', title: t('What is kept'), width: 230, headTitle: storeHelp(), render: (e) => <Select value={e.store} onChange={(v) => setStore(e, v as Store)} options={STORES} /> },
     { key: 'week', title: t('Requests, 7 days'), align: 'right', sort: (e) => e.week, render: (e) => (e.store === 'off' && !e.total ? <span className="muted">—</span> : fmtInt(e.week)) },
     { key: 'total', title: t('Requests, total'), align: 'right', sort: (e) => e.total, render: (e) => (e.store === 'off' && !e.total ? <span className="muted">—</span> : fmtInt(e.total)) },

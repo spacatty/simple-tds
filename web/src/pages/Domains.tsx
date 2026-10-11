@@ -1,15 +1,13 @@
 import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Check, ExternalLink, FolderCog, LayoutList, Pencil, Plus, RefreshCw, Table2, Trash2, X } from 'lucide-react'
+import { Check, ExternalLink, FolderCog, Pencil, Plus, RefreshCw, Trash2, X } from 'lucide-react'
 import { del, errMsg, get, post, put } from '../api'
 import { canEdit, useInterval, useIsAdmin, useLoad, usePref } from '../hooks'
 import type { BulkAddResult, Campaign, Domain, DomainGroup, SystemInfo } from '../types'
-import { DataTable } from '../components/DataTable'
-import type { Column } from '../components/DataTable'
-import { HEALTH, HealthTiles, RepBadge, RepChips, domainHealth, useProviderNames } from '../components/DomainHealth'
+import { HEALTH, HealthTiles, RepChips, domainHealth, useProviderNames } from '../components/DomainHealth'
 import type { Health } from '../components/DomainHealth'
-import { Badge, CopyButton, Dropdown, Empty, ErrorBox, Field, MenuItem, Modal, Notice, PageHeader, SearchInput, Segmented, Select, Skeleton, Toggle, confirmDialog, toast, useBusy } from '../components/ui'
+import { Badge, CopyButton, Dropdown, Empty, ErrorBox, Field, MenuItem, Modal, Notice, PageHeader, SearchInput, Select, Skeleton, Toggle, confirmDialog, toast, useBusy } from '../components/ui'
 import type { Tone } from '../components/ui'
 import { fmtAgo, fmtDateTime } from '../format'
 import { t, tn, ts, tx } from '../i18n'
@@ -62,7 +60,6 @@ function ConnIPs({ d, max = 2 }: { d: Domain; max?: number }) {
   )
 }
 
-type View = 'cards' | 'table'
 type Order = 'name' | 'state' | 'new'
 const ORDERS: { value: Order; label: string }[] = [
   { value: 'name', label: t('By name') },
@@ -89,8 +86,7 @@ export default function Domains() {
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<Domain | null>(null)
   const [managing, setManaging] = useState(false)
-  // Both follow the account, so the list looks the same on every device.
-  const [view, setView] = usePref<View>('domains_view', 'cards')
+  // Follows the account, so the list looks the same on every device.
   const [order, setOrder] = usePref<Order>('domains_sort', 'name')
   // The state filter lives in the address (?show=flagged): dashboards link to it.
   const show = (HEALTH.find((h) => h.key === sp.get('show'))?.key ?? '') as Health | ''
@@ -214,49 +210,6 @@ export default function Domains() {
     </div>
   )
 
-  const columns: Column<Domain>[] = [
-    {
-      key: 'sel',
-      width: 32,
-      title: <input type="checkbox" aria-label={t('Select all')} checked={allChecked} onChange={(e) => selectAll(e.target.checked)} />,
-      render: checkbox,
-    },
-    {
-      key: 'name',
-      title: t('Domain'),
-      sort: (d) => d.name,
-      render: (d) => (
-        <div>
-          {nameLink(d)}
-          {d.note && <div className="muted small">{d.note}</div>}
-        </div>
-      ),
-    },
-    { key: 'group', title: t('Group'), sort: (d) => groupName(d.group_id), render: (d) => (d.group_id === null ? <span className="muted">—</span> : <Badge>{groupName(d.group_id)}</Badge>) },
-    {
-      key: 'status',
-      title: t('Connection'),
-      sort: (d) => d.status,
-      render: (d) => (
-        <div className="conn-cell">
-          <div className="conn-line" title={connTitle(d)}>
-            <ConnBadges d={d} />
-            {d.status === 'error' && d.status_msg && <span className="status-msg ellipsis">{ts(d.status_msg)}</span>}
-            <span className="muted small">{d.checked_at ? fmtAgo(d.checked_at) : ''}</span>
-          </div>
-          <ConnIPs d={d} max={1} />
-        </div>
-      ),
-    },
-    ...(hasRep ? [{ key: 'rep', title: t('Reputation'), headTitle: t('What the blocklists say about the domain'), sort: (d: Domain) => d.rep_status, render: (d: Domain) => <RepBadge d={d} active={repOn} /> } as Column<Domain>] : []),
-    { key: 'tls', title: 'TLS', sort: (d) => d.tls_mode, render: (d) => <span title={TLS_MODES.find((m) => m.value === d.tls_mode)?.help}>{d.tls_mode === 'auto' ? t('Auto') : t('Proxy')}</span> },
-    { key: 'ip', title: t('Real IP'), sort: (d) => d.ip_source, render: (d) => <span title={IP_SOURCES.find((m) => m.value === d.ip_source)?.help}>{label(IP_SOURCES, d.ip_source)}</span> },
-    { key: 'campaign', title: t('Default campaign'), sort: (d) => campName(d.campaign_id), render: (d) => (d.campaign_id === null ? <span className="muted">{t('— (404 on “/”)')}</span> : campName(d.campaign_id)) },
-    ...(isAdmin ? [{ key: 'admin', title: t('Panel'), headTitle: t('Serve the admin panel on this domain under the admin path'), width: 70, render: (d: Domain) => panelToggle(d) } as Column<Domain>] : []),
-    { key: 'enabled', title: t('Enabled@@domain'), width: 70, render: (d) => enabledToggle(d) },
-    { key: 'actions', title: '', align: 'right', width: 110, render: actions },
-  ]
-
   const groupOptions = [{ value: 'none', label: t('Without group') }, ...(groups.data ?? []).map((g) => ({ value: String(g.id), label: g.name }))]
   const serverIP = sys.data?.server_ip ?? ''
   const empty = (
@@ -295,27 +248,13 @@ export default function Domains() {
       <div className="toolbar wrap">
         <SearchInput value={q} onChange={setQ} placeholder={t('Search domains…')} />
         <Select value={group} onChange={setGroup} placeholder={t('All groups')} options={groupOptions} />
-        {view === 'cards' && (
-          <>
-            <Select value={order} onChange={(v) => setOrder(v as Order)} options={ORDERS} />
-            <label className="check-all">
-              <input type="checkbox" checked={allChecked} disabled={!rows.length} onChange={(e) => selectAll(e.target.checked)} /> {t('Select all')}
-            </label>
-          </>
-        )}
+        <Select value={order} onChange={(v) => setOrder(v as Order)} options={ORDERS} />
+        <label className="check-all">
+          <input type="checkbox" checked={allChecked} disabled={!rows.length} onChange={(e) => selectAll(e.target.checked)} /> {t('Select all')}
+        </label>
         <span className="muted">
           {t('{shown} of {total}', { shown: rows.length, total: domains.length })}
         </span>
-        <span className="grow" />
-        <Segmented
-          small
-          value={view}
-          onChange={setView}
-          options={[
-            { value: 'cards', label: <><LayoutList size={13} /> {t('Cards')}</>, title: t('One card per domain, with every check spelled out') },
-            { value: 'table', label: <><Table2 size={13} /> {t('Table')}</>, title: t('A compact table, sortable by any column') },
-          ]}
-        />
       </div>
 
       {selected.length > 0 && (
@@ -386,11 +325,7 @@ export default function Domains() {
         </div>
       )}
 
-      {view === 'table' ? (
-        <div className="card">
-          <DataTable columns={columns} rows={list.data ? rows : undefined} rowKey={(d) => d.id} loading={list.loading} rowClass={(d) => (sel.has(d.id) ? 'selected' : d.enabled ? '' : 'dim')} empty={empty} />
-        </div>
-      ) : !list.data ? (
+      {!list.data ? (
         !list.error && (
           <div className="card pad">
             <Skeleton rows={6} height={18} />

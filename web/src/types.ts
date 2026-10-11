@@ -56,6 +56,16 @@ export interface Board {
   widgets: BoardWidget[] | null
 }
 
+/** A view of the report constructor saved under a name; personal, like a dashboard. */
+export interface ReportPreset {
+  id: number
+  name: string
+  /** The page's query string: dimension, ranking, period and filters. */
+  query: string
+  /** Listed in the sidebar. */
+  pinned: boolean
+}
+
 export interface DirectoryEntry {
   id: number
   username: string
@@ -437,6 +447,8 @@ export interface Meta {
   landing_var_kinds?: string[]
   stream_presets?: StreamPreset[] | null
   report_filters?: string[] | null
+  /** The dimensions the report constructor can rank. */
+  report_splits?: string[] | null
   reputation_providers?: RepProviderDef[] | null
 }
 
@@ -479,6 +491,8 @@ export interface SystemInfo {
 
 export interface ReportRow {
   key: string
+  /** Region and city rows: the country they are in. */
+  country?: string
   clicks: number
   uniques: number
   bots: number

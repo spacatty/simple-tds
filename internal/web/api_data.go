@@ -296,10 +296,9 @@ func (s *Server) dataRoutes(r chi.Router) {
 			return map[string]any{"rows": rows}, nil
 		})
 	}
-	r.Get("/reports/referrers", referrers(s.ev.Referrers))
 	r.Get("/reports/referrers/urls", referrers(s.ev.ReferrerURLs))
-	// The same figures by place: countries, or with by= the regions or cities of the selection.
-	r.Get("/reports/geo", handler(func(r *http.Request) (any, error) {
+	// By any dimension of a click: what the report constructor ranks.
+	r.Get("/reports/split", handler(func(r *http.Request) (any, error) {
 		q, err := parseQuery(r)
 		if err != nil {
 			return nil, err
@@ -307,14 +306,11 @@ func (s *Server) dataRoutes(r chi.Router) {
 		if err := s.scope(r.Context(), &q); err != nil {
 			return nil, err
 		}
-		by := r.URL.Query().Get("by")
-		if by == "" {
-			by = events.GeoLevels[0]
+		dim := r.URL.Query().Get("dim")
+		if !oneOf(dim, events.SplitDimensions()...) {
+			return nil, bad(fmt.Sprintf("unknown grouping %q", dim))
 		}
-		if !oneOf(by, events.GeoLevels...) {
-			return nil, bad(fmt.Sprintf("unknown grouping %q", by))
-		}
-		rows, err := s.ev.Split(r.Context(), by, q)
+		rows, err := s.ev.Split(r.Context(), dim, q)
 		if err != nil {
 			return nil, err
 		}
@@ -439,8 +435,11 @@ const (
 func parseQuery(r *http.Request) (events.Query, error) {
 	v := r.URL.Query()
 	q := events.Query{TZ: v.Get("tz"), Country: strings.ToUpper(v.Get("country")), Domain: v.Get("domain"), Type: v.Get("type"), Outcome: v.Get("outcome"),
-		IP: strings.TrimSpace(v.Get("ip")), ClickID: v.Get("click_id"), Bots: v.Get("bots"), Unique: v.Get("unique"), DC: v.Get("dc"),
+		IP: strings.TrimSpace(v.Get("ip")), ClickID: v.Get("click_id"), Bots: v.Get("bots"), Unique: v.Get("unique"), DC: v.Get("dc"), Banned: v.Get("banned"),
 		Params: map[string]string{}, Dims: map[string][]string{}, Like: map[string]string{}}
+	if !oneOf(q.Banned, "", "all", "only") {
+		return q, bad("unknown value of the banned filter")
+	}
 	var err error
 	if q.From, err = parseTime(v.Get("from")); err != nil {
 		return q, bad("bad from")
@@ -615,6 +614,7 @@ func (s *Server) meta(*http.Request) (any, error) {
 		"cost_models":          model.CostModels,
 		"report_groups":        events.Dimensions(),
 		"report_filters":       events.FilterableDimensions(),
+		"report_splits":        events.SplitDimensions(),
 		"stream_presets":       builtinPresets,
 		"integration_presets":  integrationPresets,
 		"postback_path":        postbackPath,

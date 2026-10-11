@@ -60,7 +60,7 @@ export interface FilterState {
 }
 
 /** Filters that are a plain URL parameter with one value. */
-export const PLAIN_PARAMS = ['ip', 'click_id', 'unique', 'dc']
+export const PLAIN_PARAMS = ['ip', 'click_id', 'unique', 'dc', 'banned']
 
 /** Reads the dimension filters in the order they appear in the URL. */
 export function parseFilters(sp: URLSearchParams): FilterState {
@@ -108,7 +108,7 @@ export function paramFor(dim: string, filterable: string[]): string | null {
 /** How one value of a dimension reads; ids are resolved by the page, which knows the names. */
 export function valueText(dim: string, v: string): string {
   if (dim === 'country') return v ? `${countryName(v)} (${v})` : t('(unknown)')
-  if (v === '') return t('(empty)')
+  if (v === '') return dim === 'ref_domain' ? t('(direct / no referrer)') : t('(empty)')
   if (dim === 'device_type') return humanize(v)
   if (dim === 'action' || dim === 'type') return ts(v)
   return v

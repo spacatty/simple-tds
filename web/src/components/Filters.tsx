@@ -30,7 +30,7 @@ const SECTIONS: [SectionId, string][] = [
 interface FieldDef {
   label: string
   section: SectionId
-  kind: 'campaign' | 'stream' | 'key' | 'values' | 'text' | 'bots' | 'flag'
+  kind: 'campaign' | 'stream' | 'key' | 'values' | 'text' | 'bots' | 'flag' | 'banned'
   /** The URL parameter the field writes. */
   param: string
   /** values: the dimension whose values are offered. */
@@ -50,6 +50,8 @@ interface FieldDef {
 const values = (dim: string, section: SectionId, extra: Partial<FieldDef> = {}): FieldDef => ({ label: dimLabel(dim), section, kind: 'values', param: 'f.' + dim, dim, ...extra })
 
 const BOTS: Record<string, string> = { exclude: t('No bots'), only: t('Bots only') }
+// Traffic of sources the viewer has suppressed since: left out unless asked for.
+const BANNED: Record<string, string> = { all: t('Shown'), only: t('Only them') }
 
 /** Every filter a page can offer, by id. */
 const FIELDS: Record<string, FieldDef> = {
@@ -79,6 +81,7 @@ const FIELDS: Record<string, FieldDef> = {
   unique: { label: t('Uniqueness'), section: 'quality', kind: 'flag', param: 'unique', size: 'sm', only: t('Unique only'), exclude: t('Repeat only') },
   dc: { label: t('Datacenter'), section: 'quality', kind: 'flag', param: 'dc', size: 'sm', only: t('Datacenter only'), exclude: t('No datacenters') },
   click_id: { label: t('Click ID'), section: 'quality', kind: 'text', param: 'click_id', placeholder: t('Exact match'), mono: true },
+  banned: { label: t('Suppressed sources'), section: 'quality', kind: 'banned', param: 'banned', size: 'sm' },
   key: { label: t('Key'), section: 'conv', kind: 'key', param: 'key_id' },
   sender_ip: { label: t('Sender IP'), section: 'conv', kind: 'text', param: 'ip', placeholder: t('Address, prefix or CIDR'), mono: true, size: 'sm' },
 }
@@ -241,6 +244,12 @@ export function FilterPanel({ sp, update, main, more = [], lookup, source = 'cli
             <Segmented small className="bots" value={state.bots} onChange={(v) => setParam('bots', v)} options={[{ value: '', label: t('All') }, { value: 'exclude', label: BOTS.exclude }, { value: 'only', label: BOTS.only }]} />
           </FilterField>
         )
+      case 'banned':
+        return (
+          <FilterField key={fid} label={d.label} size={d.size} active={cur in BANNED} onClear={clear}>
+            <Select value={cur} onChange={(v) => setParam(d.param, v)} placeholder={t('Hidden')} options={Object.entries(BANNED).map(([value, label]) => ({ value, label }))} />
+          </FilterField>
+        )
       case 'flag':
         return (
           <FilterField key={fid} label={d.label} size={d.size} active={cur === 'only' || cur === 'exclude'} onClear={clear}>
@@ -284,7 +293,7 @@ export function FilterPanel({ sp, update, main, more = [], lookup, source = 'cli
     const v = sp.get(p)
     if (!v) continue
     const d = defFor(p)
-    chips.push({ key: p, label: d?.label ?? p, text: d?.kind === 'flag' ? ((v === 'only' ? d.only : v === 'exclude' ? d.exclude : v) ?? v) : v, params: [p], mono: d?.mono, bare: !pageParams.has(p) })
+    chips.push({ key: p, label: d?.label ?? p, text: d?.kind === 'flag' ? ((v === 'only' ? d.only : v === 'exclude' ? d.exclude : v) ?? v) : d?.kind === 'banned' ? (BANNED[v] ?? v) : v, params: [p], mono: d?.mono, bare: !pageParams.has(p) })
   }
   sp.forEach((v, k) => {
     // Postback parameters of a conversion.
@@ -379,11 +388,13 @@ function TextFilter({ value, onChange, placeholder, mono, autoFocus }: { value: 
 interface ValueRow {
   value: string
   count: number
+  /** Regions and cities: the country they are in. */
+  country?: string
 }
 
 const REMOTE_LIMIT = 50
 /** Dimensions whose values come with a flag or an icon: their rows keep a column for it. */
-const ICON_DIMS = ['country', 'device_type', 'os', 'browser']
+const ICON_DIMS = ['country', 'region', 'city', 'lang', 'device_type', 'os', 'browser']
 
 /**
  * Picks values of one dimension from those the selection really has, the most
@@ -456,7 +467,7 @@ function ValuePicker({
   }, [open])
 
   const picked = useMemo(() => new Set(values), [values])
-  const shown = useMemo(() => {
+  const shown = useMemo<ValueRow[]>(() => {
     let list = rows ?? []
     const s = typed.toLowerCase()
     if (local && s) list = list.filter((r) => name(r.value).toLowerCase().includes(s) || r.value.toLowerCase() === s)
@@ -561,7 +572,7 @@ function ValuePicker({
               {rows && shown.length === 0 && <div className="muted pad-s">{typed ? t('Nothing found') : t('No values in this selection')}</div>}
               {shown.map((r, i) => {
                 const on = picked.has(r.value)
-                const icon = dimIcon(dim, r.value)
+                const icon = dimIcon(dim, r.value, r.country)
                 return (
                   // tabIndex -1: the list is driven from the search box, which keeps the focus.
                   <button type="button" tabIndex={-1} role="option" aria-selected={on} key={r.value} className={'menu-item' + (on ? ' selected' : '') + (i + likeRow === active ? ' active' : '')} onMouseDown={(e) => e.preventDefault()} onClick={() => flip(r.value)}>

@@ -279,6 +279,13 @@ entry also says what is kept about the requests it refuses: a counter (the
 default), the counter plus a request log (time, address, referrer, domain,
 campaign, User-Agent), or nothing. Both follow the data retention period.
 
+What a source sent before it was suppressed is left out of the reports and
+logs as well: the clicks from a suppressed address or referrer, and the
+conversions of those clicks. The **Suppressed sources** filter brings them
+back (**Shown**) or shows nothing else (**Only them**); the Referrers report
+then marks the sites on your list. Each entry shows since when it is
+suppressed.
+
 ## Conversions
 
 ```
@@ -374,11 +381,15 @@ same click.
 
 ## Reports and logs
 
-**Reports** has three views of the same data: **Breakdown** (any grouping,
-drill into a row), **Referrers** (referring sites, and the pages of each) and
-**Geo** (countries, and the cities or regions of each). The last two also
-split clicks into mobile and desktop. **Tracking** holds the raw click,
-conversion and postback logs.
+**Reports** has two views of the same data: **Breakdown** (any grouping,
+drill into a row) and **Top lists** (the values of one dimension ranked, each
+row unfolding by a second one, with clicks split into mobile and desktop).
+Top lists comes with built-in views — **Referrers** (referring sites, and the
+pages of each), **Geo** (countries, and their cities or regions), **Devices**
+and **Operating systems** — and any view can be saved as a preset of your own.
+The **Presets** menu chooses which of them the sidebar lists; Referrers and
+Geo are there to begin with. **Tracking** holds the raw click, conversion and
+postback logs.
 
 They share one row of filters. Each filter is a pill with its name and value;
 a few are always there, **Add filter** offers the rest by subject (routing,

@@ -69,12 +69,19 @@ export interface SplitSpec {
   title: string
   sub: string
   endpoint: string
+  /** What the request carries besides the period and the filters. */
+  params?: Params
   /** The dimension the rows are values of. */
   dim: string
+  /** The URL parameter that narrows to one row; f.<dim> unless told otherwise, null when a row cannot be narrowed to. */
+  param?: string | null
+  /** Buttons of the report's own, first in the page header. */
+  actions?: ReactNode
   column: string
   /** A row's name as plain text: what the search looks through. */
   name: (key: string) => string
-  cell?: (key: string) => ReactNode
+  /** How a row is shown; the row itself comes along where there is one. */
+  cell?: (key: string, row?: SplitRow) => ReactNode
   main: FilterItem[]
   more: FilterItem[]
   /** The tiles that are the report's own; the device split and the conversions follow them. */
@@ -85,7 +92,7 @@ export interface SplitSpec {
   count: (n: number) => string
   crEmpty: string
   crNote: string
-  expand: (row: SplitRow, params: Params, links: SplitLinks) => ReactNode
+  expand?: (row: SplitRow, params: Params, links: SplitLinks) => ReactNode
 }
 
 /** A report by one dimension with the device split of its clicks: a ranking, then every row. */
@@ -116,7 +123,8 @@ export default function SplitReport({ spec }: { spec: SplitSpec }) {
   const filterKey = JSON.stringify(urlFilterParams(sp))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const params = useMemo<Params>(() => ({ ...rangeParams(range), ...urlFilterParams(sp) }), [range.from, range.to, filterKey])
-  const rep = useLoad(async () => (await get<{ rows: SplitRow[] | null }>(spec.endpoint, params)).rows ?? [], [params, spec.endpoint])
+  const extra = JSON.stringify(spec.params ?? {})
+  const rep = useLoad(async () => (await get<{ rows: SplitRow[] | null }>(spec.endpoint, { ...params, ...spec.params })).rows ?? [], [params, spec.endpoint, extra])
   const rows = useMemo(() => rep.data ?? [], [rep.data])
 
   const named = useMemo(() => rows.filter((r) => r.key !== ''), [rows])
@@ -136,12 +144,13 @@ export default function SplitReport({ spec }: { spec: SplitSpec }) {
   }, [named])
   const sumReal = sum.clicks - sum.bots
 
+  const rowParam = spec.param === undefined ? 'f.' + spec.dim : spec.param
   const links = (key?: string): SplitLinks => {
     const filters: Params = { ...urlFilterParams(sp) }
-    if (key !== undefined) filters['f.' + spec.dim] = key
+    if (key !== undefined && rowParam) filters[rowParam] = key
     return {
       clicks: '/clicks' + buildSearch({ range, filters }),
-      breakdown: '/reports' + buildSearch({ range, group: key === undefined ? spec.dim : 'campaign', filters }),
+      breakdown: '/reports' + buildSearch({ range, group: key === undefined ? spec.dim : spec.dim === 'campaign' ? 'stream' : 'campaign', filters }),
     }
   }
 
@@ -158,7 +167,8 @@ export default function SplitReport({ spec }: { spec: SplitSpec }) {
     return s ? rows.filter((r) => spec.name(r.key).toLowerCase().includes(s) || r.key.toLowerCase() === s) : rows
   }, [rows, search, spec])
 
-  const cell = (key: string) => spec.cell?.(key) ?? spec.name(key)
+  const expand = spec.expand
+  const cell = (r: SplitRow) => spec.cell?.(r.key, r) ?? spec.name(r.key)
   const num = (key: 'clicks' | 'uniques' | 'mobile' | 'desktop' | 'bots' | 'conversions', title: string, headTitle?: string): Column<SplitRow> => ({
     key,
     title,
@@ -169,7 +179,7 @@ export default function SplitReport({ spec }: { spec: SplitSpec }) {
     render: (r) => <span className={r[key] === 0 ? 'muted' : ''}>{fmtInt(r[key])}</span>,
   })
   const columns: Column<SplitRow>[] = [
-    { key: 'key', title: spec.column, sort: (r) => spec.name(r.key).toLowerCase(), render: (r) => <span className={r.key === '' ? 'muted' : ''}>{cell(r.key)}</span> },
+    { key: 'key', title: spec.column, sort: (r) => spec.name(r.key).toLowerCase(), render: (r) => <span className={r.key === '' ? 'muted' : ''}>{cell(r)}</span> },
     num('clicks', t('Clicks')),
     num('uniques', t('Uniques')),
     num('mobile', t('Mobile'), t('Clicks from phones and tablets')),
@@ -205,6 +215,7 @@ export default function SplitReport({ spec }: { spec: SplitSpec }) {
   return (
     <div className="page">
       <PageHeader title={spec.title} sub={spec.sub}>
+        {spec.actions}
         <Link className="btn" to={links().breakdown} title={t('Open Reports with the same filters')}>
           <BarChart3 size={14} /> {t('Breakdown')}
         </Link>
@@ -261,10 +272,12 @@ export default function SplitReport({ spec }: { spec: SplitSpec }) {
             empty={rank.key === 'cr' ? spec.crEmpty : t('No data for this period')}
             items={top.map((r) => ({
               key: r.key,
-              label: (
+              label: rowParam ? (
                 <Link className="top-link" to={links(r.key).clicks} title={t('Show these clicks')}>
-                  {cell(r.key)}
+                  {cell(r)}
                 </Link>
+              ) : (
+                cell(r)
               ),
               value: r[rank.key],
               extra:
@@ -281,7 +294,7 @@ export default function SplitReport({ spec }: { spec: SplitSpec }) {
 
       <Card title={spec.allTitle} actions={<SearchInput value={search} onChange={setSearch} placeholder={spec.searchPlaceholder} />} pad={false}>
         <DataTable
-          key={rank.key}
+          key={rank.key + '|' + spec.id}
           columns={columns}
           rows={rep.data ? shown : undefined}
           rowKey={(r) => r.key}
@@ -289,10 +302,10 @@ export default function SplitReport({ spec }: { spec: SplitSpec }) {
           defaultSort={{ key: rank.key, dir: 'desc' }}
           maxHeight="calc(100vh - 200px)"
           empty={<Empty title={t('No data for this selection')}>{t('Try a wider date range or fewer filters.')}</Empty>}
-          expand={(r) => spec.expand(r, params, links(r.key))}
+          expand={expand && ((r) => expand(r, params, links(r.key)))}
           footer={
             <tr>
-              <td />
+              {expand && <td />}
               <td>{spec.count(named.length)}</td>
               {[sum.clicks, sum.uniques, sum.mobile, sum.desktop, sum.bots, sum.conversions].map((v, i) => (
                 <td key={i} style={{ textAlign: 'right' }}>

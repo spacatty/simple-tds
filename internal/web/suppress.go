@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"slices"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"simpletds/internal/engine"
+	"simpletds/internal/events"
 	"simpletds/internal/model"
 	"simpletds/internal/store"
 )
@@ -53,6 +55,82 @@ func (s *Server) suppressRoutes(r chi.Router) {
 		}
 		return nil, s.ev.ClearSuppressed(r.Context(), uint32(currentUser(r).ID), kind)
 	}))
+}
+
+// bannedSets hands a report the viewer's own suppress rules, so that traffic a
+// source sent before it was suppressed can be left out as well. Like the
+// click path, a rule without campaigns covers what its owner owns and a rule
+// naming campaigns covers those; the report's scope still decides which of
+// them the viewer sees at all.
+func (s *Server) bannedSets(ctx context.Context, owner int64, q *events.Query) error {
+	if q.Banned == "all" {
+		return nil
+	}
+	rows, err := s.st.Pool.Query(ctx, "SELECT kind, value, campaign_ids FROM suppress_rules WHERE owner_id=$1 ORDER BY id", owner)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	sets := map[string]*events.BannedSet{}
+	var order []string
+	for rows.Next() {
+		var kind, value string
+		var ids []int64
+		if err := rows.Scan(&kind, &value, &ids); err != nil {
+			return err
+		}
+		key := fmt.Sprint(ids)
+		set := sets[key]
+		if set == nil {
+			set = &events.BannedSet{}
+			for _, id := range ids {
+				set.Campaigns = append(set.Campaigns, uint32(id))
+			}
+			sets[key] = set
+			order = append(order, key)
+		}
+		switch kind {
+		case model.SuppressIP:
+			p, _, err := engine.ParseSuppressIP(value)
+			switch {
+			case err != nil:
+			case p.IsSingleIP():
+				set.IPs = append(set.IPs, p.Addr().String())
+			default:
+				set.Nets = append(set.Nets, p.String())
+			}
+		case model.SuppressReferer:
+			set.Refs = append(set.Refs, strings.ToLower(value))
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(order) == 0 {
+		return nil
+	}
+	// The rules without campaigns: everything the viewer owns.
+	if everywhere := sets[fmt.Sprint([]int64(nil))]; everywhere != nil {
+		own, err := s.st.Pool.Query(ctx, "SELECT id FROM campaigns WHERE owner_id=$1", owner)
+		if err != nil {
+			return err
+		}
+		defer own.Close()
+		for own.Next() {
+			var id int64
+			if err := own.Scan(&id); err != nil {
+				return err
+			}
+			everywhere.Campaigns = append(everywhere.Campaigns, uint32(id))
+		}
+		if err := own.Err(); err != nil {
+			return err
+		}
+	}
+	for _, key := range order {
+		q.BannedSets = append(q.BannedSets, *sets[key])
+	}
+	return nil
 }
 
 func suppressKind(r *http.Request) (string, error) {

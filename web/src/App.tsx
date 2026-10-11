@@ -6,6 +6,7 @@ import { t } from './i18n'
 import type { Meta, User } from './types'
 import { ConfirmHost, ErrorBoundary, ErrorBox, ToastHost } from './components/ui'
 import { Sidebar } from './components/Sidebar'
+import { BUILTIN_PRESETS, builtinHref } from './reportPresets'
 import Login from './pages/Login'
 import Setup from './pages/Setup'
 import Dashboard from './pages/Dashboard'
@@ -18,8 +19,7 @@ import Whitepages from './pages/Whitepages'
 import Landings from './pages/Landings'
 import Conversions from './pages/Conversions'
 import Reports from './pages/Reports'
-import Referrers from './pages/Referrers'
-import Geo from './pages/Geo'
+import TopReport from './pages/TopReport'
 import Clicks from './pages/Clicks'
 import Antibot from './pages/Antibot'
 import Suppress from './pages/Suppress'
@@ -27,6 +27,13 @@ import SettingsPage from './pages/Settings'
 import AccountPage from './pages/Account'
 import UsersPage from './pages/Users'
 import StatusPage from './pages/Status'
+
+/** Sends an address of a report that became a built-in view of Top lists on to that view. */
+function ToBuiltin({ view }: { view: string }) {
+  const loc = useLocation()
+  const b = BUILTIN_PRESETS.find((x) => x.key === view) ?? BUILTIN_PRESETS[0]
+  return <Navigate replace to={builtinHref(b, loc.search)} />
+}
 
 export default function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
@@ -137,8 +144,10 @@ export default function App() {
             <Route path="/conversions" element={<Conversions />} />
             <Route path="/conversions/:tab" element={<Conversions />} />
             <Route path="/reports" element={<Reports />} />
-            <Route path="/reports/referrers" element={<Referrers />} />
-            <Route path="/reports/geo" element={<Geo />} />
+            {/* Both used to be pages of their own; old links keep their filters. */}
+            <Route path="/reports/referrers" element={<ToBuiltin view="referrers" />} />
+            <Route path="/reports/geo" element={<ToBuiltin view="geo" />} />
+            <Route path="/reports/top" element={<TopReport />} />
             <Route path="/clicks" element={<Clicks />} />
             {user.role === 'admin' && <Route path="/antibot" element={<Antibot />} />}
             <Route path="/suppress/ips" element={<Suppress kind="ip" />} />

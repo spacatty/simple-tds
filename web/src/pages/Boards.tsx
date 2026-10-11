@@ -204,7 +204,7 @@ function TopWidget({ w, range, tick, campaigns }: WidgetProps) {
       key: r.key || '-',
       label: (
         <span className="with-icon">
-          {dimIcon(dim, r.key)}
+          {dimIcon(dim, r.key, r.country)}
           <span className="ellipsis">{name(r.key)}</span>
         </span>
       ),

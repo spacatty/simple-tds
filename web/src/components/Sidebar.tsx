@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
-import { Activity, BarChart3, Check, ChevronDown, ChevronsUpDown, Earth, EyeOff, FileCode2, Globe, KeyRound, LayoutDashboard, LayoutTemplate, Layers, Link2, LogOut, Menu, Moon, MousePointerClick, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, ShieldCheck, Split, Sun, Target, Unlink, UserCog, Users as UsersIcon, Webhook } from 'lucide-react'
+import { Activity, AppWindow, BarChart3, Bookmark, Check, ChevronDown, ChevronsUpDown, Earth, EyeOff, FileCode2, Globe, KeyRound, LayoutDashboard, LayoutTemplate, Layers, Link2, ListOrdered, LogOut, Menu, MonitorSmartphone, Moon, MousePointerClick, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, ShieldCheck, Split, Sun, Target, Unlink, UserCog, Users as UsersIcon, Webhook } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { User } from '../types'
 import type { Theme } from '../hooks'
 import { LANGS, lang, setLang, t } from '../i18n'
 import { Flag, FunnelIcon } from './icons'
 import { APP_NAME, Logo } from './Logo'
+import { BUILTIN_PINS_DEFAULT, BUILTIN_PINS_PREF, BUILTIN_PRESETS, TOP_PATH, builtinHref, builtinOf, presetHref, reloadReportPresets, useReportPresets } from '../reportPresets'
+import { usePref } from '../hooks'
 import { Dropdown } from './ui'
 
 interface Item {
@@ -59,8 +61,7 @@ const GROUPS: { id: string; label: string; items: Item[] }[] = [
     items: [
       // "end": the other reports live under /reports/ and must not light this one up.
       { to: '/reports', label: t('Breakdown'), icon: BarChart3, end: true },
-      { to: '/reports/referrers', label: t('Referrers'), icon: Link2 },
-      { to: '/reports/geo', label: t('Geo'), icon: Earth },
+      { to: TOP_PATH, label: t('Top lists'), icon: ListOrdered },
     ],
   },
   {
@@ -81,6 +82,8 @@ const GROUPS: { id: string; label: string; items: Item[] }[] = [
     ],
   },
 ]
+
+const BUILTIN_ICONS: Record<string, Item['icon']> = { referrers: Link2, geo: Earth, devices: MonitorSmartphone, os: AppWindow }
 
 function load<T>(key: string, fallback: T): T {
   try {
@@ -105,6 +108,18 @@ export function Sidebar({ user, theme, toggleTheme, logout }: { user: User; them
   const loc = useLocation()
   const admin = user.role === 'admin'
   const role = admin ? t('Administrator') : t('User')
+
+  // The saved report views the user keeps in the sidebar.
+  const presets = useReportPresets()
+  useEffect(() => {
+    reloadReportPresets()
+  }, [user.id])
+  const pinned = (presets ?? []).filter((p) => p.pinned)
+  const openPreset = loc.pathname === TOP_PATH ? pinned.find((p) => String(p.id) === new URLSearchParams(loc.search).get('preset')) : undefined
+  // And the built-in ones: which of them are listed is a preference on the account.
+  const [builtinPins] = usePref<string>(BUILTIN_PINS_PREF, BUILTIN_PINS_DEFAULT)
+  const builtins = BUILTIN_PRESETS.filter((b) => builtinPins.split(',').includes(b.key))
+  const openBuiltin = loc.pathname === TOP_PATH ? builtins.find((b) => b === builtinOf(loc.search)) : undefined
 
   // Navigating closes the overlay drawer on narrow screens.
   useEffect(() => setMobileOpen(false), [loc.pathname])
@@ -143,7 +158,8 @@ export function Sidebar({ user, theme, toggleTheme, logout }: { user: User; them
     })
   }
 
-  const isActive = (it: Item) => (it.end ? loc.pathname === it.to : loc.pathname === it.to || loc.pathname.startsWith(it.to + '/'))
+  // A pinned preset is a view of the report constructor: while one is open it is lit instead of the page's own item.
+  const isActive = (it: Item) => (it.to === TOP_PATH && (openPreset || openBuiltin) ? false : it.end ? loc.pathname === it.to : loc.pathname === it.to || loc.pathname.startsWith(it.to + '/'))
   const groups = GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => !i.admin || admin) })).filter((g) => g.items.length > 0)
   // The rail has no room for headers, so folding only applies to the full sidebar.
   const compact = rail && !mobileOpen
@@ -179,11 +195,32 @@ export function Sidebar({ user, theme, toggleTheme, logout }: { user: User; them
                   <ChevronDown size={13} />
                 </button>
                 {items.map((n) => (
-                  <NavLink key={n.to} to={n.to} end={n.end} data-tip={n.label} className={({ isActive: a }) => 'nav-item' + (a ? ' active' : '')}>
+                  <NavLink key={n.to} to={n.to} end={n.end} data-tip={n.label} className={() => 'nav-item' + (isActive(n) ? ' active' : '')}>
                     <n.icon size={17} />
                     <span>{n.label}</span>
                   </NavLink>
                 ))}
+                {g.id === 'reports' &&
+                  builtins
+                    .filter((b) => !isFolded || b === openBuiltin)
+                    .map((b) => {
+                      const Icon = BUILTIN_ICONS[b.key] ?? Bookmark
+                      return (
+                        <Link key={b.key} to={builtinHref(b)} data-tip={b.name} className={'nav-item' + (b === openBuiltin ? ' active' : '')} aria-current={b === openBuiltin ? 'page' : undefined}>
+                          <Icon size={17} />
+                          <span className="ellipsis">{b.name}</span>
+                        </Link>
+                      )
+                    })}
+                {g.id === 'reports' &&
+                  pinned
+                    .filter((p) => !isFolded || p === openPreset)
+                    .map((p) => (
+                      <Link key={p.id} to={presetHref(p)} data-tip={p.name} title={p.name} className={'nav-item' + (p === openPreset ? ' active' : '')} aria-current={p === openPreset ? 'page' : undefined}>
+                        <Bookmark size={17} />
+                        <span className="ellipsis">{p.name}</span>
+                      </Link>
+                    ))}
               </div>
             )
           })}

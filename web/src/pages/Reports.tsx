@@ -20,7 +20,7 @@ import { countryName } from '../countries'
 import { dimIcon } from '../components/icons'
 import { t, tn, ts, tx } from '../i18n'
 
-const GROUP_SECTIONS: [string, string[]][] = [
+export const GROUP_SECTIONS: [string, string[]][] = [
   [t('Time'), ['total', 'day', 'hour']],
   [t('Routing'), ['campaign', 'stream', 'landing', 'landing_preset', 'domain', 'action']],
   [t('Geo'), ['country', 'region', 'city', 'isp', 'lang']],
@@ -167,7 +167,7 @@ export default function Reports() {
       sort: (r) => (timeline ? r.key : valueText(group, r.key).toLowerCase()),
       render: (r) => (
         <span className={timeline ? 'mono nowrap' : 'with-icon'}>
-          {dimIcon(group, r.key)}
+          {dimIcon(group, r.key, r.country)}
           {valueText(group, r.key)}
         </span>
       ),
@@ -244,6 +244,7 @@ export default function Reports() {
           'device_type',
           'os',
           'bots',
+          'banned',
         ]}
         more={['stream', 'domain', 'action', 'region', 'city', 'isp', 'lang', 'browser', 'ref_domain', 'keyword', 'sub1', 'sub2', 'sub3', 'sub4', 'sub5', 'bot_reason', 'key']}
       />

@@ -46,6 +46,12 @@ type Query struct {
 	Like map[string]string
 	// Unique and DC are click-only: "" | only | exclude.
 	Unique, DC string
+	// Banned is about what the viewer suppressed after it had already sent
+	// traffic: "" leaves those clicks and their conversions out (the default),
+	// "all" keeps them, "only" shows nothing else. BannedSets is the viewer's
+	// suppress rules as they stand now.
+	Banned     string
+	BannedSets []BannedSet
 	// Scoped limits results to Campaigns (and, for conversions, to events
 	// received through Keys). Unset means unrestricted.
 	Scoped    bool
@@ -53,6 +59,15 @@ type Query struct {
 	Keys      []uint32
 	Limit     int
 	Offset    int
+}
+
+// BannedSet is the sources one group of suppress rules covers, and the
+// campaigns it covers them in.
+type BannedSet struct {
+	Campaigns []uint32
+	IPs       []string // single addresses
+	Nets      []string // networks in CIDR form
+	Refs      []string // referrer domains; their subdomains count too
 }
 
 type dim struct {
@@ -118,7 +133,22 @@ func Dimensions() []string {
 	return out
 }
 
-var tzRe = regexp.MustCompile(`^[A-Za-z0-9_+\-/]{1,64}$`)
+// SplitDimensions lists what the report constructor can rank: the dimensions
+// of a click that are not a point in time.
+func SplitDimensions() []string {
+	out := []string{}
+	for k, d := range dims {
+		if splittable(k, d) {
+			out = append(out, k)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func splittable(name string, d dim) bool { return d.clicks && !d.timeline && name != "total" }
+
+var tzRe =regexp.MustCompile(`^[A-Za-z0-9_+\-/]{1,64}$`)
 
 func tzLiteral(tz string) string {
 	if tz == "" || !tzRe.MatchString(tz) {
@@ -261,6 +291,63 @@ func ipCond(w *where, col, v string) {
 	w.add(col+" = ?", v)
 }
 
+// strList renders values for an IN (...) clause or an array literal.
+func strList(vals []string) string {
+	parts := make([]string, len(vals))
+	for i, v := range vals {
+		parts[i] = "'" + strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(v) + "'"
+	}
+	return strings.Join(parts, ",")
+}
+
+// banned applies the viewer's suppress rules to what is already recorded. A
+// conversion carries the referrer of its click but not the address, so that
+// one is looked up among the clicks of the same campaigns.
+func (q *Query) banned(w *where, clicks bool) {
+	if q.Banned == "all" {
+		return
+	}
+	var sets []string
+	for _, s := range q.BannedSets {
+		if len(s.Campaigns) == 0 {
+			continue
+		}
+		ids := idList(s.Campaigns)
+		var any []string
+		if len(s.Refs) > 0 {
+			refs := strList(s.Refs)
+			any = append(any, "ref_domain IN ("+refs+")", "arrayExists(d -> endsWith(ref_domain, concat('.', d)), ["+refs+"])")
+		}
+		var addr []string
+		if len(s.IPs) > 0 {
+			addr = append(addr, "ip IN ("+strList(s.IPs)+")")
+		}
+		if len(s.Nets) > 0 {
+			// Short-circuits, so a row without a parsable address never reaches the range check.
+			addr = append(addr, "((isIPv4String(ip) OR isIPv6String(ip)) AND arrayExists(n -> isIPAddressInRange(ip, n), ["+strList(s.Nets)+"]))")
+		}
+		if len(addr) > 0 {
+			cond := strings.Join(addr, " OR ")
+			if !clicks {
+				cond = "click_id IN (SELECT click_id FROM clicks WHERE campaign_id IN (" + ids + ") AND (" + cond + "))"
+			}
+			any = append(any, cond)
+		}
+		if len(any) > 0 {
+			sets = append(sets, "(campaign_id IN ("+ids+") AND ("+strings.Join(any, " OR ")+"))")
+		}
+	}
+	switch {
+	case len(sets) == 0 && q.Banned == "only":
+		w.add("0")
+	case len(sets) == 0:
+	case q.Banned == "only":
+		w.add("(" + strings.Join(sets, " OR ") + ")")
+	default:
+		w.add("NOT (" + strings.Join(sets, " OR ") + ")")
+	}
+}
+
 // flag narrows by a 0/1 column: "only" keeps the rows that have it set,
 // "exclude" the rest.
 func flag(w *where, col, mode string) {
@@ -281,6 +368,7 @@ func (q *Query) clickWhere() *where {
 	flag(w, "is_bot", q.Bots)
 	flag(w, "is_unique", q.Unique)
 	flag(w, "is_dc", q.DC)
+	q.banned(w, true)
 	if q.IP != "" {
 		ipCond(w, "ip", q.IP)
 	}
@@ -296,6 +384,7 @@ func (q *Query) convWhereAt(ts string) *where {
 		w.add("(campaign_id IN (" + idList(q.Campaigns) + ") OR key_id IN (" + idList(q.Keys) + "))")
 	}
 	flag(w, "is_bot", q.Bots)
+	q.banned(w, false)
 	if q.KeyID != 0 {
 		w.add("key_id = ?", q.KeyID)
 	}
@@ -341,7 +430,13 @@ type ReportRow struct {
 	ROI         float64          `json:"roi"` // %
 	EPC         float64          `json:"epc"`
 	Types       map[string]int64 `json:"types"` // events by conversion type, funnel stages included
+	// Country is where a region or a city is, for its flag: the country most
+	// of the row's clicks came from. Other groupings leave it empty.
+	Country string `json:"country,omitempty"`
 }
+
+// placed reports whether rows of this grouping lie in one country.
+func placed(group string) bool { return group == "region" || group == "city" }
 
 // Report aggregates clicks and conversions by one dimension.
 func (db *DB) Report(ctx context.Context, group string, q Query) ([]ReportRow, error) {
@@ -362,9 +457,13 @@ func (db *DB) Report(ctx context.Context, group string, q Query) ([]ReportRow, e
 		}
 		return r
 	}
+	country := ""
+	if placed(group) {
+		country = ", toString(anyHeavy(country)) AS country"
+	}
 	if d.clicks {
 		w := q.clickWhere()
-		rows, err := db.query(ctx, "SELECT "+expr+" AS k, count() AS clicks, sum(is_unique) AS uniques, sum(is_bot) AS bots, sum(cost) AS cost FROM clicks WHERE "+w.sql()+" GROUP BY k", w.args...)
+		rows, err := db.query(ctx, "SELECT "+expr+" AS k, count() AS clicks, sum(is_unique) AS uniques, sum(is_bot) AS bots, sum(cost) AS cost"+country+" FROM clicks WHERE "+w.sql()+" GROUP BY k", w.args...)
 		if err != nil {
 			return nil, err
 		}
@@ -372,13 +471,16 @@ func (db *DB) Report(ctx context.Context, group string, q Query) ([]ReportRow, e
 			row := get(fmt.Sprint(r["k"]))
 			row.Clicks, row.Uniques, row.Bots = int64(num(r["clicks"])), int64(num(r["uniques"])), int64(num(r["bots"]))
 			row.Cost = num(r["cost"])
+			if country != "" {
+				row.Country = fmt.Sprint(r["country"])
+			}
 		}
 	}
 	if d.convs {
 		w := q.convWhere()
 		// Only goal events are conversions: the other stages of a funnel are
 		// steps towards one, though any of them may bring revenue.
-		rows, err := db.query(ctx, "SELECT "+expr+" AS k, toString(type) AS t, count() AS n, sum(goal) AS conversions, sumIf(revenue, type != 'rejected') AS revenue, sum(cost) AS cost FROM conversions WHERE "+w.sql()+" GROUP BY k, t", w.args...)
+		rows, err := db.query(ctx, "SELECT "+expr+" AS k, toString(type) AS t, count() AS n, sum(goal) AS conversions, sumIf(revenue, type != 'rejected') AS revenue, sum(cost) AS cost"+country+" FROM conversions WHERE "+w.sql()+" GROUP BY k, t", w.args...)
 		if err != nil {
 			return nil, err
 		}
@@ -393,6 +495,10 @@ func (db *DB) Report(ctx context.Context, group string, q Query) ([]ReportRow, e
 			row.Conversions += int64(num(r["conversions"]))
 			row.Revenue += num(r["revenue"])
 			row.Cost += num(r["cost"])
+			// A place known only from its conversions.
+			if country != "" && row.Country == "" {
+				row.Country = fmt.Sprint(r["country"])
+			}
 		}
 	}
 	out := make([]ReportRow, 0, len(byKey))
@@ -431,6 +537,9 @@ const deviceSplit = "countIf(device_type IN ('mobile', 'tablet')) AS mobile, cou
 
 // Split is Report by one dimension plus the device split of its clicks.
 func (db *DB) Split(ctx context.Context, group string, q Query) ([]SplitRow, error) {
+	if d, ok := dims[group]; !ok || !splittable(group, d) {
+		return nil, fmt.Errorf("unknown grouping %q", group)
+	}
 	rows, err := db.Report(ctx, group, q)
 	if err != nil {
 		return nil, err
@@ -460,19 +569,12 @@ func (db *DB) Split(ctx context.Context, group string, q Query) ([]SplitRow, err
 	return out, nil
 }
 
-// Referrers is the report by referrer domain. Clicks that came without a
-// referrer are the row with an empty key.
-func (db *DB) Referrers(ctx context.Context, q Query) ([]SplitRow, error) {
-	return db.Split(ctx, "ref_domain", q)
-}
-
-// GeoLevels are the groupings of the geo report, widest first.
-var GeoLevels = []string{"country", "region", "city"}
-
 // ValueRow is one value of a dimension and how many rows carry it.
 type ValueRow struct {
 	Value string `json:"value"`
 	Count uint64 `json:"count"`
+	// Country is where a region or a city is, for its flag.
+	Country string `json:"country,omitempty"`
 }
 
 // Values lists the values a dimension takes in the selection, the most
@@ -509,13 +611,20 @@ func (db *DB) Values(ctx context.Context, dim, search string, convs bool, limit 
 		order = "positionCaseInsensitiveUTF8(k, ?) = 0, " + order
 		w.args = append(w.args, search)
 	}
-	rows, err := db.query(ctx, fmt.Sprintf("SELECT toString(%s) AS k, count() AS n FROM %s WHERE %s GROUP BY k ORDER BY %s LIMIT %d", d.expr, table, w.sql(), order, limit), w.args...)
+	country := ""
+	if placed(dim) {
+		country = ", toString(anyHeavy(country)) AS country"
+	}
+	rows, err := db.query(ctx, fmt.Sprintf("SELECT toString(%s) AS k, count() AS n%s FROM %s WHERE %s GROUP BY k ORDER BY %s LIMIT %d", d.expr, country, table, w.sql(), order, limit), w.args...)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]ValueRow, len(rows))
 	for i, r := range rows {
 		out[i] = ValueRow{Value: fmt.Sprint(r["k"]), Count: uint64(num(r["n"]))}
+		if country != "" {
+			out[i].Country = fmt.Sprint(r["country"])
+		}
 	}
 	return out, nil
 }

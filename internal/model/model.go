@@ -102,6 +102,19 @@ type Dashboard struct {
 	CreatedAt time.Time    `db:"created_at" json:"created_at"`
 }
 
+// ReportPreset is a view of the report constructor a user saved under a name:
+// the dimension, the ranking and the filters, kept as the page keeps them, in
+// its query string. Like a dashboard it is personal and holds no data.
+type ReportPreset struct {
+	ID      int64  `db:"id" json:"id"`
+	OwnerID int64  `db:"owner_id" json:"owner_id"`
+	Name    string `db:"name" json:"name"`
+	Query   string `db:"query" json:"query"`
+	// Pinned presets are listed in the sidebar next to the built-in reports.
+	Pinned    bool      `db:"pinned" json:"pinned"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+}
+
 // DashWidget is one tile of a dashboard.
 type DashWidget struct {
 	ID    string `json:"id"`

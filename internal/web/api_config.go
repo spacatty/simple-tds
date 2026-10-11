@@ -776,6 +776,7 @@ func (s *Server) routes(r chi.Router) {
 		}})
 	s.groupRoutes(r)
 	s.dashboardRoutes(r)
+	s.reportPresetRoutes(r)
 	s.funnelPresetRoutes(r)
 	r.Post("/campaigns/{id}/clone", handler(s.campaignClone))
 	r.Post("/campaigns/{id}/alias", handler(s.campaignNewAlias))

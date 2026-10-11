@@ -152,10 +152,27 @@ export function Os({ os, version }: { os: string; version?: string }) {
   )
 }
 
-/** A report key shown with its flag or icon when the dimension has one; null otherwise. */
-export function dimIcon(dim: string, key: string): ReactNode {
+// The country a language is named after. A browser language is not a place,
+// so this is only a quick visual cue: English gets the British flag wherever
+// the visitor is.
+const LANG_FLAG: Record<string, string> = {
+  en: 'GB', ru: 'RU', uk: 'UA', be: 'BY', de: 'DE', fr: 'FR', es: 'ES', pt: 'PT', it: 'IT', nl: 'NL', pl: 'PL', cs: 'CZ', sk: 'SK', sl: 'SI',
+  hr: 'HR', sr: 'RS', bs: 'BA', mk: 'MK', bg: 'BG', ro: 'RO', hu: 'HU', el: 'GR', tr: 'TR', sv: 'SE', no: 'NO', nb: 'NO', nn: 'NO', da: 'DK',
+  fi: 'FI', is: 'IS', et: 'EE', lv: 'LV', lt: 'LT', ga: 'IE', mt: 'MT', sq: 'AL', lb: 'LU', ca: 'AD', ka: 'GE', hy: 'AM', az: 'AZ', kk: 'KZ',
+  uz: 'UZ', ky: 'KG', tg: 'TJ', tk: 'TM', mn: 'MN', he: 'IL', iw: 'IL', ar: 'SA', fa: 'IR', ur: 'PK', hi: 'IN', bn: 'BD', pa: 'IN', ta: 'IN',
+  te: 'IN', mr: 'IN', gu: 'IN', kn: 'IN', ml: 'IN', ne: 'NP', si: 'LK', th: 'TH', vi: 'VN', id: 'ID', in: 'ID', ms: 'MY', fil: 'PH', tl: 'PH',
+  km: 'KH', lo: 'LA', my: 'MM', zh: 'CN', ja: 'JP', ko: 'KR', sw: 'KE', am: 'ET', af: 'ZA', zu: 'ZA',
+}
+
+/**
+ * A report key shown with its flag or icon when the dimension has one; null
+ * otherwise. A region or a city takes the flag of `country`, the one it is in.
+ */
+export function dimIcon(dim: string, key: string, country?: string): ReactNode {
   if (!key) return null
   if (dim === 'country') return <Flag code={key} />
+  if (dim === 'region' || dim === 'city') return country ? <Flag code={country} /> : null
+  if (dim === 'lang') return LANG_FLAG[key.toLowerCase()] ? <Flag code={LANG_FLAG[key.toLowerCase()]} /> : null
   if (dim === 'device_type') return <DeviceIcon type={key} />
   if (dim === 'os') return <OsIcon os={key} />
   if (dim === 'browser') return <BrowserIcon browser={key} />

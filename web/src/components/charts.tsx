@@ -143,7 +143,7 @@ export interface BarItem {
   extra?: ReactNode
 }
 
-/** Ranked horizontal bars in plain HTML: label, bar, value. */
+/** A ranked list in plain HTML: each name lies on a bar as long as its share, the value beside it. */
 export function BarList({ items, fmt = fmtInt, color = 'var(--series-1)', empty = t('No data for this period') }: { items: BarItem[]; fmt?: (v: number) => string; color?: string; empty?: string }) {
   const max = Math.max(1, ...items.map((i) => i.value))
   if (!items.length) return <div className="muted pad">{empty}</div>
@@ -151,9 +151,9 @@ export function BarList({ items, fmt = fmtInt, color = 'var(--series-1)', empty 
     <div className="barlist">
       {items.map((it) => (
         <div className="barlist-row" key={it.key} title={typeof it.label === 'string' ? `${it.label}: ${fmt(it.value)}` : undefined}>
-          <div className="barlist-label ellipsis">{it.label}</div>
-          <div className="barlist-track">
+          <div className="barlist-main">
             <div className="barlist-bar" style={{ width: `${Math.max(1, (it.value / max) * 100)}%`, background: color }} />
+            <div className="barlist-label ellipsis">{it.label}</div>
           </div>
           <div className="barlist-value">
             {fmt(it.value)}
