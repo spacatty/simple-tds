@@ -200,27 +200,30 @@ export function Sidebar({ user, theme, toggleTheme, logout }: { user: User; them
                     <span>{n.label}</span>
                   </NavLink>
                 ))}
-                {g.id === 'reports' &&
-                  builtins
-                    .filter((b) => !isFolded || b === openBuiltin)
-                    .map((b) => {
-                      const Icon = BUILTIN_ICONS[b.key] ?? Bookmark
-                      return (
-                        <Link key={b.key} to={builtinHref(b)} data-tip={b.name} className={'nav-item' + (b === openBuiltin ? ' active' : '')} aria-current={b === openBuiltin ? 'page' : undefined}>
-                          <Icon size={17} />
-                          <span className="ellipsis">{b.name}</span>
+                {/* The pinned views of Top lists hang under it, the last item of the group. */}
+                {g.id === 'reports' && (isFolded ? !!(openBuiltin || openPreset) : builtins.length + pinned.length > 0) && (
+                  <div className="nav-sub">
+                    {builtins
+                      .filter((b) => !isFolded || b === openBuiltin)
+                      .map((b) => {
+                        const Icon = BUILTIN_ICONS[b.key] ?? Bookmark
+                        return (
+                          <Link key={b.key} to={builtinHref(b)} data-tip={b.name} className={'nav-item' + (b === openBuiltin ? ' active' : '')} aria-current={b === openBuiltin ? 'page' : undefined}>
+                            <Icon size={17} />
+                            <span className="ellipsis">{b.name}</span>
+                          </Link>
+                        )
+                      })}
+                    {pinned
+                      .filter((p) => !isFolded || p === openPreset)
+                      .map((p) => (
+                        <Link key={p.id} to={presetHref(p)} data-tip={p.name} title={p.name} className={'nav-item' + (p === openPreset ? ' active' : '')} aria-current={p === openPreset ? 'page' : undefined}>
+                          <Bookmark size={17} />
+                          <span className="ellipsis">{p.name}</span>
                         </Link>
-                      )
-                    })}
-                {g.id === 'reports' &&
-                  pinned
-                    .filter((p) => !isFolded || p === openPreset)
-                    .map((p) => (
-                      <Link key={p.id} to={presetHref(p)} data-tip={p.name} title={p.name} className={'nav-item' + (p === openPreset ? ' active' : '')} aria-current={p === openPreset ? 'page' : undefined}>
-                        <Bookmark size={17} />
-                        <span className="ellipsis">{p.name}</span>
-                      </Link>
-                    ))}
+                      ))}
+                  </div>
+                )}
               </div>
             )
           })}

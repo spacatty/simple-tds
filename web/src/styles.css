@@ -3821,6 +3821,23 @@ tr.camp-off .tnum {
 .nav-item.active svg {
   color: var(--accent);
 }
+/* Views of the item above: set in from it, along a guide line. */
+.nav-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 1px 0 0 15px;
+  padding-left: 7px;
+  border-left: 1px solid var(--border);
+}
+.nav-sub .nav-item {
+  height: 28px;
+}
+.rail .nav-sub {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
 .rail .nav-item {
   justify-content: center;
   padding: 0;
