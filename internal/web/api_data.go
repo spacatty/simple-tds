@@ -431,14 +431,18 @@ const (
 // parseQuery reads the filters shared by reports and logs. from/to are unix
 // seconds or RFC 3339; p.<name>=<value> filters conversions by postback
 // param, f.<dimension>=<value> (repeatable) by the values of a dimension,
-// like.<field>=<text> by text the field contains.
+// like.<field>=<text> by text the field contains. tests=all keeps the test
+// campaigns in a selection that is not about one of them.
 func parseQuery(r *http.Request) (events.Query, error) {
 	v := r.URL.Query()
 	q := events.Query{TZ: v.Get("tz"), Country: strings.ToUpper(v.Get("country")), Domain: v.Get("domain"), Type: v.Get("type"), Outcome: v.Get("outcome"),
-		IP: strings.TrimSpace(v.Get("ip")), ClickID: v.Get("click_id"), Bots: v.Get("bots"), Unique: v.Get("unique"), DC: v.Get("dc"), Banned: v.Get("banned"),
+		IP: strings.TrimSpace(v.Get("ip")), ClickID: v.Get("click_id"), Bots: v.Get("bots"), Unique: v.Get("unique"), DC: v.Get("dc"), Banned: v.Get("banned"), Tests: v.Get("tests"),
 		Params: map[string]string{}, Dims: map[string][]string{}, Like: map[string]string{}}
 	if !oneOf(q.Banned, "", "all", "only") {
 		return q, bad("unknown value of the banned filter")
+	}
+	if !oneOf(q.Tests, "", "all") {
+		return q, bad("unknown value of the tests filter")
 	}
 	var err error
 	if q.From, err = parseTime(v.Get("from")); err != nil {

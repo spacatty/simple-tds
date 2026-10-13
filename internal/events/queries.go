@@ -57,6 +57,10 @@ type Query struct {
 	Scoped    bool
 	Campaigns []uint32
 	Keys      []uint32
+	// Hide leaves these campaigns out: the test campaigns, whenever the query
+	// is not about one of them. Tests is "all" to keep them in.
+	Hide  []uint32
+	Tests string
 	Limit     int
 	Offset    int
 }
@@ -348,6 +352,13 @@ func (q *Query) banned(w *where, clicks bool) {
 	}
 }
 
+// hide leaves out the campaigns the query is not meant to see.
+func (q *Query) hide(w *where) {
+	if len(q.Hide) > 0 {
+		w.add("campaign_id NOT IN (" + idList(q.Hide) + ")")
+	}
+}
+
 // flag narrows by a 0/1 column: "only" keeps the rows that have it set,
 // "exclude" the rest.
 func flag(w *where, col, mode string) {
@@ -365,6 +376,7 @@ func (q *Query) clickWhere() *where {
 	if q.Scoped {
 		w.add("campaign_id IN (" + idList(q.Campaigns) + ")")
 	}
+	q.hide(w)
 	flag(w, "is_bot", q.Bots)
 	flag(w, "is_unique", q.Unique)
 	flag(w, "is_dc", q.DC)
@@ -383,6 +395,7 @@ func (q *Query) convWhereAt(ts string) *where {
 	if q.Scoped {
 		w.add("(campaign_id IN (" + idList(q.Campaigns) + ") OR key_id IN (" + idList(q.Keys) + "))")
 	}
+	q.hide(w)
 	flag(w, "is_bot", q.Bots)
 	q.banned(w, false)
 	if q.KeyID != 0 {
@@ -764,6 +777,27 @@ func (db *DB) attachEvents(ctx context.Context, clicks []Row) error {
 	return nil
 }
 
+// ClickEvents returns what the given clicks of a campaign went on to do: one
+// short entry per event, oldest first, by click id. since is the earliest
+// moment any of the clicks could have been made.
+func (db *DB) ClickEvents(ctx context.Context, campaignID int64, ids []string, since time.Time) (map[string][]Row, error) {
+	out := map[string][]Row{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	evs, err := db.query(ctx, "SELECT click_id, ts, toString(type) AS type, toString(outcome) AS outcome, revenue, goal FROM conversions WHERE ts >= ? AND campaign_id = ? AND click_id IN (?) ORDER BY ts",
+		since.Add(-time.Minute), uint32(campaignID), ids)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range evs {
+		id, _ := e["click_id"].(string)
+		delete(e, "click_id")
+		out[id] = append(out[id], e)
+	}
+	return out, nil
+}
+
 const convCols = `ts, conv_id, click_id, key_id, type, revenue, cost, currency, sender_ip, params, campaign_id, stream_id,
  domain, country, city, device_type, os, browser, sub1, sub2, sub3, sub4, sub5, goal, is_bot, click_ts, outcome`
 
@@ -818,6 +852,7 @@ func (db *DB) Postbacks(ctx context.Context, q Query) ([]Row, uint64, error) {
 	if q.Scoped {
 		w.add("key_id IN (" + idList(q.Keys) + ")")
 	}
+	q.hide(w)
 	if q.KeyID != 0 {
 		w.add("key_id = ?", q.KeyID)
 	}

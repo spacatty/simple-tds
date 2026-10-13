@@ -196,6 +196,26 @@ export interface Campaign {
   /** The viewer's access: owner | edit | read | stats */
   access?: string
   owner_name?: string
+  /** A test campaign: answers only requests with test_key (editors only) and stays out of the reports. */
+  test?: boolean
+  test_key?: string
+  /** The campaign a test campaign was forked from; its name when the viewer can see it. */
+  source_id?: number | null
+  source_name?: string
+  /** The source has changed since the fork last took its configuration. */
+  outdated?: boolean
+}
+
+/** A click id issued in advance for a test campaign, with the events received for it. */
+export interface TestClick {
+  id: number
+  campaign_id: number
+  click_id: string
+  stream_id: number
+  note: string
+  created_at: string
+  used_at: string | null
+  events?: ClickEvent[] | null
 }
 
 export interface Filter {
@@ -222,6 +242,8 @@ export interface Stream {
   action_config: ActionConfig | null
   js_check: boolean
   note: string
+  /** In a test campaign: the stream of the source campaign this one mirrors. */
+  source_id?: number | null
 }
 
 export interface Whitepage {

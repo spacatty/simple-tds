@@ -230,7 +230,38 @@ type Campaign struct {
 	FunnelPresetRev int       `db:"funnel_preset_rev" json:"funnel_preset_rev"`
 	Note            string    `db:"note" json:"note"`
 	CreatedAt       time.Time `db:"created_at" json:"created_at"`
+	// Test marks a test campaign: it answers only requests that carry TestKey,
+	// lets them past the antibot and uniqueness, and stays out of every report
+	// that is not about it. A campaign is born a test one, as a fork, and
+	// never becomes or stops being one.
+	Test    bool   `db:"test" json:"test"`
+	TestKey string `db:"test_key" json:"test_key"`
+	// SourceID is the campaign a test campaign was forked from, and SourceHash
+	// what the source looked like when the fork last took its configuration.
+	SourceID   *int64 `db:"source_id" json:"source_id"`
+	SourceHash string `db:"source_hash" json:"-"`
+	// SourceName and Outdated describe the fork from the viewer's side; they
+	// are filled in by the API, not stored.
+	SourceName string `db:"-" json:"source_name,omitempty"`
+	Outdated   bool   `db:"-" json:"outdated,omitempty"`
 }
+
+// TestClick is a click id issued in advance for a test campaign. It can be
+// entered once with the campaign's key, and converts like any other click.
+type TestClick struct {
+	ID         int64  `db:"id" json:"id"`
+	CampaignID int64  `db:"campaign_id" json:"campaign_id"`
+	ClickID    string `db:"click_id" json:"click_id"`
+	// StreamID is the stream the visit goes to whatever its filters say; zero
+	// leaves the choice to the campaign.
+	StreamID  int64      `db:"stream_id" json:"stream_id"`
+	Note      string     `db:"note" json:"note"`
+	CreatedAt time.Time  `db:"created_at" json:"created_at"`
+	UsedAt    *time.Time `db:"used_at" json:"used_at"`
+}
+
+// MaxTestClicks caps the click ids a test campaign keeps.
+const MaxTestClicks = 500
 
 // FunnelPreset is a user's reusable set of funnel stages. Applying one copies
 // the stages into a campaign.
@@ -366,6 +397,9 @@ type Stream struct {
 	ActionConfig json.RawMessage `db:"action_config" json:"action_config"`
 	JSCheck      bool            `db:"js_check" json:"js_check"`
 	Note         string          `db:"note" json:"note"`
+	// SourceID is the stream this one mirrors, in a test campaign: a sync
+	// updates it in place, so its id and its statistics survive.
+	SourceID *int64 `db:"source_id" json:"source_id"`
 }
 
 // StreamPreset is a saved set of stream filters, or a saved action, that a

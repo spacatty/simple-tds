@@ -79,6 +79,8 @@ type Snapshot struct {
 	// Params knows every name the system request parameters go by.
 	Params       *ParamNames
 	geoProviders []*extapi.Provider
+	// testClicks are the click ids issued for test campaigns and not entered yet.
+	testClicks map[string]bool
 	// AdminDomainOK: at least one verified domain serves the panel.
 	AdminDomainOK bool
 }
@@ -106,15 +108,18 @@ type Engine struct {
 	uniq   *uniqStore
 	recent *lru.Cache[string, *events.Click]
 	convs  *lru.Cache[string, struct{}]
-	remote *remoteCache
-	limits *rateLimiter
+	// testUsed are the issued test click ids entered since they were loaded.
+	testUsed *lru.Cache[string, struct{}]
+	remote   *remoteCache
+	limits   *rateLimiter
 }
 
 func New(st *store.Store, ev *events.DB, g *geo.DB, det *antibot.Detector, secret []byte) *Engine {
 	recent, _ := lru.New[string, *events.Click](200_000)
 	convs, _ := lru.New[string, struct{}](200_000)
+	testUsed, _ := lru.New[string, struct{}](20_000)
 	e := &Engine{Store: st, Events: ev, Geo: g, Detector: det, Signer: antibot.NewSigner(secret),
-		secret: secret, uniq: newUniqStore(), recent: recent, convs: convs,
+		secret: secret, uniq: newUniqStore(), recent: recent, convs: convs, testUsed: testUsed,
 		remote: newRemoteCache(), limits: newRateLimiter()}
 	e.snap.Store(&Snapshot{Settings: model.DefaultSettings()})
 	return e
@@ -166,11 +171,19 @@ func (e *Engine) Reload(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	testClicks, err := e.Store.UnusedTestClicks(ctx)
+	if err != nil {
+		return err
+	}
 
 	s := &Snapshot{Settings: st, Domains: map[string]*DomainRT{}, ByAlias: map[string]*CampaignRT{},
 		ByID: map[int64]*CampaignRT{}, Whitepages: map[int64]*model.Whitepage{},
 		WhitepageKeys: map[string]*model.Whitepage{}, Landings: map[int64]*model.Landing{}, LandingKeys: map[string]*model.Landing{},
-		landingStreams: map[int64]*StreamRT{}, Keys: map[string]*KeyRT{}, KeyNames: map[uint32]string{}}
+		landingStreams: map[int64]*StreamRT{}, Keys: map[string]*KeyRT{}, KeyNames: map[uint32]string{},
+		testClicks: make(map[string]bool, len(testClicks))}
+	for _, id := range testClicks {
+		s.testClicks[id] = true
+	}
 
 	var trusted []netip.Prefix
 	for _, t := range st.TrustedProxies {
@@ -306,6 +319,10 @@ type Visit struct {
 	offer string
 	// blank marks a landing page requested without its click.
 	blank bool
+	// clickAt is the time inside a click id issued in advance. The click is
+	// recorded at it, because everything that later looks a click up by its
+	// id (a postback, a funnel) looks around that moment.
+	clickAt time.Time
 
 	params *ParamNames
 	depth  int

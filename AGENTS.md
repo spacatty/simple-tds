@@ -105,6 +105,18 @@ cd web && npm install && npm run dev  # panel with hot reload at http://localhos
   source sent before the viewer suppressed it (`Query.banned`, fed by
   `bannedSets` from `s.scope`; `banned=all|only` turns that off or around), so
   a data endpoint that skips `s.scope` shows numbers the others do not.
+- **Test campaigns are forks kept apart** (`internal/engine/testmode.go`,
+  `internal/web/testmode.go`): a campaign with `test` set answers only its
+  `test_key`, and such a request skips suppress rules, the antibot, the JS
+  check and uniqueness. A click id from its pool (`test_clicks`) is entered
+  once and forces the stream it was issued for; the snapshot carries the
+  unused ones and the "used" mark is written behind the request. Their
+  statistics are separate only because `s.scope` leaves test campaigns out
+  (`Query.Hide`, unless `campaign_id` names one or `tests=all`), so again: a
+  data endpoint that skips `s.scope` mixes test numbers into real ones. `test`,
+  `test_key` and the fork's source are set by fork and sync alone, never by a
+  `PUT`; whatever a sync copies must also be in `forkHash`, or the fork is not
+  told it is outdated.
 - **Landings are whitepages with variables** (`internal/whitepage/landing.go`,
   `internal/engine/landing.go`, `internal/web/landings.go`); their files live
   in `landings/` inside the whitepage directory, so the PHP sandbox needs no
@@ -118,7 +130,7 @@ cd web && npm install && npm run dev  # panel with hot reload at http://localhos
 - **Report and log filters are one grammar, kept in the URL**
   (`web/src/filters.ts`, parsed by `parseQuery` in `internal/web/api_data.go`):
   `f.<dimension>` (repeatable, alternatives), `like.<field>` (contains),
-  `campaign_id`/`stream_id`/`key_id`, `bots`, `ip`, `banned`. Pages do not build their
+  `campaign_id`/`stream_id`/`key_id`, `bots`, `ip`, `banned`, `tests`. Pages do not build their
   own filter bars: they list field ids from the catalogue in
   `web/src/components/Filters.tsx` and send `urlFilterParams(sp)`. A new
   dimension in `events.dims` is filterable at once; give it a catalogue entry

@@ -478,6 +478,13 @@ func (s *Server) validateCampaign(ctx context.Context, c *model.Campaign, old *m
 	} else {
 		c.Token = old.Token
 	}
+	// A campaign is a test one from its fork on, and only a sync moves what it
+	// was forked from.
+	if old == nil {
+		c.Test, c.TestKey, c.SourceID, c.SourceHash = false, "", nil, ""
+	} else {
+		c.Test, c.TestKey, c.SourceID, c.SourceHash = old.Test, old.TestKey, old.SourceID, old.SourceHash
+	}
 	return nil
 }
 
@@ -561,8 +568,9 @@ func (s *Server) validateStream(ctx context.Context, st *model.Stream, old *mode
 		return bad("name is required")
 	}
 	if old != nil {
-		st.CampaignID = old.CampaignID
+		st.CampaignID, st.SourceID = old.CampaignID, old.SourceID
 	} else {
+		st.SourceID = nil
 		if _, err := s.campaign(ctx, st.CampaignID, model.AccessEdit); err != nil {
 			return err
 		}
@@ -769,7 +777,7 @@ func (s *Server) routes(r chi.Router) {
 		return err
 	}
 	mount(s, r, "/campaigns", resource[model.Campaign]{table: "campaigns", order: "id DESC", validate: s.validateCampaign,
-		visible: s.visibleCampaigns, writable: editable, created: s.seedStreams,
+		visible: s.listCampaigns, writable: editable, created: s.seedStreams,
 		deletable: func(ctx context.Context, c *model.Campaign) error {
 			_, err := s.campaign(ctx, c.ID, model.AccessOwner)
 			return err
@@ -779,6 +787,7 @@ func (s *Server) routes(r chi.Router) {
 	s.reportPresetRoutes(r)
 	s.funnelPresetRoutes(r)
 	r.Post("/campaigns/{id}/clone", handler(s.campaignClone))
+	s.testRoutes(r)
 	r.Post("/campaigns/{id}/alias", handler(s.campaignNewAlias))
 	r.Post("/campaigns/{id}/reset-stats", handler(s.campaignResetStats))
 	r.Post("/campaigns/{id}/purge-ips", handler(s.campaignPurgeIPs))
@@ -1157,19 +1166,17 @@ func (s *Server) campaignClone(r *http.Request) (any, error) {
 		c.GroupID = nil // the group is the original owner's, and so is the funnel preset
 		c.FunnelPresetID, c.FunnelPresetRev = nil, 0
 	}
+	// The copy is a campaign of its own, even when made of a test one.
+	c.Test, c.TestKey, c.SourceID, c.SourceHash = false, "", nil, ""
 	if err := store.Insert(ctx, s.st, "campaigns", &c); err != nil {
 		return nil, err
 	}
-	rows, err := s.st.Pool.Query(ctx, "SELECT * FROM streams WHERE campaign_id=$1 ORDER BY position, id", src.ID)
-	if err != nil {
-		return nil, err
-	}
-	streams, err := collect[model.Stream](rows)
+	streams, err := s.streamsOf(ctx, src.ID)
 	if err != nil {
 		return nil, err
 	}
 	for _, st := range streams {
-		st.CampaignID = c.ID
+		st.CampaignID, st.SourceID = c.ID, nil
 		if err := store.Insert(ctx, s.st, "streams", &st); err != nil {
 			return nil, err
 		}
@@ -1188,11 +1195,16 @@ func (s *Server) campaignIntegration(r *http.Request) (any, error) {
 		domain = "YOUR-DOMAIN"
 	}
 	base := "https://" + domain
-	js := fmt.Sprintf(`<script>(function(){var s=document.createElement("script");s.src=%q+"?_url="+encodeURIComponent(location.href)+"&_ref="+encodeURIComponent(document.referrer);s.async=true;document.head.appendChild(s)})();</script>`,
-		base+jsPrefix+c.Alias)
+	// A test campaign answers nothing without its key.
+	direct, jsKey := base+"/"+c.Alias, ""
+	if c.Test {
+		direct, jsKey = direct+"?key="+c.TestKey, `+"&key=`+c.TestKey+`"`
+	}
+	js := fmt.Sprintf(`<script>(function(){var s=document.createElement("script");s.src=%q+"?_url="+encodeURIComponent(location.href)+"&_ref="+encodeURIComponent(document.referrer)%s;s.async=true;document.head.appendChild(s)})();</script>`,
+		base+jsPrefix+c.Alias, jsKey)
 	return map[string]string{
 		"event_url":    base + eventPrefix + "{stage}?cid={click_id}",
-		"direct_url":   base + "/" + c.Alias,
+		"direct_url":   direct,
 		"direct_note":  "Append your own parameters: ?sub1=..&sub2=..&keyword=..",
 		"js":           js,
 		"php":          strings.NewReplacer("__ENDPOINT__", base+phpAPIPath, "__TOKEN__", c.Token).Replace(phpClient),

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { BarChart3, Check, Copy, Eye, Folder, FolderCog, MoreVertical, Pencil, Plus, RefreshCw, Trash2, Users } from 'lucide-react'
+import { BarChart3, Check, Copy, Eye, FlaskConical, Folder, FolderCog, MoreVertical, Pencil, Plus, RefreshCw, Trash2, Users } from 'lucide-react'
 import { del, get, post, put } from '../api'
 import { canEdit, canRead, isOwner, useLoad } from '../hooks'
 import type { Campaign, CampaignGroup, Domain, FunnelPreset, ReportRow, Stream } from '../types'
@@ -30,6 +30,23 @@ export function campaignLink(c: Campaign): string {
   return canRead(c) ? `/campaigns/${c.id}` : `/reports?campaign_id=${c.id}`
 }
 
+/** Marks a test campaign, and one whose source has moved on since the last sync. */
+export function TestBadge({ c }: { c: Campaign }) {
+  if (!c.test) return null
+  return (
+    <>
+      <Badge tone="info" title={t('Test campaign: answers only requests with its key, and its statistics are kept apart')}>
+        {t('test@@campaign')}
+      </Badge>
+      {c.outdated && (
+        <Badge tone="warn" title={t('The campaign it was forked from has changed since the last sync')}>
+          {t('outdated@@fork')}
+        </Badge>
+      )}
+    </>
+  )
+}
+
 /** Badge for campaigns shared with the viewer; nothing for their own. */
 export function AccessBadge({ c }: { c: Campaign }) {
   if (!c.access || c.access === 'owner') return null
@@ -47,7 +64,8 @@ export default function Campaigns() {
   const nav = useNavigate()
   const [range, setRange] = useDateRange()
   const list = useLoad(() => get<Campaign[]>('campaigns'), [])
-  const rep = useLoad(() => loadReport('campaign', range), [range.from, range.to])
+  // Test campaigns show their own numbers in their rows; the totals leave them out.
+  const rep = useLoad(() => loadReport('campaign', range, { tests: 'all' }), [range.from, range.to])
   const streams = useLoad(() => get<Stream[]>('streams'), [])
   const domains = useLoad(() => get<Domain[]>('domains'), [])
   const [q, setQ] = useState('')
@@ -65,7 +83,7 @@ export default function Campaigns() {
   const stats = useMemo(() => new Map<string, ReportRow>((rep.data ?? []).map((r) => [r.key, r])), [rep.data])
   const stat = (c: Campaign) => stats.get(String(c.id))
   // Only campaigns that still exist count towards the totals.
-  const total = useMemo(() => sumRows(all.map((c) => stats.get(String(c.id))).filter((r): r is ReportRow => !!r)), [all, stats])
+  const total = useMemo(() => sumRows(all.filter((c) => !c.test).map((c) => stats.get(String(c.id))).filter((r): r is ReportRow => !!r)), [all, stats])
   const streamCount = useMemo(() => {
     const m = new Map<number, number>()
     for (const st of streams.data ?? []) m.set(st.campaign_id, (m.get(st.campaign_id) ?? 0) + 1)
@@ -115,6 +133,15 @@ export default function Campaigns() {
       toast.err(e)
     }
   }
+  const fork = async (c: Campaign) => {
+    try {
+      const n = await post<Campaign>(`campaigns/${c.id}/fork`)
+      toast.ok(t('Test campaign “{name}” created', { name: n.name }))
+      nav(`/campaigns/${n.id}?tab=test`)
+    } catch (e) {
+      toast.err(e)
+    }
+  }
   const remove = async (c: Campaign) => {
     const ok = await confirmDialog({
       title: t('Delete campaign?'),
@@ -149,6 +176,8 @@ export default function Campaigns() {
       render: (c) => {
         const h = host(c)
         const n = streamCount.get(c.id)
+        // A test campaign answers nothing without its key.
+        const path = c.alias + (c.test && c.test_key ? `?key=${c.test_key}` : '')
         return (
           <div className="camp">
             <div className="camp-title">
@@ -156,6 +185,7 @@ export default function Campaigns() {
                 {c.name}
               </Link>
               {!c.enabled && <span className="tag">{t('paused@@campaign')}</span>}
+              <TestBadge c={c} />
               <AccessBadge c={c} />
               {c.access && c.access !== 'owner' && c.owner_name && <span className="muted small">{t('by {name}@@owner', { name: c.owner_name })}</span>}
             </div>
@@ -167,7 +197,7 @@ export default function Campaigns() {
               )}
               <span className="camp-alias" title={h ? `https://${h}/${c.alias}` : c.alias}>
                 <code className="ellipsis">/{c.alias}</code>
-                <CopyButton text={h ? `https://${h}/${c.alias}` : c.alias} className="icon-btn" title={h ? t('Copy the campaign link') : t('Copy the link ID (no domain yet)')} />
+                <CopyButton text={h ? `https://${h}/${path}` : path} className="icon-btn" title={h ? t('Copy the campaign link') : t('Copy the link ID (no domain yet)')} />
               </span>
               {n !== undefined && <span>{tn(n, '{n} stream', '{n} streams')}</span>}
               <span>{c.rotation === 'weight' ? t('by weight') : t('by position')}</span>
@@ -190,10 +220,10 @@ export default function Campaigns() {
       render: (c) => {
         const v = stat(c)?.clicks ?? 0
         return (
-          <Link className="camp-clicks" to={report(c)} title={t('{share} of all clicks — open the report', { share: ratioPct(v, total.clicks) })} onClick={(e) => e.stopPropagation()}>
+          <Link className="camp-clicks" to={report(c)} title={c.test ? t('Test clicks, not counted in the totals — open the report') : t('{share} of all clicks — open the report', { share: ratioPct(v, total.clicks) })} onClick={(e) => e.stopPropagation()}>
             <span className={'tnum' + (v === 0 ? ' muted' : '')}>{loadingStats ? '·' : fmtInt(v)}</span>
             <span className="share-bar">
-              <span style={{ width: `${total.clicks > 0 ? (v / total.clicks) * 100 : 0}%` }} />
+              <span style={{ width: `${!c.test && total.clicks > 0 ? (v / total.clicks) * 100 : 0}%` }} />
             </span>
           </Link>
         )
@@ -237,6 +267,17 @@ export default function Campaigns() {
                   >
                     <Copy size={14} /> {t('Clone')}
                   </MenuItem>
+                  {!c.test && (
+                    <MenuItem
+                      title={t('Copy this campaign and its streams into a test campaign: it answers only your key, skips the antibot for you, and keeps its statistics apart')}
+                      onClick={() => {
+                        close()
+                        fork(c)
+                      }}
+                    >
+                      <FlaskConical size={14} /> {t('Fork as test')}
+                    </MenuItem>
+                  )}
                   {isOwner(c) && (
                     <>
                       <div className="menu-title">{t('Group')}</div>

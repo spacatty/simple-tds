@@ -172,6 +172,16 @@ CREATE TABLE IF NOT EXISTS report_presets (
   name text NOT NULL, query text NOT NULL DEFAULT '', pinned boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now());
 CREATE INDEX IF NOT EXISTS report_presets_owner ON report_presets(owner_id);
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS test boolean NOT NULL DEFAULT false;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS test_key text NOT NULL DEFAULT '';
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS source_id bigint REFERENCES campaigns(id) ON DELETE SET NULL;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS source_hash text NOT NULL DEFAULT '';
+ALTER TABLE streams ADD COLUMN IF NOT EXISTS source_id bigint REFERENCES streams(id) ON DELETE SET NULL;
+CREATE TABLE IF NOT EXISTS test_clicks (
+  id bigserial PRIMARY KEY, campaign_id bigint NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+  click_id text UNIQUE NOT NULL, stream_id bigint NOT NULL DEFAULT 0, note text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(), used_at timestamptz);
+CREATE INDEX IF NOT EXISTS test_clicks_campaign ON test_clicks(campaign_id);
 `
 
 // OwnedTables are the tables whose rows belong to a user.
@@ -505,4 +515,22 @@ func (s *Store) SetDomainReputation(ctx context.Context, id int64, status string
 
 func (s *Store) SetListState(ctx context.Context, id int64, entries int, lastErr string) {
 	s.Pool.Exec(ctx, "UPDATE ip_lists SET entries=$2, last_error=$3, updated_at=now() WHERE id=$1", id, entries, lastErr)
+}
+
+// ---- test clicks ------------------------------------------------------------
+
+// UnusedTestClicks lists the click ids issued for test campaigns and not
+// entered yet.
+func (s *Store) UnusedTestClicks(ctx context.Context) ([]string, error) {
+	rows, err := s.Pool.Query(ctx, "SELECT click_id FROM test_clicks WHERE used_at IS NULL")
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
+}
+
+// UseTestClick records that an issued click id was entered.
+func (s *Store) UseTestClick(ctx context.Context, clickID string) error {
+	_, err := s.Pool.Exec(ctx, "UPDATE test_clicks SET used_at=now() WHERE click_id=$1 AND used_at IS NULL", clickID)
+	return err
 }

@@ -226,6 +226,38 @@ device → offers, default stream → whitepage or 404.
 Integrations (Campaign → Integration): direct URL, a JS snippet for existing
 pages, and a `tds.php` include for server-side use.
 
+### Test campaigns
+
+To walk a funnel end to end without a fresh IP address and browser for every
+attempt, fork the campaign: ⋯ → **Fork as test**. The copy is a *test
+campaign*:
+
+- It answers only requests that carry its **dev key** (`?key=…`, shown on the
+  campaign's **Test** tab); anyone else gets the 404 of a dead link.
+- A request with the key is a clean first-time visitor: suppress rules, the
+  antibot verdict, the JS check and uniqueness are skipped. The streams still
+  choose by their filters.
+- Its clicks and conversions belong to the test campaign and are left out of
+  every report, log and total that is not about that campaign. Open its own
+  report, or filter by it, to see them.
+
+**Test click IDs** (same tab) are click ids issued in advance, each for one
+stream. Postbacks accept such an id at once, like the id of a real click, so
+services that only report conversions can be pointed at it straight away. With
+the key the id can also be *entered*, once: the visit takes that id and goes to
+its stream whatever the filters say.
+
+```
+https://domain/<alias>?key=<dev key>                          route as usual, new click id
+https://domain/<alias>?key=<dev key>&click_id=<issued id>     that id, that stream
+<script src="https://domain/_j/<alias>.js?key=<dev key>&click_id=<issued id>"></script>
+```
+
+A fork is a snapshot. When its source changes, the test campaign is marked
+**outdated**; **Sync from source** makes its streams, funnel and cost settings
+equal to the source's again. Streams are updated in place, so issued ids and
+collected statistics stay; streams that exist only in the fork are removed.
+
 ### Adding an action type
 
 Actions live in [internal/engine/actions.go](internal/engine/actions.go). Call

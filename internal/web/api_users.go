@@ -150,17 +150,33 @@ func (s *Server) visibleCampaigns(ctx context.Context, all []model.Campaign) []m
 			c.GroupID = nil
 		}
 		if a < model.AccessEdit {
-			c.Token = "" // the integration secret is for editors only
+			c.Token, c.TestKey = "", "" // the integration secrets are for editors only
 		}
 		out = append(out, c)
 	}
 	return out
 }
 
+// hideTests keeps test campaigns out of a selection, unless it is about one
+// of them or asks for them: what a test run records must not show up in the
+// numbers of real traffic.
+func (s *Server) hideTests(q *events.Query) {
+	byID := s.eng.Snap().ByID
+	if c := byID[int64(q.CampaignID)]; q.Tests == "all" || (c != nil && c.Test) {
+		return
+	}
+	for id, c := range byID {
+		if c.Test {
+			q.Hide = append(q.Hide, uint32(id))
+		}
+	}
+}
+
 // scope restricts a report or log query to the campaigns and keys the
 // current user may see. Admins are unrestricted.
 func (s *Server) scope(ctx context.Context, q *events.Query) error {
 	u := userFrom(ctx)
+	s.hideTests(q)
 	if err := s.bannedSets(ctx, u.ID, q); err != nil {
 		return err
 	}

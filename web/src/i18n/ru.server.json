@@ -432,5 +432,16 @@
   "a preset needs at least one stage": "в пресете должен быть хотя бы один этап",
   "the note is too long": "слишком длинная заметка",
   "you can have at most {1} funnel presets": "у вас может быть не больше {1} пресетов воронок",
-  "funnel preset not found": "пресет воронки не найден"
+  "funnel preset not found": "пресет воронки не найден",
+
+  "Test campaign: a request without its key gets a 404, and one with the key skips the antibot, the JS check and uniqueness.": "Тестовая кампания: запрос без её ключа получит 404, а запрос с ключом проходит мимо Антибота, JS-проверки и учёта уникальности.",
+  "a test campaign cannot be forked: fork the campaign it tests": "с тестовой кампании нельзя снять тестовую копию: скопируйте кампанию, которую она проверяет",
+  "this is not a test campaign": "это не тестовая кампания",
+  "the campaign this one was forked from no longer exists": "исходной кампании больше не существует",
+  "the source campaign is no longer shared with you": "у вас больше нет доступа к исходной кампании",
+  "choose a stream of this campaign": "выберите поток этой кампании",
+  "this stream is disabled: a click id issued for it could not be entered": "этот поток выключен: войти с выпущенным для него ID клика не получится",
+  "at most {1} click ids at a time": "не больше {1} ID кликов за раз",
+  "a test campaign keeps at most {1} click ids — delete the ones you no longer need": "тестовая кампания хранит не больше {1} ID кликов — удалите те, что больше не нужны",
+  "unknown value of the tests filter": "неизвестное значение фильтра tests"
 }

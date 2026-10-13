@@ -170,33 +170,51 @@ func (e *Engine) jsCheck(v *Visit, snap *Snapshot) (passed bool, cookies []*http
 // Process routes one visit through its campaign and records the click.
 func (e *Engine) Process(in *Input) *Result {
 	snap := e.Snap()
-	// Before anything else: a suppressed source costs no lookups, takes no
-	// uniqueness slot and leaves no click behind.
-	if rule := in.Campaign.suppressed(in.IP.Unmap(), in.Referer); rule != nil {
+	c := in.Campaign
+	var test *testEntry
+	if c.Test {
+		// A test campaign answers its key and nobody else, suppressed or not.
+		if test = e.testEntry(in, snap); test == nil {
+			res := notFound()
+			res.NoLog = true
+			return res
+		}
+	} else if rule := c.suppressed(in.IP.Unmap(), in.Referer); rule != nil {
+		// Before anything else: a suppressed source costs no lookups, takes no
+		// uniqueness slot and leaves no click behind.
 		e.suppressed(in, rule)
 		res := notFound()
 		res.NoLog = true
 		return res
 	}
 	v := e.newVisit(in, snap)
-	c := in.Campaign
 
 	var passed bool
 	var cookies []*http.Cookie
-	if !v.Verdict.Bot {
+	switch {
+	case test != nil:
+		// The tester is a clean visitor seen for the first time, every time:
+		// no verdict, no JS check, no uniqueness slot taken.
+		v.Verdict, v.Unique, passed = antibot.Verdict{}, true, true
+	case !v.Verdict.Bot:
 		passed, cookies = e.jsCheck(v, snap)
 	}
 	for _, p := range internalParams {
 		delete(v.Query, p)
 	}
 
-	ttl := time.Duration(c.UniqueHours) * time.Hour
-	if ttl <= 0 {
-		ttl = 24 * time.Hour
+	if test == nil {
+		ttl := time.Duration(c.UniqueHours) * time.Hour
+		if ttl <= 0 {
+			ttl = 24 * time.Hour
+		}
+		v.Unique = e.uniq.first(c.ID, v.IP.String(), v.UA.Raw, ttl, v.Now)
 	}
-	v.Unique = e.uniq.first(c.ID, v.IP.String(), v.UA.Raw, ttl, v.Now)
 
 	stream := c.pick(v, nil)
+	if test != nil && test.stream != nil {
+		stream = test.stream // the one the click id was issued for, whatever its filters say
+	}
 	v.Stream = stream
 
 	// The JS check needs a top-level page load it can interrupt, so it only
@@ -224,6 +242,9 @@ func (e *Engine) Process(in *Input) *Result {
 		streamID, action = stream.ID, stream.ActionType
 	}
 	v.ClickID = e.newClickID(v.Now, c.ID, streamID)
+	if test != nil && test.clickID != "" {
+		v.ClickID, v.clickAt = test.clickID, test.at
+	}
 
 	var res *Result
 	if stream == nil {
@@ -266,8 +287,12 @@ func (e *Engine) record(v *Visit, c *CampaignRT, streamID int64, action string) 
 		params[k] = val
 	}
 	pj, _ := json.Marshal(params)
+	at := v.Now
+	if !v.clickAt.IsZero() {
+		at = v.clickAt
+	}
 	click := &events.Click{
-		TS: v.Now.UTC(), ClickID: v.ClickID, CampaignID: uint32(c.ID), StreamID: uint32(streamID), Domain: v.Domain,
+		TS: at.UTC(), ClickID: v.ClickID, CampaignID: uint32(c.ID), StreamID: uint32(streamID), Domain: v.Domain,
 		IP: v.IP.String(), Country: v.Geo.Country, Region: v.Geo.Region, City: v.Geo.City, ASN: v.Geo.ASN, ISP: v.Geo.ISP,
 		DeviceType: v.UA.DeviceType, OS: v.UA.OS, OSVersion: v.UA.OSVersion, Browser: v.UA.Browser, BrowserVersion: v.UA.BrowserVersion,
 		UA: v.UA.Raw, Lang: v.Lang, Referer: v.Referer, RefDomain: v.RefDomain,
@@ -367,6 +392,9 @@ func (e *Engine) Simulate(ctx context.Context, in SimInput) (*SimResult, error) 
 		}
 	} else {
 		out.Action, out.Note = "no_stream", "No stream matched: the visitor gets a 404."
+	}
+	if c.Test {
+		out.Note = "Test campaign: a request without its key gets a 404, and one with the key skips the antibot, the JS check and uniqueness."
 	}
 	return out, nil
 }

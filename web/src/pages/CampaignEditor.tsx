@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Copy, Download, Eraser, MoreHorizontal, RefreshCw, Save, ShieldX, Trash2 } from 'lucide-react'
+import { ArrowLeft, Copy, Download, Eraser, FlaskConical, MoreHorizontal, RefreshCw, Save, ShieldX, Trash2 } from 'lucide-react'
 import { del, errMsg, get, post, put } from '../api'
 import { canEdit, canRead, isOwner, useLoad, useMeta, useTitle } from '../hooks'
 import type { Campaign, CampaignGroup, Domain, GeoPreset, IntegrationSnippets, Whitepage } from '../types'
@@ -11,12 +11,13 @@ import StreamFunnel from './StreamFunnel'
 import Simulator from './Simulator'
 import Sharing from './Sharing'
 import Stages from './Stages'
-import { AccessBadge } from './Campaigns'
+import { AccessBadge, TestBadge } from './Campaigns'
+import TestMode, { syncFork } from './TestMode'
 import { downloadText } from '../format'
 import { t, ts, tx } from '../i18n'
 import { domainStatus } from './Domains'
 
-type Tab = 'streams' | 'settings' | 'link' | 'funnel' | 'integration' | 'sharing' | 'simulator'
+type Tab = 'streams' | 'settings' | 'link' | 'funnel' | 'integration' | 'sharing' | 'simulator' | 'test'
 const TABS: { value: Tab; label: string }[] = [
   { value: 'streams', label: t('Streams') },
   { value: 'settings', label: t('Settings') },
@@ -25,6 +26,7 @@ const TABS: { value: Tab; label: string }[] = [
   { value: 'integration', label: t('Integration') },
   { value: 'sharing', label: t('Sharing') },
   { value: 'simulator', label: t('Simulator') },
+  { value: 'test', label: t('Test@@tab') },
 ]
 
 interface Form {
@@ -103,7 +105,8 @@ export default function CampaignEditor() {
   const editable = canEdit(campaign)
   const owner = isOwner(campaign)
   // Integration snippets carry the campaign secret (editors only); sharing is the owner's business.
-  const tabs = TABS.filter((t) => (t.value === 'integration' ? editable : t.value === 'sharing' ? owner : true))
+  // The test tab holds the key of a test campaign, which is for editors too.
+  const tabs = TABS.filter((t) => (t.value === 'integration' ? editable : t.value === 'sharing' ? owner : t.value === 'test' ? editable && !!campaign?.test : true))
   // The tab lives in the query (?tab=settings) so reload and Back keep it; /campaigns/1/<tab> links from before still work.
   const wanted = search.get('tab') ?? params.tab ?? 'streams'
   const tab: Tab = tabs.some((t) => t.value === wanted) ? (wanted as Tab) : 'streams'
@@ -200,6 +203,22 @@ export default function CampaignEditor() {
       toast.err(e)
     }
   }
+  const fork = async () => {
+    try {
+      const n = await post<Campaign>(`campaigns/${id}/fork`)
+      await camps.reload()
+      toast.ok(t('Test campaign “{name}” created', { name: n.name }))
+      nav(`/campaigns/${n.id}?tab=test`)
+    } catch (e) {
+      toast.err(e)
+    }
+  }
+  const sync = async () => {
+    if (!campaign || !(await syncFork(campaign))) return
+    // The list says whether the fork is still outdated, and the streams were replaced.
+    await camps.reload()
+    setStatsRev((n) => n + 1)
+  }
   const remove = async () => {
     if (!campaign) return
     if (!(await confirmDialog({ title: t('Delete campaign?'), message: tx('<b>{name}</b> and all of its streams will be deleted and its link stops working. Collected statistics are kept.', { b: (c) => <b>{c}</b>, name: campaign.name }) }))) return
@@ -280,7 +299,8 @@ export default function CampaignEditor() {
     </Field>
   )
 
-  const link = `https://${domain || 'YOUR-DOMAIN'}/${campaign.alias}`
+  // A test campaign answers nothing without its key.
+  const link = `https://${domain || 'YOUR-DOMAIN'}/${campaign.alias}` + (campaign.test && campaign.test_key ? `?key=${campaign.test_key}` : '')
 
   return (
     <div className="ce">
@@ -291,6 +311,7 @@ export default function CampaignEditor() {
           </button>
           <div className="ce-title">
             <h1 className="ellipsis">{form.name || campaign.name}</h1>
+            <TestBadge c={campaign} />
             <AccessBadge c={campaign} />
             {!campaign.enabled && <span className="badge warn" title={t('The campaign link answers 404 until it is enabled')}>{t('disabled@@campaign')}</span>}
           </div>
@@ -318,6 +339,17 @@ export default function CampaignEditor() {
                 >
                   <Copy size={14} /> {t('Clone campaign')}
                 </MenuItem>
+                {!campaign.test && (
+                  <MenuItem
+                    title={t('Copy this campaign and its streams into a test campaign: it answers only your key, skips the antibot for you, and keeps its statistics apart')}
+                    onClick={() => {
+                      close()
+                      fork()
+                    }}
+                  >
+                    <FlaskConical size={14} /> {t('Fork as test')}
+                  </MenuItem>
+                )}
                 {owner && (
                   <>
                     <div className="menu-sep" />
@@ -378,6 +410,16 @@ export default function CampaignEditor() {
             {campaign.owner_name
               ? tx('<b>Read-only.</b> {name} shared this campaign with you for viewing: you can inspect it and use the simulator, but not change anything.', { b: (c) => <b>{c}</b>, name: campaign.owner_name })
               : tx('<b>Read-only.</b> The owner shared this campaign with you for viewing: you can inspect it and use the simulator, but not change anything.', { b: (c) => <b>{c}</b> })}
+          </Notice>
+        )}
+        {editable && campaign.test && campaign.outdated && tab !== 'test' && (
+          <Notice tone="warn">
+            <div className="row gap wrap">
+              <span className="grow">{t('The source campaign has changed since this test campaign last took its streams and funnel from it.')}</span>
+              <button className="btn small" onClick={sync}>
+                <RefreshCw size={13} /> {t('Sync from source')}
+              </button>
+            </div>
           </Notice>
         )}
         {editable && !owner && tab !== 'streams' && (
@@ -457,6 +499,11 @@ export default function CampaignEditor() {
         {tab === 'sharing' && owner && (
           <div className="ce-form">
             <Sharing key={id} campaign={campaign} />
+          </div>
+        )}
+        {tab === 'test' && editable && campaign.test && (
+          <div className="ce-form">
+            <TestMode key={id} campaign={campaign} domain={domain} domainSelect={domainSelect} onChanged={update} onSync={sync} />
           </div>
         )}
         {tab === 'simulator' && (
