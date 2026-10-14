@@ -602,6 +602,7 @@ function EditDomain({ domain, isAdmin, groups, campaigns, onClose, onSaved }: { 
         </div>
         <div className="conn-box-msg">{domain.status_msg ? ts(domain.status_msg) : t('Waiting for the check to finish.')}</div>
       </div>
+      {domain.tls_mode === 'auto' && <CertSection domain={domain} onRetried={onSaved} />}
       <div className="form-grid">
         <Field label={t('Domain name')} help={t('Renaming or changing the TLS mode triggers a new check.')}>
           <input className="input mono" value={name} onChange={(e) => setName(e.target.value)} />
@@ -644,6 +645,86 @@ function EditDomain({ domain, isAdmin, groups, campaigns, onClose, onSaved }: { 
         </>
       )}
     </Modal>
+  )
+}
+
+interface CertInfo {
+  managed: boolean
+  state: 'issued' | 'failed' | 'obtaining' | 'none'
+  account: string
+  ca: string
+  not_after?: string
+  issuer?: string
+  attempts: number
+  last_attempt?: string
+  last_error?: string
+  error_at?: string
+  log: { at: string; level: string; msg: string }[]
+}
+
+const CERT_STATE: Record<CertInfo['state'], { tone: Tone; label: string }> = {
+  issued: { tone: 'ok', label: t('issued@@cert') },
+  failed: { tone: 'err', label: t('failed@@cert') },
+  obtaining: { tone: 'warn', label: t('obtaining…@@cert') },
+  none: { tone: 'neutral', label: t('not managed@@cert') },
+}
+
+/** The Let’s Encrypt certificate of an Auto TLS domain and the log of getting it. */
+function CertSection({ domain, onRetried }: { domain: Domain; onRetried: () => void }) {
+  const cert = useLoad(() => get<CertInfo>(`domains/${domain.id}/cert`), [domain.id])
+  const [showLog, setShowLog] = useState(false)
+  const [busy, run] = useBusy()
+  const c = cert.data
+  useInterval(cert.reload, 5000, !!c && c.state !== 'issued')
+  const retry = () =>
+    run(async () => {
+      try {
+        cert.setData(await post<CertInfo>(`domains/${domain.id}/cert/retry`, {}))
+        toast.ok(t('Certificate requested again'))
+        onRetried()
+      } catch (e) {
+        toast.err(e)
+      }
+    })
+  if (cert.error) return <ErrorBox error={cert.error} retry={cert.reload} />
+  if (!c) return <Skeleton rows={2} />
+  const st = CERT_STATE[c.state]
+  return (
+    <>
+      <div className="section-head">
+        <h4>{t('Certificate')}</h4>
+        <Badge tone={st.tone}>{st.label}</Badge>
+        <span className="grow" />
+        {c.state !== 'issued' && c.managed && (
+          <button className="btn small" disabled={busy} onClick={retry} title={t('Start over now instead of waiting for the next automatic attempt.')}>
+            <RefreshCw size={13} /> {t('Retry now')}
+          </button>
+        )}
+        <button className="btn small" onClick={() => setShowLog((v) => !v)}>
+          {showLog ? t('Hide log') : tn(c.log.length, 'Log ({n} line)', 'Log ({n} lines)')}
+        </button>
+      </div>
+      <div className="cert-facts small">
+        {c.not_after && <span>{t('Valid until {date}', { date: fmtDateTime(c.not_after) })}</span>}
+        {c.issuer && <span>{t('Issuer: {name}', { name: c.issuer })}</span>}
+        {c.account && <span>{t('Account: {name}', { name: c.account })}</span>}
+        {c.ca.includes('staging') && <Badge tone="warn">{t('staging CA')}</Badge>}
+        {c.attempts > 0 && <span>{tn(c.attempts, '{n} attempt', '{n} attempts')}{c.last_attempt ? ', ' + t('last {ago}', { ago: fmtAgo(c.last_attempt) }) : ''}</span>}
+      </div>
+      {c.last_error && c.state !== 'issued' && <div className="field-error cert-error">{c.last_error}</div>}
+      {showLog &&
+        (c.log.length ? (
+          <div className="cert-log mono">
+            {c.log.map((l, i) => (
+              <div key={i} className={'cert-log-line ' + l.level}>
+                <span className="muted">{fmtDateTime(l.at)}</span> {l.msg}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="muted small">{t('Nothing logged since the server started.')}</div>
+        ))}
+    </>
   )
 }
 

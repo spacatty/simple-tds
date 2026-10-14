@@ -771,6 +771,8 @@ func (s *Server) routes(r chi.Router) {
 	r.Post("/domains/bulk-update", handler(s.domainsBulkUpdate))
 	r.Post("/domains/bulk-delete", handler(s.domainsBulkDelete))
 	r.Post("/domains/check", handler(s.domainsCheck))
+	r.Get("/domains/{id}/cert", handler(s.domainCert))
+	r.Post("/domains/{id}/cert/retry", handler(s.domainCertRetry))
 
 	editable := func(ctx context.Context, c *model.Campaign) error {
 		_, err := s.campaign(ctx, c.ID, model.AccessEdit)

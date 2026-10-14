@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -171,9 +172,10 @@ func (s *Server) checkDomain(ctx context.Context, d model.Domain) domainCheck {
 			return done("error", "HTTP: "+short(err))
 		}
 		reached(p)
+		started := time.Now()
 		p, err = s.probe(ctx, "https", d.Name, true)
 		if err != nil {
-			return done("pending", "Reachable; waiting for the certificate (account "+s.certs.account(d.Name)+")")
+			return done(s.certTrouble(d.Name, started, err))
 		}
 		reached(p)
 		if c.proxied {
@@ -195,6 +197,31 @@ func (s *Server) checkDomain(ctx context.Context, d model.Domain) domainCheck {
 		return done("ok", "HTTP OK (HTTPS failed: "+short(errS)+")")
 	}
 	return done("ok", "HTTP OK through proxy (HTTPS failed: "+short(errS)+")")
+}
+
+// certTrouble explains why HTTPS fails on an auto-TLS domain that answers
+// over HTTP: a proxy's PROXY header the listener cannot take, a certificate
+// the CA refuses (with its reason), one still on its way, or one that exists
+// while HTTPS still fails on the way here.
+func (s *Server) certTrouble(name string, since time.Time, err error) (string, string) {
+	if host, sp, ok := s.strayProxySince(since); ok {
+		if sp.refused {
+			return "error", "HTTPS: the proxy at " + host + " sends a PROXY protocol header, but it is not in Settings → Trusted proxies"
+		}
+		return "error", "HTTPS: the proxy at " + host + " sends a PROXY protocol header; turn on Settings → Accept PROXY protocol and add it to Trusted proxies"
+	}
+	ci := s.certs.info(name)
+	switch ci.State {
+	case "issued":
+		return "error", "Certificate issued (valid until " + ci.NotAfter.Format("2006-01-02") + "), but HTTPS fails: " + short(err)
+	case "failed":
+		msg := ci.LastError
+		if len(msg) > 300 {
+			msg = msg[:300]
+		}
+		return "error", "Certificate not issued yet: " + msg + " (attempt " + strconv.Itoa(ci.Attempts) + ", retrying automatically)"
+	}
+	return "pending", "Reachable; waiting for the certificate (account " + ci.Account + ")"
 }
 
 func short(err error) string {

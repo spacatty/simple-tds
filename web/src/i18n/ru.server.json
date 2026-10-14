@@ -99,6 +99,12 @@
   "HTTP OK (HTTPS failed: {1})": "HTTP работает (HTTPS не прошёл: {1})",
   "a proxy forwards the domain here as \"{1}\"; it must pass the original Host header": "прокси передаёт домен сюда под именем «{1}»; он должен сохранять исходный заголовок Host",
   "Certificate: {1} (will retry automatically)": "Сертификат: {1} (повтор произойдёт автоматически)",
+  "HTTPS: the proxy at {1} sends a PROXY protocol header, but it is not in Settings → Trusted proxies": "HTTPS: прокси {1} отправляет заголовок PROXY protocol, но его нет в Настройки → Доверенные прокси",
+  "HTTPS: the proxy at {1} sends a PROXY protocol header; turn on Settings → Accept PROXY protocol and add it to Trusted proxies": "HTTPS: прокси {1} отправляет заголовок PROXY protocol; включите Настройки → Принимать PROXY protocol и добавьте его в доверенные прокси",
+  "Certificate issued (valid until {1}), but HTTPS fails: {2}": "Сертификат выпущен (действует до {1}), но HTTPS не работает: {2}",
+  "Certificate not issued yet: {1} (attempt {2}, retrying automatically)": "Сертификат пока не выпущен: {1} (попытка {2}, повтор произойдёт автоматически)",
+  "the domain does not use Auto TLS": "домен не использует Auto TLS",
+  "the domain already has a certificate, or is not managed yet": "у домена уже есть сертификат, или он ещё не обслуживается",
   "the domain answers, but not from this server (DNS points elsewhere, or a proxy is not forwarding to it)": "домен отвечает, но не с этого сервера (DNS указывает в другое место или прокси не передаёт запросы сюда)",
 
   "not found": "не найдено",

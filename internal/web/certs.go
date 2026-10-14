@@ -5,11 +5,13 @@ import (
 	"crypto/tls"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/caddyserver/certmagic"
+	"go.uber.org/zap"
 	"golang.org/x/net/publicsuffix"
 
 	"simpletds/internal/model"
@@ -36,11 +38,14 @@ type certManager struct {
 	// process-wide, so any issuer can serve them.
 	challenge *certmagic.ACMEIssuer
 	onEvent   func(ctx context.Context, event string, data map[string]any) error
+	// journals keep what happened to each domain's certificate, for the
+	// panel; they outlive a re-registration so the history stays readable.
+	journals map[string]*certJournal
 }
 
 func newCertManager(dataDir string, onEvent func(context.Context, string, map[string]any) error) *certManager {
 	m := &certManager{storage: &certmagic.FileStorage{Path: filepath.Join(dataDir, "certs")},
-		managed: map[string]*managedCert{}, onEvent: onEvent}
+		managed: map[string]*managedCert{}, onEvent: onEvent, journals: map[string]*certJournal{}}
 	var fallback *certmagic.Config
 	m.cache = certmagic.NewCache(certmagic.CacheOptions{
 		GetConfigForCert: func(cert certmagic.Certificate) (*certmagic.Config, error) {
@@ -54,8 +59,11 @@ func newCertManager(dataDir string, onEvent func(context.Context, string, map[st
 			return fallback, nil
 		},
 	})
-	fallback = certmagic.New(m.cache, certmagic.Config{Storage: m.storage})
-	m.challenge = certmagic.NewACMEIssuer(fallback, certmagic.ACMEIssuer{Agreed: true})
+	// The challenge handler serves every domain: its lines are filed by the
+	// name they mention.
+	shared := zap.New(&journalCore{m: m})
+	fallback = certmagic.New(m.cache, certmagic.Config{Storage: m.storage, Logger: shared})
+	m.challenge = certmagic.NewACMEIssuer(fallback, certmagic.ACMEIssuer{Agreed: true, Logger: shared})
 	return m
 }
 
@@ -99,11 +107,15 @@ func (m *certManager) sync(domains map[string]bool, st model.Settings) {
 		if m.managed[name] != nil {
 			continue
 		}
-		cfg := certmagic.New(m.cache, certmagic.Config{Storage: m.storage, OnEvent: m.onEvent})
+		// certmagic and the ACME client log the details of every attempt
+		// (which challenge, what the CA answered); keep them per domain.
+		logger := zap.New(&journalCore{m: m, domain: name})
+		cfg := certmagic.New(m.cache, certmagic.Config{Storage: m.storage, OnEvent: m.event, Logger: logger})
 		email := acmeEmail(name, st)
-		cfg.Issuers = []certmagic.Issuer{certmagic.NewACMEIssuer(cfg, certmagic.ACMEIssuer{CA: ca, Email: email, Agreed: true})}
+		cfg.Issuers = []certmagic.Issuer{certmagic.NewACMEIssuer(cfg, certmagic.ACMEIssuer{CA: ca, Email: email, Agreed: true, Logger: logger})}
 		ctx, cancel := context.WithCancel(context.Background())
 		m.managed[name] = &managedCert{cfg: cfg, email: email, ca: ca, cancel: cancel}
+		m.journalLocked(name).add("info", "managing the certificate with account "+email+" at "+ca)
 		// Async: loads an existing certificate from disk or obtains one,
 		// retrying with backoff while DNS is not ready yet.
 		go func(name string) {
@@ -113,6 +125,32 @@ func (m *certManager) sync(domains map[string]bool, st model.Settings) {
 		}(name)
 		slog.Info("managing certificate", "domain", name, "account", email)
 	}
+	for name := range m.journals {
+		if !domains[name] {
+			delete(m.journals, name)
+		}
+	}
+}
+
+// retry drops a domain still waiting for its first certificate and starts
+// over, instead of waiting out certmagic's backoff after the cause is fixed.
+func (m *certManager) retry(name string, domains map[string]bool, st model.Settings) bool {
+	// The cache lock is taken before ours elsewhere: never under ours.
+	if m.hasCert(name) {
+		return false
+	}
+	m.mu.Lock()
+	mc := m.managed[name]
+	if mc == nil {
+		m.mu.Unlock()
+		return false
+	}
+	mc.cancel()
+	delete(m.managed, name)
+	m.journalLocked(name).add("info", "retry requested from the panel")
+	m.mu.Unlock()
+	m.sync(domains, st)
+	return true
 }
 
 // certificate returns the certificate for a handshake, or nil when the name
@@ -131,6 +169,41 @@ func (m *certManager) certificate(hello *tls.ClientHelloInfo) *tls.Certificate {
 	return cert
 }
 
+// hasCert reports whether a managed certificate for name is in the cache.
+func (m *certManager) hasCert(name string) bool {
+	return m.leaf(name) != nil
+}
+
+func (m *certManager) leaf(name string) *certmagic.Certificate {
+	for _, c := range m.cache.AllMatchingCertificates(name) {
+		if c.Leaf != nil {
+			return &c
+		}
+	}
+	return nil
+}
+
+// event records certmagic's events in the journal before handing them on.
+func (m *certManager) event(ctx context.Context, event string, data map[string]any) error {
+	name, _ := data["identifier"].(string)
+	name = strings.ToLower(name)
+	m.mu.Lock()
+	j := m.journals[name]
+	m.mu.Unlock()
+	if j != nil {
+		switch event {
+		case "cert_obtaining":
+			j.attempt()
+		case "cert_obtained":
+			j.add("info", fmt.Sprintf("certificate obtained from %v", data["issuer"]))
+			j.setError("")
+		case "cert_failed":
+			j.setError(fmt.Sprint(data["error"]))
+		}
+	}
+	return m.onEvent(ctx, event, data)
+}
+
 // account reports the ACME account email a domain is registered under.
 func (m *certManager) account(domain string) string {
 	m.mu.Lock()
@@ -143,6 +216,12 @@ func (m *certManager) account(domain string) string {
 
 // syncCerts applies the current snapshot to the certificate manager.
 func (s *Server) syncCerts() {
+	auto, st := s.autoTLS()
+	s.certs.sync(auto, st)
+}
+
+// autoTLS lists the domains whose certificates the server obtains.
+func (s *Server) autoTLS() (map[string]bool, model.Settings) {
 	snap := s.eng.Snap()
 	auto := map[string]bool{}
 	for name, d := range snap.Domains {
@@ -150,7 +229,7 @@ func (s *Server) syncCerts() {
 			auto[name] = true
 		}
 	}
-	s.certs.sync(auto, snap.Settings)
+	return auto, snap.Settings
 }
 
 // certEvent turns issuance results into domain statuses, so the panel shows
@@ -178,4 +257,31 @@ func (s *Server) certEvent(_ context.Context, event string, data map[string]any)
 		}()
 	}
 	return nil
+}
+
+// domainCert shows the certificate of a domain and what happened to it.
+func (s *Server) domainCert(r *http.Request) (any, error) {
+	d, err := ownedGet[model.Domain](r.Context(), s, "domains", pathID(r))
+	if err != nil {
+		return nil, err
+	}
+	return s.certs.info(d.Name), nil
+}
+
+// domainCertRetry starts issuance over now, e.g. after the proxy in front was
+// fixed, rather than at the end of the current backoff.
+func (s *Server) domainCertRetry(r *http.Request) (any, error) {
+	d, err := ownedGet[model.Domain](r.Context(), s, "domains", pathID(r))
+	if err != nil {
+		return nil, err
+	}
+	if d.TLSMode != model.TLSAuto || !d.Enabled {
+		return nil, bad("the domain does not use Auto TLS")
+	}
+	auto, st := s.autoTLS()
+	if !s.certs.retry(strings.ToLower(d.Name), auto, st) {
+		return nil, conflict("the domain already has a certificate, or is not managed yet")
+	}
+	go s.checkDomains(context.Background(), []int64{d.ID})
+	return s.certs.info(d.Name), nil
 }

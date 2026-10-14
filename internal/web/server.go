@@ -11,6 +11,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"errors"
 	"io"
 	"log/slog"
 	"math/big"
@@ -72,6 +73,10 @@ type Server struct {
 	// probes are the domain check requests on their way, by one-time key.
 	probeMu sync.Mutex
 	probes  map[string]*probeSeen
+	// strays are PROXY protocol headers the HTTPS listener could not accept,
+	// by the address that sent them; see proxyhint.go.
+	strayMu sync.Mutex
+	strays  map[string]strayProxy
 	rep     repState
 	servers []*http.Server
 }
@@ -119,16 +124,36 @@ func selfSigned() (*tls.Certificate, error) {
 type fpConn struct {
 	net.Conn
 	tls *antibot.TLSInfo
+	// stray is told about a PROXY protocol header that reached TLS unparsed
+	// or was refused, which otherwise shows only as a failed handshake.
+	stray   func(net.Conn, bool)
+	sniffed bool
 }
 
-type fpListener struct{ net.Listener }
+func (c *fpConn) Read(b []byte) (int, error) {
+	n, err := c.Conn.Read(b)
+	if !c.sniffed && c.stray != nil {
+		c.sniffed = true
+		if errors.Is(err, proxyproto.ErrSuperfluousProxyHeader) {
+			c.stray(c.Conn, true)
+		} else if n > 0 && isProxyHeader(b[:n]) {
+			c.stray(c.Conn, false)
+		}
+	}
+	return n, err
+}
+
+type fpListener struct {
+	net.Listener
+	stray func(net.Conn, bool)
+}
 
 func (l fpListener) Accept() (net.Conn, error) {
 	c, err := l.Listener.Accept()
 	if err != nil {
 		return nil, err
 	}
-	return &fpConn{Conn: c}, nil
+	return &fpConn{Conn: c, stray: l.stray}, nil
 }
 
 type ctxKey int
@@ -231,7 +256,7 @@ func (s *Server) Run(ctx context.Context) error {
 		}
 		srv := s.newHTTPServer(public)
 		srv.TLSConfig = s.tlsConfig()
-		go func() { errc <- srv.ServeTLS(fpListener{ln}, "", "") }()
+		go func() { errc <- srv.ServeTLS(fpListener{ln, s.noteStrayProxy}, "", "") }()
 		slog.Info("https listening", "addr", s.cfg.HTTPSAddr)
 	}
 	if s.cfg.PanelAddr != "" {

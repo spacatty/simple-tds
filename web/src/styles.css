@@ -6318,6 +6318,37 @@ fieldset.plain:disabled .action-card {
 .conn-box.err .conn-box-msg {
   color: var(--err);
 }
+.cert-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  color: var(--text-2);
+}
+.cert-error {
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+.cert-log {
+  margin: 8px 0 14px;
+  max-height: 260px;
+  overflow: auto;
+  padding: 8px 10px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.cert-log-line {
+  overflow-wrap: anywhere;
+}
+.cert-log-line.warn {
+  color: var(--warn);
+}
+.cert-log-line.error {
+  color: var(--err);
+}
 @media (max-width: 1280px) {
   .dcard,
   .dcards.with-rep .dcard {
