@@ -39,6 +39,15 @@ interface Form {
   note: string
   group_id: number | null
 }
+const DOMAIN_PREF = 'tds_campaign_domain.'
+const readDomainPref = (id: number) => {
+  try {
+    return localStorage.getItem(DOMAIN_PREF + id) ?? ''
+  } catch {
+    return ''
+  }
+}
+
 const formOf = (c: Campaign): Form => ({ name: c.name, rotation: c.rotation, cost_model: c.cost_model, cost_value: c.cost_value, currency: c.currency, unique_hours: c.unique_hours, note: c.note, group_id: c.group_id ?? null })
 
 /** Deletes what a list of addresses left in the campaign: test visits, spam. */
@@ -135,10 +144,18 @@ export default function CampaignEditor() {
 
   // One domain choice shared by the Link and Integration tabs.
   const sortedDomains = useMemo(() => [...(domains.data ?? [])].sort((a, b) => Number(b.status === 'ok') - Number(a.status === 'ok') || a.name.localeCompare(b.name)), [domains.data])
-  const [domain, setDomain] = useState('')
-  useEffect(() => {
-    if (!domain && sortedDomains.length) setDomain((sortedDomains.find((d) => d.enabled && d.status === 'ok') ?? sortedDomains[0]).name)
-  }, [sortedDomains, domain])
+  // Remembered per campaign, so the link shown on return is the one that was copied.
+  const [picked, setPicked] = useState(() => readDomainPref(id))
+  useEffect(() => setPicked(readDomainPref(id)), [id])
+  const domain = sortedDomains.some((d) => d.name === picked) ? picked : ((sortedDomains.find((d) => d.enabled && d.status === 'ok') ?? sortedDomains[0])?.name ?? '')
+  const setDomain = (v: string) => {
+    setPicked(v)
+    try {
+      localStorage.setItem(DOMAIN_PREF + id, v)
+    } catch {
+      /* private mode */
+    }
+  }
 
   const update = (c: Campaign) => camps.setData((all) => (all ?? []).map((x) => (x.id === c.id ? { ...x, ...c, access: x.access, owner_name: x.owner_name } : x)))
 
