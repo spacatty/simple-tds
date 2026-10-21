@@ -6686,3 +6686,131 @@ a.rep-chip:hover {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ---- referrer activity ------------------------------------------------------ */
+.ref-health {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.ref-health-tile {
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-top: 3px solid var(--border);
+}
+.ref-health-tile.active {
+  border-top-color: var(--ok);
+}
+.ref-health-tile.recent {
+  border-top-color: var(--warn);
+}
+.ref-health-tile.dead {
+  border-top-color: var(--err);
+}
+.ref-health-tile:hover {
+  background: var(--hover);
+}
+.ref-health-tile.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+.ref-health-tile .tile-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ref-health-bar {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 2px;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--surface-3);
+}
+.ref-health-bar span {
+  min-width: 3px;
+}
+.tab-count {
+  margin-left: 4px;
+  font-weight: 500;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.lifebar {
+  position: relative;
+  width: 140px;
+  height: 16px;
+  border-radius: 3px;
+  background: var(--surface-3);
+}
+.lifebar-life {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 3px;
+  opacity: 0.55;
+}
+.lifebar-text {
+  position: relative;
+  padding: 0 5px;
+  font-size: 11px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ref-profile {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.lifeline-track {
+  position: relative;
+  height: 12px;
+  border-radius: 6px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.lifeline-life {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 6px;
+}
+/* The time since the last click, hatched up to now. */
+.lifeline-silence {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  background: repeating-linear-gradient(135deg, transparent 0 5px, var(--border-strong) 5px 7px);
+}
+.lifeline-labels {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.lifeline-labels b {
+  display: block;
+  font-size: 11px;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+@media (max-width: 700px) {
+  .ref-health {
+    grid-template-columns: 1fr;
+  }
+}
+.ref-profile .tiles {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+@media (max-width: 700px) {
+  .ref-profile .tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -423,6 +423,20 @@ The **Presets** menu chooses which of them the sidebar lists; Referrers and
 Geo are there to begin with. **Tracking** holds the raw click, conversion and
 postback logs.
 
+**Referrer activity** tracks the life of each referring site rather than its
+volume: when it sent its first and last click, and whether it is still alive.
+A referrer is **Active** while its last click is younger than the idle time
+(24 hours unless you pick 1 hour, 6 hours or 3 days), **Recently dead** after
+that and up to 7 days of silence, and **Dead** beyond. The list shows each
+one's lifespan on a shared time axis, its last 14 days, and its last 24 hours
+against the week before (an arrow marks a referrer that is fading or growing);
+the search forgives typos and abbreviations (`fcbk` finds `facebook.com`).
+Opening a referrer shows its life on one line with the silence since, the
+days it was active and its longest silence, clicks by day, by hour of the day
+and by weekday, its conversions by type, and its top countries, devices,
+systems, browsers, campaigns and pages. The lookback (30 days to all time)
+bounds what is counted, so "first click" means the first one inside it.
+
 They share one row of filters. Each filter is a pill with its name and value;
 a few are always there, **Add filter** offers the rest by subject (routing,
 geo, device, source, quality), and a filter in force is tinted and carries

@@ -449,5 +449,9 @@
   "this stream is disabled: a click id issued for it could not be entered": "этот поток выключен: войти с выпущенным для него ID клика не получится",
   "at most {1} click ids at a time": "не больше {1} ID кликов за раз",
   "a test campaign keeps at most {1} click ids — delete the ones you no longer need": "тестовая кампания хранит не больше {1} ID кликов — удалите те, что больше не нужны",
-  "unknown value of the tests filter": "неизвестное значение фильтра tests"
+  "unknown value of the tests filter": "неизвестное значение фильтра tests",
+  "unknown status": "неизвестный статус",
+  "idle time must be between 1 and 168 hours": "время простоя должно быть от 1 до 168 часов",
+  "choose a referrer": "выберите реферера",
+  "bad days": "некорректное число дней"
 }

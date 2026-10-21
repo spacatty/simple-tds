@@ -20,6 +20,7 @@ import Landings from './pages/Landings'
 import Conversions from './pages/Conversions'
 import Reports from './pages/Reports'
 import TopReport from './pages/TopReport'
+import RefActivity from './pages/RefActivity'
 import Clicks from './pages/Clicks'
 import Antibot from './pages/Antibot'
 import Suppress from './pages/Suppress'
@@ -148,6 +149,7 @@ export default function App() {
             <Route path="/reports/referrers" element={<ToBuiltin view="referrers" />} />
             <Route path="/reports/geo" element={<ToBuiltin view="geo" />} />
             <Route path="/reports/top" element={<TopReport />} />
+            <Route path="/reports/referrer-activity" element={<RefActivity />} />
             <Route path="/clicks" element={<Clicks />} />
             {user.role === 'admin' && <Route path="/antibot" element={<Antibot />} />}
             <Route path="/suppress/ips" element={<Suppress kind="ip" />} />

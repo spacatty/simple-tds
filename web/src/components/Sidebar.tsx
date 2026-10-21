@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
-import { Activity, AppWindow, BarChart3, Bookmark, Check, ChevronDown, ChevronsUpDown, Earth, EyeOff, FileCode2, Globe, KeyRound, LayoutDashboard, LayoutTemplate, Layers, Link2, ListOrdered, LogOut, Menu, MonitorSmartphone, Moon, MousePointerClick, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, ShieldCheck, Split, Sun, Target, Unlink, UserCog, Users as UsersIcon, Webhook } from 'lucide-react'
+import { Activity, AppWindow, BarChart3, Bookmark, Check, ChevronDown, ChevronsUpDown, Earth, EyeOff, FileCode2, Globe, HeartPulse, KeyRound, LayoutDashboard, LayoutTemplate, Layers, Link2, ListOrdered, LogOut, Menu, MonitorSmartphone, Moon, MousePointerClick, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, ShieldCheck, Split, Sun, Target, Unlink, UserCog, Users as UsersIcon, Webhook } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { User } from '../types'
 import type { Theme } from '../hooks'
@@ -61,6 +61,7 @@ const GROUPS: { id: string; label: string; items: Item[] }[] = [
     items: [
       // "end": the other reports live under /reports/ and must not light this one up.
       { to: '/reports', label: t('Breakdown'), icon: BarChart3, end: true },
+      { to: '/reports/referrer-activity', label: t('Referrer activity'), icon: HeartPulse },
       { to: TOP_PATH, label: t('Top lists'), icon: ListOrdered },
     ],
   },

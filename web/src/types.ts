@@ -536,6 +536,53 @@ export interface SplitRow extends ReportRow {
   desktop: number
 }
 
+export type RefStatus = 'active' | 'recent' | 'dead'
+
+/** A referrer domain and the age of its last click (Referrer activity). */
+export interface RefRow {
+  ref: string
+  first: string
+  last: string
+  status: RefStatus
+  /** The first click came within the idle time. */
+  new: boolean
+  clicks: number
+  uniques: number
+  bots: number
+  /** Clicks of the last 24 hours, and of the 7 days before them. */
+  day: number
+  week: number
+  /** Days with at least one click. */
+  days: number
+  conversions: number
+  revenue: number
+  /** Clicks of each of the last 14 days, today last. */
+  spark: number[] | null
+}
+
+export interface RefActivity {
+  rows: RefRow[] | null
+  total: number
+  counts: Record<RefStatus, number>
+}
+
+export interface RefProfile {
+  ref: string
+  first: string
+  last: string
+  clicks: number
+  uniques: number
+  bots: number
+  days: number
+  /** Clicks by hour of the day and by weekday (Monday first), in the viewer's timezone. */
+  hours: number[]
+  weekdays: number[]
+  /** Seconds. */
+  longest_gap: number
+  gap_from: string
+  gap_to: string
+}
+
 export interface GeoInfo {
   country: string
   region: string

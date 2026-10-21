@@ -297,6 +297,45 @@ func (s *Server) dataRoutes(r chi.Router) {
 		})
 	}
 	r.Get("/reports/referrers/urls", referrers(s.ev.ReferrerURLs))
+	r.Get("/reports/referrers/activity", handler(func(r *http.Request) (any, error) {
+		q, err := refQuery(r)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.scope(r.Context(), &q); err != nil {
+			return nil, err
+		}
+		v := r.URL.Query()
+		o := events.RefActivityOpts{Now: time.Now(), Idle: 24 * time.Hour, Search: v.Get("search"), Status: v.Get("status")}
+		if len(o.Search) > maxFilterText {
+			return nil, bad("the filter text is too long")
+		}
+		if !oneOf(o.Status, "", events.RefActive, events.RefRecent, events.RefDead) {
+			return nil, bad("unknown status")
+		}
+		if h := v.Get("idle"); h != "" {
+			n, err := strconv.Atoi(h)
+			if err != nil || n < 1 || n > 24*7 {
+				return nil, bad("idle time must be between 1 and 168 hours")
+			}
+			o.Idle = time.Duration(n) * time.Hour
+		}
+		return s.ev.ReferrerActivity(r.Context(), q, o)
+	}))
+	r.Get("/reports/referrers/profile", handler(func(r *http.Request) (any, error) {
+		q, err := refQuery(r)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.scope(r.Context(), &q); err != nil {
+			return nil, err
+		}
+		ref := r.URL.Query().Get("ref")
+		if ref == "" {
+			return nil, bad("choose a referrer")
+		}
+		return s.ev.ReferrerProfile(r.Context(), ref, q)
+	}))
 	// By any dimension of a click: what the report constructor ranks.
 	r.Get("/reports/split", handler(func(r *http.Request) (any, error) {
 		q, err := parseQuery(r)
@@ -477,6 +516,27 @@ func parseQuery(r *http.Request) (events.Query, error) {
 				return q, bad("the filter text is too long")
 			}
 			q.Like[name] = vals[0]
+		}
+	}
+	return q, nil
+}
+
+// refQuery is parseQuery for the referrer activity pages: their period is
+// days=<n> back from now (0 or absent: all time), since a referrer's age is
+// told from the present, not from the end of a chosen range.
+func refQuery(r *http.Request) (events.Query, error) {
+	q, err := parseQuery(r)
+	if err != nil {
+		return q, err
+	}
+	q.From, q.To = time.Time{}, time.Time{}
+	if d := r.URL.Query().Get("days"); d != "" {
+		n, err := strconv.Atoi(d)
+		if err != nil || n < 0 || n > 3660 {
+			return q, bad("bad days")
+		}
+		if n > 0 {
+			q.From = time.Now().AddDate(0, 0, -n)
 		}
 	}
 	return q, nil
