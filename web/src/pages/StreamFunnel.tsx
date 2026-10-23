@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { AlertTriangle, ArrowRight, BarChart3, ChevronDown, Copy, CornerDownRight, Eye, GripVertical, MoreVertical, MousePointerClick, Pencil, Plus, RefreshCw, ShieldCheck, Trash2, Wallet } from 'lucide-react'
-import { del, get, post, put } from '../api'
+import { AlertTriangle, ArrowRight, BarChart3, ChevronDown, ClipboardCopy, ClipboardPaste, Copy, CopyPlus, CornerDownRight, Eye, GripVertical, MoreVertical, MousePointerClick, Pencil, Plus, RefreshCw, ShieldCheck, Trash2, Wallet } from 'lucide-react'
+import { del, errMsg, get, post, put } from '../api'
 import { canEdit, useLoad, useMeta } from '../hooks'
 import type { ActionConfig, ActionDef, Campaign, Filter, FilterDef, GeoPreset, LandingRef, ReportRow, Stream, StreamPreset, Whitepage } from '../types'
-import { Dropdown, ErrorBox, MenuItem, Skeleton, Toggle, confirmDialog, toast } from '../components/ui'
+import { Dropdown, ErrorBox, Field, MenuItem, Modal, Select, Skeleton, Toggle, confirmDialog, toast } from '../components/ui'
 import { DateRangePicker } from '../components/DateRangePicker'
 import type { DateRange } from '../components/DateRangePicker'
 import StreamEditor, { ACTION_ICONS, draftFromStream, landingPresets, newDraft, presetName, streamBody } from './StreamEditor'
@@ -28,6 +28,36 @@ interface StreamsResp {
 }
 
 const KINDS = ['forced', 'regular', 'default'] as const
+
+/** Stream settings copied to be pasted into another stream, in any campaign. Kept in localStorage so it outlives the page. */
+interface StreamClip {
+  name: string
+  filter_op: string
+  filters: Filter[]
+  action_type: string
+  action_config: ActionConfig
+  js_check: boolean
+  weight: number
+}
+type PasteWhat = 'all' | 'filters' | 'action'
+const CLIP_KEY = 'tds_stream_clip'
+
+function readClip(): StreamClip | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(CLIP_KEY) ?? 'null')
+    return v && typeof v.action_type === 'string' ? v : null
+  } catch {
+    return null
+  }
+}
+
+function pasteBody(c: StreamClip, what: PasteWhat): Partial<Stream> {
+  const filters = { filter_op: c.filter_op, filters: c.filters }
+  const action = { action_type: c.action_type, action_config: c.action_config }
+  if (what === 'filters') return filters
+  if (what === 'action') return action
+  return { ...filters, ...action, js_check: c.js_check, weight: c.weight }
+}
 type Kind = (typeof KINDS)[number]
 
 const LANE: Record<Kind, { title: string; desc: string; empty: string; add: string; addTitle: string }> = {
@@ -85,6 +115,14 @@ export default function StreamFunnel({
   const [funnelFor, setFunnelFor] = useState<{ stream?: Stream } | null>(null)
   const [dragId, setDragId] = useState<number | null>(null)
   const [over, setOver] = useState<{ id: number; after: boolean } | null>(null)
+  const [copying, setCopying] = useState<Stream | null>(null)
+  const [clip, setClip] = useState<StreamClip | null>(readClip)
+  // Copied in another tab: offer it here too.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => e.key === CLIP_KEY && setClip(readClip())
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
 
   const streams = useMemo(() => res.data?.streams ?? [], [res.data])
   const errors = res.data?.errors ?? {}
@@ -156,6 +194,23 @@ export default function StreamFunnel({
     } catch (e) {
       toast.err(e)
     }
+  }
+
+  const copySettings = (s: Stream) => {
+    const c: StreamClip = { name: s.name, filter_op: s.filter_op, filters: s.filters ?? [], action_type: s.action_type, action_config: s.action_config ?? {}, js_check: s.js_check, weight: s.weight }
+    try {
+      localStorage.setItem(CLIP_KEY, JSON.stringify(c))
+    } catch {
+      // Storage blocked: the copy still works on this page.
+    }
+    setClip(c)
+    toast.ok(t('Settings of “{name}” copied — paste them from the menu of another stream', { name: s.name }))
+  }
+
+  const paste = (s: Stream, what: PasteWhat) => {
+    if (!clip) return
+    const ok = what === 'filters' ? t('Filters pasted into “{name}”', { name: s.name }) : what === 'action' ? t('Action pasted into “{name}”', { name: s.name }) : t('Settings pasted into “{name}”', { name: s.name })
+    patch(s, pasteBody(clip, what), ok)
   }
 
   const remove = async (s: Stream) => {
@@ -366,6 +421,10 @@ export default function StreamFunnel({
                       onRename={(name) => patch(s, { name })}
                       onAction={(action_type, action_config, label) => patch(s, { action_type, action_config }, `${s.name}: ${label}`)}
                       onDuplicate={() => duplicate(s)}
+                      onCopyTo={() => setCopying(s)}
+                      onCopySettings={() => copySettings(s)}
+                      clip={clip?.name ?? null}
+                      onPaste={(what) => paste(s, what)}
                       onDelete={() => remove(s)}
                       onStats={() => setStatsFor(s)}
                       onFunnel={() => setFunnelFor({ stream: s })}
@@ -399,6 +458,17 @@ export default function StreamFunnel({
           onPresetsChanged={own.reload}
           onClose={() => setEditing(null)}
           onSaved={onSaved}
+        />
+      )}
+      {copying && (
+        <CopyStream
+          stream={copying}
+          campaign={campaign}
+          campaigns={campaigns.filter(canEdit)}
+          onClose={() => setCopying(null)}
+          onDone={(target) => {
+            if (target === campaign.id) res.reload()
+          }}
         />
       )}
       {statsFor && <StreamStats campaign={campaign} stream={statsFor} range={range} setRange={setRange} onClose={() => setStatsFor(null)} />}
@@ -512,6 +582,10 @@ function StreamCard({
   onRename,
   onAction,
   onDuplicate,
+  onCopyTo,
+  onCopySettings,
+  clip,
+  onPaste,
   onDelete,
   onStats,
   onFunnel,
@@ -543,6 +617,11 @@ function StreamCard({
   onRename: (name: string) => void
   onAction: (type: string, config: ActionConfig, label: string) => void
   onDuplicate: () => void
+  onCopyTo: () => void
+  onCopySettings: () => void
+  /** Name of the stream whose settings were copied, if any. */
+  clip: string | null
+  onPaste: (what: PasteWhat) => void
   onDelete: () => void
   onStats: () => void
   onFunnel: () => void
@@ -804,11 +883,33 @@ function StreamCard({
                 <MenuItem onClick={run(onClicks)}>
                   <MousePointerClick size={14} /> {t('Click log')}
                 </MenuItem>
+                <div className="menu-sep" />
+                {!readOnly && (
+                  <MenuItem onClick={run(onDuplicate)}>
+                    <Copy size={14} /> {t('Duplicate')}
+                  </MenuItem>
+                )}
+                <MenuItem title={t('Copy this stream into another campaign you can edit')} onClick={run(onCopyTo)}>
+                  <CopyPlus size={14} /> {t('Copy to campaign…')}
+                </MenuItem>
+                <MenuItem title={t('Remember the filters, action and options of this stream to paste them into another stream')} onClick={run(onCopySettings)}>
+                  <ClipboardCopy size={14} /> {t('Copy settings')}
+                </MenuItem>
+                {!readOnly && clip !== null && (
+                  <>
+                    <MenuItem title={t('Replace the filters, action, JS check and weight of this stream with those copied from “{name}”', { name: clip })} onClick={run(() => onPaste('all'))}>
+                      <ClipboardPaste size={14} /> {t('Paste settings')}
+                    </MenuItem>
+                    <MenuItem title={t('Replace only the filters, with those copied from “{name}”', { name: clip })} onClick={run(() => onPaste('filters'))}>
+                      <ClipboardPaste size={14} /> {t('Paste filters')}
+                    </MenuItem>
+                    <MenuItem title={t('Replace only the action, with the one copied from “{name}”', { name: clip })} onClick={run(() => onPaste('action'))}>
+                      <ClipboardPaste size={14} /> {t('Paste action')}
+                    </MenuItem>
+                  </>
+                )}
                 {!readOnly && (
                   <>
-                    <MenuItem onClick={run(onDuplicate)}>
-                      <Copy size={14} /> {t('Duplicate')}
-                    </MenuItem>
                     <div className="menu-sep" />
                     <MenuItem danger onClick={run(onDelete)}>
                       <Trash2 size={14} /> {t('Delete')}
@@ -821,5 +922,49 @@ function StreamCard({
         </Dropdown>
       </div>
     </div>
+  )
+}
+
+/** Copies a stream to the end of its lane in a campaign the viewer can edit. */
+function CopyStream({ stream, campaign, campaigns, onClose, onDone }: { stream: Stream; campaign: Campaign; campaigns: Campaign[]; onClose: () => void; onDone: (target: number) => void }) {
+  const others = campaigns.filter((c) => c.id !== campaign.id)
+  const [target, setTarget] = useState(String(others[0]?.id ?? (canEdit(campaign) ? campaign.id : '')))
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const options = campaigns.map((c) => ({ value: String(c.id), label: c.id === campaign.id ? t('{name} (this campaign)', { name: c.name }) : c.name }))
+  const run = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      await post<Stream>(`streams/${stream.id}/copy`, { campaign_id: Number(target) })
+      const name = campaigns.find((c) => String(c.id) === target)?.name ?? ''
+      toast.ok(t('Stream “{stream}” copied to “{campaign}”', { stream: stream.name, campaign: name }))
+      onDone(Number(target))
+      onClose()
+    } catch (e) {
+      setError(errMsg(e))
+      setBusy(false)
+    }
+  }
+  return (
+    <Modal
+      title={t('Copy stream to campaign')}
+      onClose={onClose}
+      footer={
+        <>
+          {error && <div className="field-error grow">{error}</div>}
+          <button className="btn" onClick={onClose}>
+            {t('Cancel')}
+          </button>
+          <button className="btn primary" disabled={busy || !target} onClick={run}>
+            <CopyPlus size={14} /> {busy ? t('Copying…') : t('Copy')}
+          </button>
+        </>
+      }
+    >
+      <Field label={t('Campaign')} help={tx('A copy of <b>{name}</b> with its filters, action and options is added to the end of its lane there. Its statistics stay with this stream.', { b: (c) => <b>{c}</b>, name: stream.name })}>
+        {options.length ? <Select value={target} onChange={setTarget} options={options} /> : <div className="muted">{t('You have no campaign you can edit.')}</div>}
+      </Field>
+    </Modal>
   )
 }

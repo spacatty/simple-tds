@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Copy, Download, Eraser, FlaskConical, MoreHorizontal, RefreshCw, Save, ShieldX, Trash2 } from 'lucide-react'
+import { ArrowLeft, Copy, Download, Eraser, FlaskConical, GitMerge, MoreHorizontal, RefreshCw, Save, ShieldX, Trash2 } from 'lucide-react'
 import { del, errMsg, get, post, put } from '../api'
 import { canEdit, canRead, isOwner, useLoad, useMeta, useTitle } from '../hooks'
 import type { Campaign, CampaignGroup, Domain, GeoPreset, IntegrationSnippets, Whitepage } from '../types'
@@ -95,6 +95,58 @@ function PurgeIPs({ campaign, onClose, onDone }: { campaign: Campaign; onClose: 
   )
 }
 
+/** Takes the funnel, traffic settings and streams of another campaign, keeping this one's name, link and domains. */
+function Inherit({ campaign, campaigns, onClose, onDone }: { campaign: Campaign; campaigns: Campaign[]; onClose: () => void; onDone: (c: Campaign) => void }) {
+  const options = campaigns.filter((c) => c.id !== campaign.id).map((c) => ({ value: String(c.id), label: c.name }))
+  const [source, setSource] = useState(options[0]?.value ?? '')
+  const [settings, setSettings] = useState(true)
+  const [streams, setStreams] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const name = campaigns.find((c) => String(c.id) === source)?.name ?? ''
+  const run = async () => {
+    if (streams && !(await confirmDialog({ title: t('Replace the streams?'), confirmLabel: t('Replace streams'), message: tx('Every stream of <b>{name}</b> is deleted and replaced with a copy of the streams of <b>{source}</b>. Statistics already collected are kept.', { b: (c) => <b>{c}</b>, name: campaign.name, source: name }) }))) return
+    setBusy(true)
+    setError('')
+    try {
+      const n = await post<Campaign>(`campaigns/${campaign.id}/inherit`, { source_id: Number(source), settings, streams })
+      toast.ok(t('Configuration taken from “{name}”', { name }))
+      onDone(n)
+      onClose()
+    } catch (e) {
+      setError(errMsg(e))
+      setBusy(false)
+    }
+  }
+  return (
+    <Modal
+      title={t('Inherit from campaign')}
+      onClose={onClose}
+      footer={
+        <>
+          {error && <div className="field-error grow">{error}</div>}
+          <button className="btn" onClick={onClose}>
+            {t('Cancel')}
+          </button>
+          <button className="btn primary" disabled={busy || !source || (!settings && !streams)} onClick={run}>
+            <GitMerge size={14} /> {busy ? t('Applying…') : t('Inherit')}
+          </button>
+        </>
+      }
+    >
+      <Field label={t('Take from')} help={t('The name, link, domains, group, sharing and statistics of this campaign stay as they are.')}>
+        {options.length ? <Select value={source} onChange={setSource} options={options} /> : <div className="muted">{t('There is no other campaign to take from.')}</div>}
+      </Field>
+      <Field>
+        <Toggle checked={settings} onChange={setSettings} label={t('Funnel and traffic settings: stages, rotation, cost, uniqueness window')} />
+      </Field>
+      <Field>
+        <Toggle checked={streams} onChange={setStreams} label={t('Streams: replace the streams of this campaign with copies')} />
+      </Field>
+    </Modal>
+  )
+}
+
 export default function CampaignEditor() {
   const params = useParams()
   const nav = useNavigate()
@@ -127,6 +179,7 @@ export default function CampaignEditor() {
   // Bumped after the statistics are cleared, so the tabs that show them load again.
   const [statsRev, setStatsRev] = useState(0)
   const [purging, setPurging] = useState(false)
+  const [inheriting, setInheriting] = useState(false)
   useEffect(() => {
     setForm(campaign ? formOf(campaign) : null)
     setFormError('')
@@ -367,6 +420,17 @@ export default function CampaignEditor() {
                     <FlaskConical size={14} /> {t('Fork as test')}
                   </MenuItem>
                 )}
+                {editable && !campaign.test && (
+                  <MenuItem
+                    title={t('Take the funnel, traffic settings and streams of another campaign; the name, link and domains of this one stay')}
+                    onClick={() => {
+                      close()
+                      setInheriting(true)
+                    }}
+                  >
+                    <GitMerge size={14} /> {t('Inherit from campaign…')}
+                  </MenuItem>
+                )}
                 {owner && (
                   <>
                     <div className="menu-sep" />
@@ -404,6 +468,18 @@ export default function CampaignEditor() {
               </div>
             )}
           </Dropdown>
+          {inheriting && (
+            <Inherit
+              campaign={campaign}
+              campaigns={camps.data ?? []}
+              onClose={() => setInheriting(false)}
+              onDone={async (n) => {
+                await camps.reload()
+                setForm(formOf(n))
+                setStatsRev((x) => x + 1)
+              }}
+            />
+          )}
           {purging && <PurgeIPs campaign={campaign} onClose={() => setPurging(false)} onDone={() => setStatsRev((n) => n + 1)} />}
         </header>
       </div>

@@ -453,5 +453,10 @@
   "unknown status": "неизвестный статус",
   "idle time must be between 1 and 168 hours": "время простоя должно быть от 1 до 168 часов",
   "choose a referrer": "выберите реферера",
-  "bad days": "некорректное число дней"
+  "bad days": "некорректное число дней",
+  "choose what to take from the other campaign": "выберите, что взять из другой кампании",
+  "a test campaign takes its configuration from its source: sync it instead": "тестовая кампания берёт конфигурацию из исходной: синхронизируйте её",
+  "choose another campaign": "выберите другую кампанию",
+  "source campaign not found": "исходная кампания не найдена",
+  "stream \"{1}\": {2}": "поток «{1}»: {2}"
 }

@@ -790,6 +790,7 @@ func (s *Server) routes(r chi.Router) {
 	s.funnelPresetRoutes(r)
 	r.Post("/campaigns/{id}/clone", handler(s.campaignClone))
 	s.testRoutes(r)
+	s.streamCopyRoutes(r)
 	r.Post("/campaigns/{id}/alias", handler(s.campaignNewAlias))
 	r.Post("/campaigns/{id}/reset-stats", handler(s.campaignResetStats))
 	r.Post("/campaigns/{id}/purge-ips", handler(s.campaignPurgeIPs))
