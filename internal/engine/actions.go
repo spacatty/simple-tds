@@ -188,10 +188,11 @@ func (v *Visit) macro(name string) (string, bool) {
 	// {event:STAGE} is the URL the page requests to report a browser stage of
 	// the campaign funnel for this very click.
 	if key, ok := strings.CutPrefix(name, "event:"); ok && v.Campaign != nil {
-		st := v.Campaign.Stage(key)
+		f := v.stages()
+		st := f.Stage(key)
 		if st == nil {
 			// An outcome key of a browser stage reports the stage with that outcome.
-			if owner, o := v.Campaign.StageByOutcome(key); o != nil {
+			if owner, o := f.StageByOutcome(key); o != nil {
 				st, key = owner, o.Key
 			}
 		} else {
@@ -407,7 +408,7 @@ func init() {
 	})
 
 	RegisterAction(ActionDef{
-		Type: "campaign", Label: "Send to campaign", Description: "Hand the visit over to another campaign's streams.",
+		Type: HandOverAction, Label: "Send to campaign", Description: "Hand the visit over to another campaign's streams. The click and its conversions stay with this campaign, and go through that campaign's funnel.",
 		Fields: []Field{{Name: "campaign_id", Label: "Campaign", Type: "campaign", Required: true}},
 		Build: func(cfg json.RawMessage, e *Engine) (Handler, error) {
 			var c struct {
@@ -420,7 +421,8 @@ func init() {
 				return nil, errors.New("choose a campaign")
 			}
 			return func(v *Visit) (*Result, error) {
-				target := e.Snap().ByID[c.ID]
+				snap := e.Snap()
+				target := snap.ByID[c.ID]
 				if target == nil || !target.Enabled || !target.UsableBy(v.Campaign.OwnerID) {
 					return nil, fmt.Errorf("campaign %d is not available", c.ID)
 				}
@@ -428,10 +430,17 @@ func init() {
 					return nil, errors.New("campaign redirect loop")
 				}
 				v.depth++
+				// The click id names the source's stream, and a postback finds
+				// the funnel through it: the first hand-over decides, as there.
+				if v.depth == 1 && v.Stream != nil {
+					v.funnel = snap.funnelTarget(v.Campaign, v.Stream.ID)
+				}
 				stream := target.pick(v, nil)
+				v.ServedCampaign, v.ServedStream = target.ID, 0
 				if stream == nil {
 					return notFound(), nil
 				}
+				v.ServedStream = stream.ID
 				return stream.action(v)
 			}, nil
 		},

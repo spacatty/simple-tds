@@ -81,6 +81,12 @@ type Snapshot struct {
 	geoProviders []*extapi.Provider
 	// testClicks are the click ids issued for test campaigns and not entered yet.
 	testClicks map[string]bool
+	// handOver maps every "Send to campaign" stream, enabled or not, to the
+	// campaign it hands visits to; handOrder lists a campaign's such streams
+	// in their order. A postback can arrive long after its stream was
+	// switched off, and its click still converts through that funnel.
+	handOver  map[int64]int64
+	handOrder map[int64][]int64
 	// AdminDomainOK: at least one verified domain serves the panel.
 	AdminDomainOK bool
 }
@@ -180,7 +186,7 @@ func (e *Engine) Reload(ctx context.Context) error {
 		ByID: map[int64]*CampaignRT{}, Whitepages: map[int64]*model.Whitepage{},
 		WhitepageKeys: map[string]*model.Whitepage{}, Landings: map[int64]*model.Landing{}, LandingKeys: map[string]*model.Landing{},
 		landingStreams: map[int64]*StreamRT{}, Keys: map[string]*KeyRT{}, KeyNames: map[uint32]string{},
-		testClicks: make(map[string]bool, len(testClicks))}
+		testClicks: make(map[string]bool, len(testClicks)), handOver: map[int64]int64{}, handOrder: map[int64][]int64{}}
 	for _, id := range testClicks {
 		s.testClicks[id] = true
 	}
@@ -215,6 +221,12 @@ func (e *Engine) Reload(ctx context.Context) error {
 	attachSuppress(s.ByID, rules)
 	for i := range streams {
 		c := s.ByID[streams[i].CampaignID]
+		if c != nil && streams[i].ActionType == HandOverAction {
+			if id := handOverTarget(streams[i].ActionConfig); id != 0 {
+				s.handOver[streams[i].ID] = id
+				s.handOrder[c.ID] = append(s.handOrder[c.ID], streams[i].ID)
+			}
+		}
 		if c == nil || !streams[i].Enabled {
 			continue
 		}
@@ -323,6 +335,12 @@ type Visit struct {
 	// recorded at it, because everything that later looks a click up by its
 	// id (a postback, a funnel) looks around that moment.
 	clickAt time.Time
+
+	// funnel is the campaign whose stages the click converts through, when a
+	// hand-over stream made it another than Campaign. ServedCampaign and
+	// ServedStream are where the hand-over led, for the click row.
+	funnel                       *CampaignRT
+	ServedCampaign, ServedStream int64
 
 	params *ParamNames
 	depth  int

@@ -348,6 +348,7 @@ func (e *Engine) landingVisit(in *LandingInput) (v *Visit, cfg *LandingConfig, p
 	}
 	v.Campaign, v.ClickID, v.blank = camp, c.Click, false
 	v.Stream = &StreamRT{Stream: model.Stream{ID: int64(ref.StreamID)}}
+	v.funnel = snap.funnelTarget(camp, int64(ref.StreamID))
 	v.Referer, v.RefDomain = c.Referer, hostOf(c.Referer)
 	if q, err := url.ParseQuery(c.Query); err == nil {
 		v.Query = q

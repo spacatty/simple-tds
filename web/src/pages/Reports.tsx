@@ -22,7 +22,7 @@ import { t, tn, ts, tx } from '../i18n'
 
 export const GROUP_SECTIONS: [string, string[]][] = [
   [t('Time'), ['total', 'day', 'hour']],
-  [t('Routing'), ['campaign', 'stream', 'landing', 'landing_preset', 'domain', 'action']],
+  [t('Routing'), ['campaign', 'stream', 'served_campaign', 'served_stream', 'landing', 'landing_preset', 'domain', 'action']],
   [t('Geo'), ['country', 'region', 'city', 'isp', 'lang']],
   [t('Device'), ['device_type', 'os', 'browser']],
   [t('Source'), ['ref_domain', 'keyword', 'sub1', 'sub2', 'sub3', 'sub4', 'sub5']],
@@ -33,8 +33,11 @@ const clicksOnly = (name: string) => t('{name} (clicks only)', { name })
 const convOnly = (name: string) => t('{name} (conversions only)', { name })
 const GROUP_NOTE: Record<string, (name: string) => string> = { action: clicksOnly, bot_reason: clicksOnly, key: convOnly, type: convOnly }
 
+// Dimensions whose values are ids the filter panel cannot name by itself.
+const NAMED_DIMS = ['landing', 'landing_preset', 'served_campaign', 'served_stream']
+
 // The order in which "drill into" is offered; the first applicable one is the suggested next step.
-const DRILL_ORDER = ['campaign', 'stream', 'country', 'device_type', 'os', 'browser', 'day', 'hour', 'region', 'city', 'isp', 'lang', 'ref_domain', 'domain', 'keyword', 'sub1', 'sub2', 'sub3', 'sub4', 'sub5', 'action', 'bot_reason', 'key', 'type']
+const DRILL_ORDER = ['campaign', 'stream', 'served_campaign', 'served_stream', 'country', 'device_type', 'os', 'browser', 'day', 'hour', 'region', 'city', 'isp', 'lang', 'ref_domain', 'domain', 'keyword', 'sub1', 'sub2', 'sub3', 'sub4', 'sub5', 'action', 'bot_reason', 'key', 'type']
 
 export default function Reports() {
   const meta = useMeta()
@@ -93,6 +96,10 @@ export default function Reports() {
         return k === '0' ? t('(no campaign)') : camps.data?.find((c) => String(c.id) === k)?.name ?? `#${k}`
       case 'stream':
         return k === '0' ? t('(no stream)') : streams.data?.find((s) => String(s.id) === k)?.name ?? `#${k}`
+      case 'served_campaign':
+        return k === '0' ? t('(not handed over)') : camps.data?.find((c) => String(c.id) === k)?.name ?? `#${k}`
+      case 'served_stream':
+        return k === '0' ? t('(not handed over)') : streams.data?.find((s) => String(s.id) === k)?.name ?? `#${k}`
       case 'landing':
         return k === '0' ? t('(no landing)') : landings.data?.find((l) => String(l.id) === k)?.name ?? `#${k}`
       case 'landing_preset': {
@@ -229,7 +236,7 @@ export default function Reports() {
         campaigns={camps.data}
         streams={streams.data}
         keys={keys.data}
-        names={(dim, v) => (dim === 'landing' || dim === 'landing_preset' ? valueText(dim, v) : undefined)}
+        names={(dim, v) => (NAMED_DIMS.includes(dim) ? valueText(dim, v) : undefined)}
         main={[
           {
             key: 'group',
@@ -246,7 +253,7 @@ export default function Reports() {
           'bots',
           'banned',
         ]}
-        more={['stream', 'domain', 'action', 'region', 'city', 'isp', 'lang', 'browser', 'ref_domain', 'keyword', 'sub1', 'sub2', 'sub3', 'sub4', 'sub5', 'bot_reason', 'key']}
+        more={['stream', 'served_campaign', 'served_stream', 'domain', 'action', 'region', 'city', 'isp', 'lang', 'browser', 'ref_domain', 'keyword', 'sub1', 'sub2', 'sub3', 'sub4', 'sub5', 'bot_reason', 'key']}
       />
 
       <ErrorBox error={rep.error} retry={rep.reload} />

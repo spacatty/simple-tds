@@ -385,8 +385,20 @@ func (s *Server) dataRoutes(r chi.Router) {
 		if err != nil {
 			return nil, err
 		}
-		keys := make([]events.FunnelStage, len(c.Stages))
-		for i, st := range c.Stages {
+		// A source without stages of its own shows the funnel of the campaign
+		// it hands its visits to: that is the one its clicks convert through.
+		stages, from := c.Stages, int64(0)
+		if rt := s.eng.Snap().ByID[c.ID]; rt != nil {
+			if f := s.eng.Snap().ReportFunnel(rt); f != nil && f.ID != c.ID {
+				stages, from = f.Stages, f.ID
+			}
+		}
+		if len(stages) == 0 {
+			// No funnel anywhere: the panel shows the plain click-to-conversion path.
+			return map[string]any{"stages": []model.Stage{}, "rows": nil, "funnel_from": 0}, nil
+		}
+		keys := make([]events.FunnelStage, len(stages))
+		for i, st := range stages {
 			keys[i].Key = st.Key
 			for _, o := range st.Outcomes {
 				keys[i].Outcomes = append(keys[i].Outcomes, o.Key)
@@ -403,7 +415,7 @@ func (s *Server) dataRoutes(r chi.Router) {
 		if err != nil {
 			return nil, bad(err.Error())
 		}
-		return map[string]any{"stages": c.Stages, "rows": rows}, nil
+		return map[string]any{"stages": stages, "rows": rows, "funnel_from": from}, nil
 	}))
 	r.Get("/clicks", handler(func(r *http.Request) (any, error) {
 		q, err := parseQuery(r)

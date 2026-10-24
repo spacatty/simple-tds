@@ -35,7 +35,7 @@
   "If the source fails": "Если источник недоступен",
   "stale serves the last good copy, or an empty response if there is none.": "stale отдаёт последнюю удачную копию или пустой ответ, если её нет.",
   "Send to campaign": "Отправить в кампанию",
-  "Hand the visit over to another campaign's streams.": "Передать визит потокам другой кампании.",
+  "Hand the visit over to another campaign's streams. The click and its conversions stay with this campaign, and go through that campaign's funnel.": "Передать визит потокам другой кампании. Клик и его конверсии остаются в этой кампании и проходят по воронке той кампании.",
   "Campaign": "Кампания",
   "Do nothing": "Ничего не делать",
   "Empty 200 response.": "Пустой ответ 200.",

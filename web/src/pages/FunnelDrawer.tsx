@@ -37,7 +37,7 @@ export interface FunnelStepView {
 
 type StreamRef = { id: number; name: string }
 
-const BREAKDOWNS = ['stream', 'country', 'device_type', 'os', 'browser', 'domain', 'ref_domain', 'keyword', 'sub1', 'sub2', 'sub3', 'sub4', 'sub5']
+const BREAKDOWNS = ['stream', 'served_stream', 'country', 'device_type', 'os', 'browser', 'domain', 'ref_domain', 'keyword', 'sub1', 'sub2', 'sub3', 'sub4', 'sub5']
 
 const share = (part: number, total: number) => (total > 0 ? (part / total) * 100 : 0)
 
@@ -51,22 +51,29 @@ export function stageDone(stage: Stage | undefined, step: FunnelRow['steps'][num
   return outs.reduce((n, o, j) => n + (o.kind === 'ok' ? (step?.outcomes?.[j]?.reached ?? 0) : 0), 0)
 }
 
+interface FunnelReport {
+  stages: Stage[] | null
+  rows: FunnelRow[] | null
+  /** The campaign the stages come from, when a source hands its visits to it; 0 for the campaign's own. */
+  funnel_from: number
+}
+
 /**
  * A campaign's funnel for a period, as a list of steps. With stages it is the
- * campaign's own funnel; without them, the plain path from click to conversion.
+ * campaign's own funnel, or the one of the campaign it sends its visits to;
+ * without them, the plain path from click to conversion.
  */
 export function useFunnel(campaign: Campaign, range: DateRange, opts: { streamId?: number; strict?: boolean; bots?: string } = {}) {
-  const stages = useMemo(() => campaign.stages ?? [], [campaign.stages])
-  const keys = stages.map((s) => s.key).join(',')
+  const ownKeys = (campaign.stages ?? []).map((s) => s.key).join(',')
   const bots = opts.bots ?? 'exclude'
   const scope = { campaign_id: campaign.id, stream_id: opts.streamId }
   const res = useLoad(async () => {
-    if (stages.length > 0) {
-      const r = await get<{ rows: FunnelRow[] | null }>('reports/funnel', { ...scope, group: 'total', strict: opts.strict ? '1' : '', bots, ...rangeParams(range) })
-      return { row: r.rows?.[0], plain: undefined }
-    }
-    return { row: undefined, plain: (await loadReport('total', range, scope))[0] }
-  }, [campaign.id, keys, opts.streamId, opts.strict, bots, range.from, range.to])
+    // The server knows which funnel applies; a campaign with none gets the plain path.
+    const r = await get<FunnelReport>('reports/funnel', { ...scope, group: 'total', strict: opts.strict ? '1' : '', bots, ...rangeParams(range) })
+    if (r.stages?.length) return { stages: r.stages, from: r.funnel_from, row: r.rows?.[0], plain: undefined }
+    return { stages: [] as Stage[], from: 0, row: undefined, plain: (await loadReport('total', range, scope))[0] }
+  }, [campaign.id, ownKeys, opts.streamId, opts.strict, bots, range.from, range.to])
+  const stages = useMemo(() => res.data?.stages ?? campaign.stages ?? [], [res.data, campaign.stages])
 
   const view = useMemo(() => {
     const clicksLink = (extra: Record<string, string>) => '/clicks' + buildSearch({ range, filters: scope, bots, extra })
@@ -113,7 +120,7 @@ export function useFunnel(campaign: Campaign, range: DateRange, opts: { streamId
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [res.data, stages, range.from, range.to, bots, opts.streamId, campaign.id])
 
-  return { ...view, stages, loading: res.loading, loaded: !!res.data, error: res.error, reload: res.reload }
+  return { ...view, stages, funnelFrom: res.data?.from ?? 0, loading: res.loading, loaded: !!res.data, error: res.error, reload: res.reload }
 }
 
 /** The funnel itself: a block per step, narrowing as clicks drop out, and what was lost between them. */
@@ -266,7 +273,8 @@ export function FunnelView({ campaign, stream, range, setRange, toolbarStart, to
 
   const trend = useLoad(() => (staged ? get<{ rows: FunnelRow[] | null }>('reports/funnel', { ...params, group: bucket }) : Promise.resolve(undefined)), [campaign.id, stream?.id, keys, strict, bots, bucket, range.from, range.to])
   const split = useLoad(() => (staged ? get<{ rows: FunnelRow[] | null }>('reports/funnel', { ...params, group }) : Promise.resolve(undefined)), [campaign.id, stream?.id, keys, strict, bots, group, range.from, range.to])
-  const streams = useLoad(() => (group === 'stream' && staged ? get<Stream[] | null>('streams') : Promise.resolve(null)), [group, staged])
+  const streams = useLoad(() => ((group === 'stream' || group === 'served_stream') && staged ? get<Stream[] | null>('streams') : Promise.resolve(null)), [group, staged])
+  const funnelSource = useLoad(() => (f.funnelFrom > 0 ? get<Campaign[] | null>('campaigns') : Promise.resolve(null)), [f.funnelFrom])
 
   const goalIx = Math.max(0, f.steps.findIndex((s) => s.goal))
   const goal = f.steps[goalIx]
@@ -294,6 +302,7 @@ export function FunnelView({ campaign, stream, range, setRange, toolbarStart, to
   const best = f.stages.map((_, i) => Math.max(0, ...rows.filter((r) => r.clicks >= 5).map((r) => share(r.steps?.[i]?.reached ?? 0, r.clicks))))
   const keyText = (k: string) => {
     if (group === 'stream') return k === '0' ? t('(no stream)') : (streams.data?.find((s) => String(s.id) === k)?.name ?? `#${k}`)
+    if (group === 'served_stream') return k === '0' ? t('(not handed over)') : (streams.data?.find((s) => String(s.id) === k)?.name ?? `#${k}`)
     if (group === 'country') return k ? countryName(k) : t('(unknown)')
     return k === '' ? t('(empty)') : k
   }
@@ -342,6 +351,14 @@ export function FunnelView({ campaign, stream, range, setRange, toolbarStart, to
       </div>
 
       <ErrorBox error={f.error} retry={f.reload} />
+      {f.funnelFrom > 0 && (
+        <Notice>
+          {tx('The stages are those of <a>{name}</a>: this campaign sends its visits there, and its clicks convert through that funnel.', {
+            a: (c) => <Link to={`/campaigns/${f.funnelFrom}?tab=funnel`}>{c}</Link>,
+            name: funnelSource.data?.find((c) => c.id === f.funnelFrom)?.name ?? `#${f.funnelFrom}`,
+          })}
+        </Notice>
+      )}
       {!staged && (
         <Notice>
           {canRead(campaign)

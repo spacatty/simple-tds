@@ -17,6 +17,8 @@ export const DIM_LABELS: Record<string, string> = {
   stream: t('Stream'),
   landing: t('Landing'),
   landing_preset: t('Landing preset'),
+  served_campaign: t('Served by campaign'),
+  served_stream: t('Served by stream'),
   domain: t('Domain'),
   country: t('Country'),
   region: t('Region'),

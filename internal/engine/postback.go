@@ -196,23 +196,29 @@ func (e *Engine) Postback(in *PostbackInput) (int, string) {
 	}
 
 	// Which types exist depends on the campaign, so this waits for attribution.
+	// A click handed to another campaign converts through that one's funnel;
+	// the cost and currency stay the source's.
 	campaign := snap.ByID[int64(conv.CampaignID)]
+	var funnel *CampaignRT
+	if campaign != nil {
+		funnel = snap.FunnelOf(campaign, int64(conv.StreamID))
+	}
 	// An outcome key that is unique in the funnel may come as the type itself.
 	outcomeName := strings.ToLower(names.Get(q, "outcome"))
-	if campaign != nil {
-		if st, o := campaign.StageByOutcome(typ); o != nil {
+	if funnel != nil {
+		if st, o := funnel.StageByOutcome(typ); o != nil {
 			typ, outcomeName = st.Key, o.Key
 			conv.Type = typ
 		}
 	}
 	var known bool
-	if conv.Goal, known = conversionKind(campaign, typ); !known {
+	if conv.Goal, known = conversionKind(funnel, typ); !known {
 		return reject(http.StatusBadRequest, "unknown conversion type "+clip(typ, 32))
 	}
 	// A stage that defines outcomes takes the one the postback names; for any
 	// other stage the parameter is plain data, as it was before outcomes.
 	failed := false
-	if st := stageOf(campaign, typ); st != nil && len(st.Outcomes) > 0 {
+	if st := stageOf(funnel, typ); st != nil && len(st.Outcomes) > 0 {
 		if name := outcomeName; name != "" {
 			o := st.Outcome(name)
 			if o == nil {
@@ -395,16 +401,18 @@ func (e *Engine) Event(in *EventInput) bool {
 	if err != nil || now.Sub(ref.At) > publicEventWindow {
 		return false
 	}
-	c := e.Snap().ByID[int64(ref.CampaignID)]
+	snap := e.Snap()
+	c := snap.ByID[int64(ref.CampaignID)]
 	if c == nil || !c.UsableBy(in.OwnerID) {
 		return false
 	}
-	names := e.Snap().Params
-	st, outcomeName := c.Stage(strings.ToLower(in.Stage)), strings.ToLower(names.Get(in.Params, "outcome"))
+	names := snap.Params
+	f := snap.FunnelOf(c, int64(ref.StreamID))
+	st, outcomeName := f.Stage(strings.ToLower(in.Stage)), strings.ToLower(names.Get(in.Params, "outcome"))
 	if st == nil {
 		// /_e/<outcome key>: the outcome names its stage.
 		var o *model.Outcome
-		if st, o = c.StageByOutcome(strings.ToLower(in.Stage)); o != nil {
+		if st, o = f.StageByOutcome(strings.ToLower(in.Stage)); o != nil {
 			outcomeName = o.Key
 		}
 	}

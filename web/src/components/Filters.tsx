@@ -57,6 +57,8 @@ const BANNED: Record<string, string> = { all: t('Shown'), only: t('Only them') }
 const FIELDS: Record<string, FieldDef> = {
   campaign: { label: t('Campaign'), section: 'routing', kind: 'campaign', param: 'campaign_id' },
   stream: { label: t('Stream'), section: 'routing', kind: 'stream', param: 'stream_id' },
+  served_campaign: values('served_campaign', 'routing'),
+  served_stream: values('served_stream', 'routing'),
   domain: values('domain', 'routing'),
   action: values('action', 'routing', { local: true }),
   country: values('country', 'geo', { local: true }),
@@ -273,6 +275,9 @@ export function FilterPanel({ sp, update, main, more = [], lookup, source = 'cli
     if (dim === 'campaign') return campName(v)
     if (dim === 'stream') return streams?.find((s) => String(s.id) === v)?.name ?? `#${v}`
     if (dim === 'key') return keys?.find((k) => String(k.id) === v)?.name ?? `#${v}`
+    // Where a "Send to campaign" stream led; 0 for clicks that were not handed over.
+    if (dim === 'served_campaign') return v === '0' ? t('(not handed over)') : campName(v)
+    if (dim === 'served_stream') return v === '0' ? t('(not handed over)') : (streams?.find((s) => String(s.id) === v)?.name ?? `#${v}`)
     return undefined
   }
   const listed = (items: string[]) => (items.length > 3 ? `${items.slice(0, 3).join(', ')} +${items.length - 3}` : items.join(', '))
