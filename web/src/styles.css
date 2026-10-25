@@ -7013,6 +7013,14 @@ a.rep-chip:hover {
 .sv .zero {
   color: var(--text-3);
 }
+/* The conversions figure inside the stats block opens the conversion log. */
+.sv .sv-link {
+  cursor: pointer;
+}
+.sv .sv-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 /* Line: three figures in words on one line. */
 .sv-line {
   display: flex;

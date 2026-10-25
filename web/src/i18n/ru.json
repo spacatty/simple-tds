@@ -1319,6 +1319,8 @@
   "Open the campaign's simulator prefilled with this click's IP, User-Agent, language, referrer and query": "Открыть симулятор кампании с IP, User-Agent, языком, реферером и параметрами запроса этого клика",
   "Open the click": "Открыть клик",
   "Open the click log of this campaign": "Открыть лог кликов этой кампании",
+  "Open the conversion log of this campaign": "Открыть лог конверсий этой кампании",
+  "Open the conversion log of this stream": "Открыть лог конверсий этого потока",
   "Open the click log with the same filters": "Открыть лог кликов с теми же фильтрами",
   "Open the full funnel": "Открыть воронку целиком",
   "Open the funnel of this campaign": "Открыть воронку этой кампании",

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertTriangle, ArrowRight, BarChart3, ClipboardCopy, ClipboardPaste, Copy, CopyPlus, CornerDownRight, Eye, MousePointerClick, Pencil, Plus, ShieldCheck, Trash2 } from 'lucide-react'
+import { AlertTriangle, ArrowRight, BarChart3, ClipboardCopy, ClipboardPaste, Copy, CopyPlus, CornerDownRight, Eye, MousePointerClick, Pencil, Plus, ShieldCheck, Target, Trash2 } from 'lucide-react'
 import { del, errMsg, get, post, put } from '../api'
 import { canEdit, useLoad, useMeta } from '../hooks'
 import { useStatsStyle } from '../streamStats'
@@ -251,7 +251,7 @@ export default function StreamFunnel({
   const metrics: Metric[] = [
     { label: t('Clicks'), value: fmtInt(total.clicks), metric: 'm-clicks', to: '/clicks' + buildSearch({ range, filters: scope }), title: t('Open the click log of this campaign'), sub: tn(total.uniques, '{n} unique', '{n} unique', { n: fmtInt(total.uniques) }) },
     { label: t('Bots'), value: ratioPct(total.bots, total.clicks), metric: 'm-bots', sub: tn(total.bots, '{n} click', '{n} clicks', { n: fmtInt(total.bots) }) },
-    { label: t('Conv.'), value: fmtInt(total.conversions), metric: 'm-conv', sub: `CR ${fmtPct(total.cr)}` },
+    { label: t('Conv.'), value: fmtInt(total.conversions), metric: 'm-conv', to: '/conversions' + buildSearch({ range, filters: scope }), title: t('Open the conversion log of this campaign'), sub: `CR ${fmtPct(total.cr)}` },
     { label: t('Revenue'), value: fmtMoney(total.revenue, cur), metric: 'm-conv', sub: t('cost {value}', { value: fmtMoney(total.cost, cur) }) },
     {
       label: t('Profit'),
@@ -367,6 +367,7 @@ export default function StreamFunnel({
                       onStats={() => setStatsFor(s)}
                       onFunnel={() => setFunnelFor({ stream: s })}
                       onClicks={() => nav('/clicks' + buildSearch({ range, filters: { ...scope, stream_id: s.id } }))}
+                      onConversions={() => nav('/conversions' + buildSearch({ range, filters: { ...scope, stream_id: s.id } }))}
                     />
                   ))}
                 </div>
@@ -532,6 +533,7 @@ function StreamCard({
   onStats,
   onFunnel,
   onClicks,
+  onConversions,
 }: {
   stream: Stream
   index: number
@@ -569,6 +571,7 @@ function StreamCard({
   onStats: () => void
   onFunnel: () => void
   onClicks: () => void
+  onConversions: () => void
 }) {
   const [armed, setArmed] = useState(false)
   const [rename, setRename] = useState<string | null>(null)
@@ -781,6 +784,22 @@ function StreamCard({
   const ptone = profit > 0 ? 'pos' : profit < 0 ? 'neg' : 'zero'
   const shareTxt = share >= 10 ? share.toFixed(0) + '%' : share.toFixed(1) + '%'
   const statsTitle = t('Statistics for the selected period — click to open the breakdown')
+  // The conversions figure opens the conversion log; the rest of the block, the breakdown.
+  const convLink = (node: ReactNode, className: string) =>
+    conv ? (
+      <span
+        className={className + ' sv-link'}
+        title={t('Open the conversion log of this stream')}
+        onClick={(e) => {
+          e.stopPropagation()
+          onConversions()
+        }}
+      >
+        {node}
+      </span>
+    ) : (
+      <span className={className}>{node}</span>
+    )
   let statsView: ReactNode
   if (statsStyle === 'line') {
     statsView = (
@@ -788,9 +807,12 @@ function StreamCard({
         <span className={clicks ? '' : 'z'}>
           <b>{q(fmtInt(clicks))}</b> {t('clicks@@unit')}
         </span>
-        <span className={conv ? 'good' : 'z'}>
-          <b>{q(fmtInt(conv))}</b> {t('conv.@@unit')}
-        </span>
+        {convLink(
+          <>
+            <b>{q(fmtInt(conv))}</b> {t('conv.@@unit')}
+          </>,
+          conv ? 'good' : 'z',
+        )}
         {hasMoney && (
           <span className={ptone}>
             <b>{q(signed(profit))}</b>
@@ -803,7 +825,7 @@ function StreamCard({
     statsView = (
       <button className="sv sv-cols" onClick={onStats} title={statsTitle}>
         {col(clicks, fmtInt(clicks))}
-        {col(conv, fmtInt(conv), 'good')}
+        {conv ? convLink(q(fmtInt(conv)), 'sv-c good') : col(conv, fmtInt(conv))}
         {col(stat?.cr ?? 0, fmtPct(stat?.cr ?? 0))}
         {col(rev, fmtMoney(rev, currency))}
         {col(profit, signed(profit), ptone)}
@@ -819,7 +841,7 @@ function StreamCard({
           </small>
         </span>
         <span className="sv-side">
-          <span className={conv ? 'good' : 'z'}>{conv ? t('{n} conv. · CR {cr}', { n: fmtInt(conv), cr: fmtPct(stat?.cr ?? 0) }) : t('no conversions')}</span>
+          {convLink(conv ? t('{n} conv. · CR {cr}', { n: fmtInt(conv), cr: fmtPct(stat?.cr ?? 0) }) : t('no conversions'), conv ? 'good' : 'z')}
           {hasMoney ? (
             <span>
               {rev !== 0 && <span className="z">{fmtMoney(rev, currency)} </span>}<b className={ptone}>{q(signed(profit))}</b>
@@ -840,7 +862,7 @@ function StreamCard({
           </span>
         </span>
         <span className="sv-under">
-          <span className={conv ? 'good' : 'z'}>{t('{n} conv.', { n: fmtInt(conv) })}</span>
+          {convLink(t('{n} conv.', { n: fmtInt(conv) }), conv ? 'good' : 'z')}
           {hasMoney && <b className={ptone}>{q(signed(profit))}</b>}
         </span>
       </button>
@@ -863,6 +885,7 @@ function StreamCard({
           {
             items: [
               { icon: <MousePointerClick size={15} />, label: t('Click log'), onClick: onClicks },
+              { icon: <Target size={15} />, label: t('Conversion log'), onClick: onConversions },
               { icon: <FunnelIcon size={15} />, label: t('Funnel'), onClick: onFunnel },
               { icon: <BarChart3 size={15} />, label: t('Breakdown'), onClick: onStats },
             ],
