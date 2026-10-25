@@ -344,6 +344,9 @@ type Visit struct {
 
 	params *ParamNames
 	depth  int
+	// canChallenge marks a request the JS check could still interrupt: a
+	// direct page load by a browser that has not passed it.
+	canChallenge bool
 }
 
 // Result is an integration-neutral response.

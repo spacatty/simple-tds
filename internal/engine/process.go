@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/netip"
@@ -219,21 +220,9 @@ func (e *Engine) Process(in *Input) *Result {
 
 	// The JS check needs a top-level page load it can interrupt, so it only
 	// applies to direct campaign URLs; other integrations skip it.
-	if stream != nil && stream.JSCheck && !passed {
-		if in.Integration == "direct" && in.Method == http.MethodGet && in.Cookie != nil {
-			if v.Unique {
-				e.uniq.forget(c.ID, v.IP.String(), v.UA.Raw) // the real click is the reload
-			}
-			q := url.Values{}
-			for k, vals := range v.Query {
-				q[k] = vals
-			}
-			q.Set(antibot.ParamNoJS, "1")
-			fallback := (&url.URL{Path: in.Path}).EscapedPath() + "?" + q.Encode()
-			return &Result{Status: http.StatusOK, ContentType: "text/html; charset=utf-8", NoLog: true,
-				Body:   antibot.ChallengePage(e.Signer.Token(v.IP.String(), v.Now), fallback),
-				Header: http.Header{"Cache-Control": {"no-store"}}}
-		}
+	v.canChallenge = !passed && in.Integration == "direct" && in.Method == http.MethodGet && in.Cookie != nil
+	if stream != nil && stream.JSCheck && v.canChallenge {
+		return e.challenge(v, in)
 	}
 
 	var streamID int64
@@ -251,7 +240,11 @@ func (e *Engine) Process(in *Input) *Result {
 		res = notFound()
 	} else {
 		var err error
-		if res, err = stream.action(v); err != nil {
+		if res, err = stream.action(v); errors.Is(err, errNeedJSCheck) {
+			// The campaign it was handed to wants the check: the reload comes
+			// back here and is handed over again, as a browser that passed.
+			return e.challenge(v, in)
+		} else if err != nil {
 			slog.Warn("action failed", "campaign", c.Name, "stream", stream.Name, "err", err)
 			res, action = notFound(), "error"
 		}
@@ -260,6 +253,23 @@ func (e *Engine) Process(in *Input) *Result {
 
 	e.record(v, c, streamID, action)
 	return res
+}
+
+// challenge answers with the JS check page in place of the visit, which is
+// not a click yet.
+func (e *Engine) challenge(v *Visit, in *Input) *Result {
+	if v.Unique {
+		e.uniq.forget(in.Campaign.ID, v.IP.String(), v.UA.Raw) // the real click is the reload
+	}
+	q := url.Values{}
+	for k, vals := range v.Query {
+		q[k] = vals
+	}
+	q.Set(antibot.ParamNoJS, "1")
+	fallback := (&url.URL{Path: in.Path}).EscapedPath() + "?" + q.Encode()
+	return &Result{Status: http.StatusOK, ContentType: "text/html; charset=utf-8", NoLog: true,
+		Body:   antibot.ChallengePage(e.Signer.Token(v.IP.String(), v.Now), fallback),
+		Header: http.Header{"Cache-Control": {"no-store"}}}
 }
 
 func (e *Engine) record(v *Visit, c *CampaignRT, streamID int64, action string) {

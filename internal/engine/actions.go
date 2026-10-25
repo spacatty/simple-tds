@@ -440,6 +440,11 @@ func init() {
 				if stream == nil {
 					return notFound(), nil
 				}
+				// The target's stream keeps its JS check: without it, a source
+				// would let through what the target's own traffic is checked for.
+				if stream.JSCheck && v.canChallenge {
+					return nil, errNeedJSCheck
+				}
 				v.ServedStream = stream.ID
 				return stream.action(v)
 			}, nil

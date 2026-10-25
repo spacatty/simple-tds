@@ -1,6 +1,14 @@
 package engine
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"errors"
+)
+
+// errNeedJSCheck is how a hand-over asks Process for the JS check page: the
+// stream it chose in the target campaign runs the check, and this browser
+// has not passed it yet.
+var errNeedJSCheck = errors.New("the JS check comes first")
 
 // A "Send to campaign" stream lets one campaign serve visits that came to
 // another: sources each have a campaign of their own, and all of them hand

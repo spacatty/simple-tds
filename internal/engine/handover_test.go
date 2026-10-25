@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"testing"
 
 	"simpletds/internal/model"
@@ -50,5 +51,35 @@ func TestHandOverFunnel(t *testing.T) {
 	}
 	if f := s.ReportFunnel(bare); f != nil {
 		t.Errorf("report funnel of a campaign without any: %v", f)
+	}
+}
+
+func TestHandOverJSCheck(t *testing.T) {
+	served := func(*Visit) (*Result, error) { return &Result{Status: 200}, nil }
+	offer := &StreamRT{Stream: model.Stream{ID: 11, JSCheck: true}, action: served}
+	target := &CampaignRT{Campaign: model.Campaign{ID: 1, OwnerID: 10, Enabled: true}, Regular: []*StreamRT{offer},
+		users: map[int64]bool{10: true}}
+	src := &CampaignRT{Campaign: model.Campaign{ID: 2, OwnerID: 10, Enabled: true}, users: map[int64]bool{10: true}}
+	e := &Engine{}
+	e.snap.Store(&Snapshot{ByID: map[int64]*CampaignRT{1: target, 2: src}, handOver: map[int64]int64{21: 1}})
+	h, err := buildAction(HandOverAction, []byte(`{"campaign_id":1}`), e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hand := func(canChallenge bool) (*Visit, *Result, error) {
+		v := &Visit{Campaign: src, Stream: &StreamRT{Stream: model.Stream{ID: 21}}, canChallenge: canChallenge}
+		res, err := h(v)
+		return v, res, err
+	}
+
+	if _, _, err := hand(true); !errors.Is(err, errNeedJSCheck) {
+		t.Errorf("a browser that has not passed: got %v, want the JS check", err)
+	}
+	if v, res, err := hand(false); err != nil || res.Status != 200 || v.ServedStream != 11 {
+		t.Errorf("a browser that passed: %v %v, served stream %d", res, err, v.ServedStream)
+	}
+	offer.JSCheck = false
+	if _, res, err := hand(true); err != nil || res.Status != 200 {
+		t.Errorf("a target stream without the check: %v %v", res, err)
 	}
 }
