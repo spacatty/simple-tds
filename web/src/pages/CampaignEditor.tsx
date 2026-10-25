@@ -1,17 +1,24 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Copy, Download, Eraser, FlaskConical, GitMerge, MoreHorizontal, RefreshCw, Save, ShieldX, Trash2 } from 'lucide-react'
+import { ArrowLeft, BarChart3, Check, ChevronDown, ChevronRight, ChevronsUpDown, Copy, Download, Eraser, FlaskConical, Folder, GitMerge, Link2, MousePointerClick, RefreshCw, Search, Save, Settings, ShieldX, Trash2 } from 'lucide-react'
 import { del, errMsg, get, post, put } from '../api'
 import { canEdit, canRead, isOwner, useLoad, useMeta, useTitle } from '../hooks'
 import type { Campaign, CampaignGroup, Domain, GeoPreset, IntegrationSnippets, Whitepage } from '../types'
-import { Card, CodeBlock, CopyButton, Dropdown, ErrorBox, Field, MenuItem, Modal, Notice, NumberInput, Segmented, Select, Skeleton, Toggle, confirmDialog, toast } from '../components/ui'
-import { useDateRange } from '../components/DateRangePicker'
+import { Card, CodeBlock, CopyButton, Dropdown, ErrorBox, Field, MenuItem, Modal, Notice, NumberInput, Segmented, Select, Skeleton, Toggle, confirmDialog, copyText, toast } from '../components/ui'
+import { DateRangePicker, useDateRange } from '../components/DateRangePicker'
 import StreamFunnel from './StreamFunnel'
+import { STATS_STYLES, useStatsStyle } from '../streamStats'
+import type { StatsStyle } from '../streamStats'
 import Simulator from './Simulator'
 import Sharing from './Sharing'
 import Stages from './Stages'
 import { AccessBadge, TestBadge } from './Campaigns'
+import { ActionMenu } from '../components/ActionMenu'
+import { FunnelIcon } from '../components/icons'
+import FunnelDrawer from './FunnelDrawer'
+import { buildSearch } from '../filters'
+import { useCampaignGroups } from '../campaignGroups'
 import TestMode, { syncFork } from './TestMode'
 import { downloadText } from '../format'
 import { t, ts, tx } from '../i18n'
@@ -28,6 +35,159 @@ const TABS: { value: Tab; label: string }[] = [
   { value: 'simulator', label: t('Simulator') },
   { value: 'test', label: t('Test@@tab') },
 ]
+
+/**
+ * Where the letters of q appear in order inside text, or null. Consecutive letters and
+ * word starts score higher, so "usm" ranks "US mobile" above "Russian sweeps main".
+ */
+function fuzzy(text: string, q: string): { score: number; hits: number[] } | null {
+  const s = text.toLowerCase()
+  const hits: number[] = []
+  let score = 0
+  let from = 0
+  for (const ch of q.toLowerCase()) {
+    if (ch === ' ') continue
+    const i = s.indexOf(ch, from)
+    if (i < 0) return null
+    score += i === from && hits.length ? 3 : 1
+    if (i === 0 || /[\s\-·/_→>]/.test(s[i - 1])) score += 2
+    hits.push(i)
+    from = i + 1
+  }
+  return { score: score - s.length / 100, hits }
+}
+
+function Marked({ text, hits }: { text: string; hits: number[] }) {
+  if (!hits.length) return <>{text}</>
+  const set = new Set(hits)
+  return <>{[...text].map((ch, i) => (set.has(i) ? <mark key={i}>{ch}</mark> : ch))}</>
+}
+
+/** The campaign's name as a picker: every campaign by group, a fuzzy search, arrows and Enter to jump. */
+function CampaignSwitch({ campaign, campaigns, name, onPick }: { campaign: Campaign; campaigns: Campaign[]; name: string; onPick: (c: Campaign) => void }) {
+  const groups = useCampaignGroups() ?? []
+  const [q, setQ] = useState('')
+  const [active, setActive] = useState(0)
+  const list = useRef<HTMLDivElement>(null)
+  const query = q.trim()
+  // Sections in sidebar order, then the ungrouped campaigns; a search keeps the sections but ranks inside them.
+  const sections = useMemo(() => {
+    const readable = campaigns.filter(canRead)
+    const match = (c: Campaign) => (query ? fuzzy(c.name, query) : { score: 0, hits: [] })
+    const build = (title: string | null, items: Campaign[]) => {
+      const rows = items.flatMap((c) => {
+        const m = match(c)
+        return m ? [{ c, ...m }] : []
+      })
+      if (query) rows.sort((a, b) => b.score - a.score)
+      return { title, rows }
+    }
+    const out = groups.map((g) => build(g.name, readable.filter((c) => c.group_id === g.id)))
+    out.push(build(groups.length ? t('No group') : null, readable.filter((c) => !c.group_id || !groups.some((g) => g.id === c.group_id))))
+    return out.filter((s) => s.rows.length > 0)
+  }, [campaigns, groups, query])
+  const flat = sections.flatMap((s) => s.rows)
+  useEffect(() => setActive(0), [query])
+  useEffect(() => {
+    list.current?.querySelector('.ce-pick.active')?.scrollIntoView({ block: 'nearest' })
+  }, [active])
+
+  return (
+    <Dropdown
+      className="ce-switch"
+      chevron={false}
+      title={t('Switch to another campaign')}
+      label={
+        <>
+          <h1 className="ellipsis">{name}</h1>
+          <ChevronsUpDown size={14} />
+        </>
+      }
+    >
+      {(close) => {
+        const pick = (c: Campaign) => {
+          close()
+          setQ('')
+          if (c.id !== campaign.id) onPick(c)
+        }
+        let n = -1
+        return (
+          <div className="ce-switch-menu">
+            <div className="ce-switch-search">
+              <Search size={14} />
+              <input
+                autoFocus
+                value={q}
+                placeholder={t('Jump to a campaign…')}
+                onChange={(e) => setQ(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                    e.preventDefault()
+                    if (flat.length) setActive((a) => (a + (e.key === 'ArrowDown' ? 1 : -1) + flat.length) % flat.length)
+                  } else if (e.key === 'Enter' && flat[active]) {
+                    e.preventDefault()
+                    pick(flat[active].c)
+                  }
+                }}
+              />
+              <kbd>↑↓ ↵</kbd>
+            </div>
+            <div className="ce-switch-list" ref={list}>
+              {flat.length === 0 && <div className="muted pad-s small">{t('No campaigns match')}</div>}
+              {sections.map((s, si) => (
+                <div key={si}>
+                  {s.title && (
+                    <div className="ce-switch-group">
+                      <Folder size={13} /> {s.title}
+                    </div>
+                  )}
+                  {s.rows.map((r) => {
+                    n++
+                    const i = n
+                    return (
+                      <button key={r.c.id} type="button" className={'ce-pick' + (i === active ? ' active' : '') + (r.c.id === campaign.id ? ' current' : '')} onMouseMove={() => i !== active && setActive(i)} onClick={() => pick(r.c)}>
+                        <i className={'dot ' + (r.c.enabled ? 'ok' : 'muted')} />
+                        <span className="grow ellipsis">
+                          <Marked text={r.c.name} hits={r.hits} />
+                        </span>
+                        {r.c.test && <span className="tag info">{t('test@@campaign')}</span>}
+                        {r.c.id === campaign.id && <Check size={14} className="amenu-check" />}
+                      </button>
+                    )
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      }}
+    </Dropdown>
+  )
+}
+
+/** The way stream rows show their figures: one line in the menu that unfolds into the choices. */
+function FiguresPicker({ value, onChange }: { value: StatsStyle; onChange: (v: StatsStyle) => void }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button type="button" className="amenu-item" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <span className="amenu-ico">
+          <BarChart3 size={15} />
+        </span>
+        <span className="amenu-label">{t('Stream figures')}</span>
+        <span className="amenu-value">{STATS_STYLES.find((o) => o.value === value)?.label}</span>
+        <ChevronRight size={14} className={'amenu-caret' + (open ? ' open' : '')} />
+      </button>
+      {open &&
+        STATS_STYLES.map((o) => (
+          <button key={o.value} type="button" className="amenu-item amenu-sub" onClick={() => onChange(o.value)}>
+            <span className="amenu-label">{o.label}</span>
+            {o.value === value && <Check size={14} className="amenu-check" />}
+          </button>
+        ))}
+    </>
+  )
+}
 
 interface Form {
   name: string
@@ -180,6 +340,9 @@ export default function CampaignEditor() {
   const [statsRev, setStatsRev] = useState(0)
   const [purging, setPurging] = useState(false)
   const [inheriting, setInheriting] = useState(false)
+  const [funnelOpen, setFunnelOpen] = useState(false)
+  const [spin, setSpin] = useState(false)
+  const [statsStyle, setStatsStyle] = useStatsStyle()
   useEffect(() => {
     setForm(campaign ? formOf(campaign) : null)
     setFormError('')
@@ -372,130 +535,150 @@ export default function CampaignEditor() {
   // A test campaign answers nothing without its key.
   const link = `https://${domain || 'YOUR-DOMAIN'}/${campaign.alias}` + (campaign.test && campaign.test_key ? `?key=${campaign.test_key}` : '')
 
+  const back = (
+    <button className="icon-btn" onClick={() => leave(() => nav('/campaigns'))} title={t('Back to campaigns')} aria-label={t('Back to campaigns')}>
+      <ArrowLeft size={17} />
+    </button>
+  )
+  const badges = (
+    <>
+      <TestBadge c={campaign} />
+      <AccessBadge c={campaign} />
+    </>
+  )
+  const copyLink = async () => {
+    if (await copyText(link)) toast.ok(t('Campaign link copied'))
+    else toast.err(t('Copy failed: select the text and copy it manually'))
+  }
+  const scope = { campaign_id: campaign.id }
+
   return (
     <div className="ce">
-      <div className="ce-bar">
-        <header className="ce-wrap ce-head">
-          <button className="icon-btn" onClick={() => leave(() => nav('/campaigns'))} title={t('Back to campaigns')} aria-label={t('Back to campaigns')}>
-            <ArrowLeft size={17} />
-          </button>
-          <div className="ce-title">
-            <h1 className="ellipsis">{form.name || campaign.name}</h1>
-            <TestBadge c={campaign} />
-            <AccessBadge c={campaign} />
-            {!campaign.enabled && <span className="badge warn" title={t('The campaign link answers 404 until it is enabled')}>{t('disabled@@campaign')}</span>}
-          </div>
-          <span className="ce-link" title={link}>
-            <span className="ellipsis">{link.replace(/^https:\/\//, '')}</span>
-            <CopyButton text={link} className="icon-btn" title={t('Copy the campaign link')} />
-          </span>
+      <div className="ce-bar ce-tabsbar">
+        <header className="ce-wrap ce-slim">
+          {back}
+          <CampaignSwitch campaign={campaign} campaigns={camps.data ?? []} name={form.name || campaign.name} onPick={(c) => leave(() => nav(`/campaigns/${c.id}${tab === 'streams' ? '' : '?tab=' + tab}`))} />
+          {badges}
+          <span className="ce-slim-sep">/</span>
+          <Dropdown
+            className="ce-tabpick"
+            chevron={false}
+            title={t('Switch section')}
+            label={
+              <>
+                {tabs.find((x) => x.value === tab)?.label}
+                {dirty && tab !== 'settings' && <i className="dot warn" title={t('Unsaved changes')} />}
+                <ChevronDown size={14} />
+              </>
+            }
+          >
+            {(close) => (
+              <div className="menu ce-tabmenu" role="tablist">
+                {tabs.map((x) => (
+                  <MenuItem
+                    key={x.value}
+                    onClick={() => {
+                      close()
+                      goTab(x.value)
+                    }}
+                  >
+                    <span className="grow">{x.label}</span>
+                    {x.value === 'settings' && dirty && <i className="dot warn" title={t('Unsaved changes')} />}
+                    {x.value === tab && <Check size={14} className="amenu-check" />}
+                  </MenuItem>
+                ))}
+              </div>
+            )}
+          </Dropdown>
           <span className="grow" />
-          <Toggle checked={campaign.enabled} disabled={!editable} onChange={setEnabled} label={campaign.enabled ? t('Enabled@@campaign') : t('Disabled@@campaign')} />
           {/* Save belongs to the Settings form, so it only shows there. */}
           {editable && tab === 'settings' && (
             <button className="btn primary" disabled={saving || !dirty || !form.name.trim()} onClick={save} title={dirty ? t('Save the campaign settings') : t('No unsaved settings')}>
               <Save size={14} /> {saving ? t('Saving…') : dirty ? t('Save') : t('Saved')}
             </button>
           )}
-          <Dropdown align="right" className="btn" chevron={false} label={<MoreHorizontal size={15} />} title={t('More actions')}>
-            {(close) => (
-              <div className="menu">
-                <MenuItem
-                  title={t('Copy this campaign and its streams into a new campaign of your own')}
-                  onClick={() => {
-                    close()
-                    clone()
-                  }}
-                >
-                  <Copy size={14} /> {t('Clone campaign')}
-                </MenuItem>
-                {!campaign.test && (
-                  <MenuItem
-                    title={t('Copy this campaign and its streams into a test campaign: it answers only your key, skips the antibot for you, and keeps its statistics apart')}
-                    onClick={() => {
-                      close()
-                      fork()
-                    }}
-                  >
-                    <FlaskConical size={14} /> {t('Fork as test')}
-                  </MenuItem>
-                )}
-                {editable && !campaign.test && (
-                  <MenuItem
-                    title={t('Take the funnel, traffic settings and streams of another campaign; the name, link and domains of this one stay')}
-                    onClick={() => {
-                      close()
-                      setInheriting(true)
-                    }}
-                  >
-                    <GitMerge size={14} /> {t('Inherit from campaign…')}
-                  </MenuItem>
-                )}
-                {owner && (
-                  <>
-                    <div className="menu-sep" />
-                    <MenuItem
-                      danger
-                      title={t('Delete every click and conversion of this campaign, for a clean start after testing')}
-                      onClick={() => {
-                        close()
-                        resetStats()
-                      }}
-                    >
-                      <Eraser size={14} /> {t('Clear statistics')}
-                    </MenuItem>
-                    <MenuItem
-                      danger
-                      title={t('Delete the clicks and conversions that came from certain IP addresses: your own tests, or spam')}
-                      onClick={() => {
-                        close()
-                        setPurging(true)
-                      }}
-                    >
-                      <ShieldX size={14} /> {t('Delete data by IP…')}
-                    </MenuItem>
-                    <MenuItem
-                      danger
-                      onClick={() => {
-                        close()
-                        remove()
-                      }}
-                    >
-                      <Trash2 size={14} /> {t('Delete campaign')}
-                    </MenuItem>
-                  </>
-                )}
-              </div>
-            )}
-          </Dropdown>
-          {inheriting && (
-            <Inherit
-              campaign={campaign}
-              campaigns={camps.data ?? []}
-              onClose={() => setInheriting(false)}
-              onDone={async (n) => {
-                await camps.reload()
-                setForm(formOf(n))
-                setStatsRev((x) => x + 1)
-              }}
-            />
-          )}
-          {purging && <PurgeIPs campaign={campaign} onClose={() => setPurging(false)} onDone={() => setStatsRev((n) => n + 1)} />}
+          {/* One control for the campaign: its state at a glance, and everything else, the switch included, inside. */}
+          <ActionMenu
+            className={'ce-status' + (campaign.enabled ? ' live' : '')}
+            label={
+              <>
+                <Settings size={14} className="ce-status-gear" />
+                <i className="ce-status-dot" />
+                {campaign.enabled ? t('Live@@campaign') : t('Paused@@campaign')}
+                <ChevronDown size={14} />
+              </>
+            }
+            title={t('Campaign controls')}
+            sections={[
+              {
+                items: [],
+                extra: (
+                  <label className={'amenu-switch' + (editable ? '' : ' disabled')}>
+                    <span className="grow">
+                      <b>{campaign.enabled ? t('Campaign is live') : t('Campaign is paused')}</b>
+                      <small>{campaign.enabled ? t('The link sends visitors through the streams') : t('The link answers 404')}</small>
+                    </span>
+                    <Toggle checked={campaign.enabled} disabled={!editable} onChange={setEnabled} />
+                  </label>
+                ),
+              },
+              {
+                items: [
+                  { icon: <Link2 size={15} />, label: t('Copy link'), title: link, onClick: copyLink },
+                  { icon: <MousePointerClick size={15} />, label: t('Click log'), onClick: () => nav('/clicks' + buildSearch({ range, filters: scope })) },
+                  { icon: <FunnelIcon size={15} />, label: t('Funnel'), title: t('How far the clicks of this campaign get'), onClick: () => setFunnelOpen(true) },
+                  { icon: <BarChart3 size={15} />, label: t('Report'), title: t('Reports filtered to this campaign'), onClick: () => nav('/reports' + buildSearch({ range, group: 'stream', filters: scope })) },
+                ],
+                extra: <FiguresPicker value={statsStyle} onChange={setStatsStyle} />,
+              },
+              {
+                items: [
+                  { icon: <Copy size={15} />, label: t('Clone campaign'), title: t('Copy this campaign and its streams into a new campaign of your own'), onClick: clone },
+                  ...(!campaign.test ? [{ icon: <FlaskConical size={15} />, label: t('Fork as test'), title: t('Copy this campaign and its streams into a test campaign: it answers only your key, skips the antibot for you, and keeps its statistics apart'), onClick: fork }] : []),
+                  ...(editable && !campaign.test ? [{ icon: <GitMerge size={15} />, label: t('Inherit from campaign…'), title: t('Take the funnel, traffic settings and streams of another campaign; the name, link and domains of this one stay'), onClick: () => setInheriting(true) }] : []),
+                ],
+              },
+              {
+                items: owner
+                  ? [
+                      { icon: <Eraser size={15} />, label: t('Clear statistics'), title: t('Delete every click and conversion of this campaign, for a clean start after testing'), danger: true, onClick: resetStats },
+                      { icon: <ShieldX size={15} />, label: t('Delete data by IP…'), title: t('Delete the clicks and conversions that came from certain IP addresses: your own tests, or spam'), danger: true, onClick: () => setPurging(true) },
+                      { icon: <Trash2 size={15} />, label: t('Delete campaign'), danger: true, onClick: remove },
+                    ]
+                  : [],
+              },
+            ]}
+          />
+          {/* The period applies to every tab that shows numbers; refresh reloads them. */}
+          <DateRangePicker value={range} onChange={setRange} />
+          <button
+            className="btn"
+            onClick={() => {
+              setStatsRev((n) => n + 1)
+              setSpin(true)
+              window.setTimeout(() => setSpin(false), 700)
+            }}
+            title={t('Refresh')}
+            aria-label={t('Refresh')}
+          >
+            <RefreshCw size={14} className={spin ? 'spin' : ''} />
+          </button>
         </header>
       </div>
-
-      <div className="ce-bar ce-tabsbar">
-        <div className="ce-wrap">
-          <div className="ce-tabs" role="tablist">
-            {tabs.map((x) => (
-              <button key={x.value} role="tab" aria-selected={x.value === tab} className={x.value === tab ? 'active' : ''} onClick={() => goTab(x.value)}>
-                {x.label}
-                {x.value === 'settings' && dirty && <i className="dot warn" title={t('Unsaved changes')} />}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
+      {inheriting && (
+        <Inherit
+          campaign={campaign}
+          campaigns={camps.data ?? []}
+          onClose={() => setInheriting(false)}
+          onDone={async (n) => {
+            await camps.reload()
+            setForm(formOf(n))
+            setStatsRev((x) => x + 1)
+          }}
+        />
+      )}
+      {purging && <PurgeIPs campaign={campaign} onClose={() => setPurging(false)} onDone={() => setStatsRev((n) => n + 1)} />}
+      {funnelOpen && <FunnelDrawer campaign={campaign} range={range} setRange={setRange} onClose={() => setFunnelOpen(false)} />}
 
       <div className={'ce-wrap ce-content' + (tab === 'streams' ? ' wide' : '')}>
         {!editable && (

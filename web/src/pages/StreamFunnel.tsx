@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { DragEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { AlertTriangle, ArrowRight, BarChart3, ChevronDown, ClipboardCopy, ClipboardPaste, Copy, CopyPlus, CornerDownRight, Eye, GripVertical, MoreVertical, MousePointerClick, Pencil, Plus, RefreshCw, ShieldCheck, Trash2, Wallet } from 'lucide-react'
+import type { DragEvent, ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { AlertTriangle, ArrowRight, BarChart3, ClipboardCopy, ClipboardPaste, Copy, CopyPlus, CornerDownRight, Eye, MousePointerClick, Pencil, Plus, ShieldCheck, Trash2 } from 'lucide-react'
 import { del, errMsg, get, post, put } from '../api'
 import { canEdit, useLoad, useMeta } from '../hooks'
+import { useStatsStyle } from '../streamStats'
+import type { StatsStyle } from '../streamStats'
 import type { ActionConfig, ActionDef, Campaign, Filter, FilterDef, GeoPreset, LandingRef, ReportRow, Stream, StreamPreset, Whitepage } from '../types'
 import { Dropdown, ErrorBox, Field, MenuItem, Modal, Select, Skeleton, Toggle, confirmDialog, toast } from '../components/ui'
-import { DateRangePicker } from '../components/DateRangePicker'
 import type { DateRange } from '../components/DateRangePicker'
 import StreamEditor, { ACTION_ICONS, draftFromStream, landingPresets, newDraft, presetName, streamBody } from './StreamEditor'
 import type { RefNames, StreamDraft } from './StreamEditor'
@@ -16,7 +17,10 @@ import { loadReport, sumRows } from '../reports'
 import { buildSearch } from '../filters'
 import { fmtInt, fmtMoney, fmtPct, ratioPct } from '../format'
 import { dimIcon, FunnelIcon } from '../components/icons'
-import { t, ts, tx } from '../i18n'
+import { t, tn, ts, tx } from '../i18n'
+import { StatBar } from '../components/StatBar'
+import type { Metric } from '../components/StatBar'
+import { ActionMenu } from '../components/ActionMenu'
 
 interface StreamsResp {
   streams: Stream[] | null
@@ -117,6 +121,7 @@ export default function StreamFunnel({
   const [over, setOver] = useState<{ id: number; after: boolean } | null>(null)
   const [copying, setCopying] = useState<Stream | null>(null)
   const [clip, setClip] = useState<StreamClip | null>(readClip)
+  const [statsStyle] = useStatsStyle()
   // Copied in another tab: offer it here too.
   useEffect(() => {
     const onStorage = (e: StorageEvent) => e.key === CLIP_KEY && setClip(readClip())
@@ -243,92 +248,28 @@ export default function StreamFunnel({
   const scope = { campaign_id: campaign.id }
 
   const cur = campaign.currency
-  const summary: [string, string, string][] = [
-    [t('Clicks'), fmtInt(total.clicks), 'm-clicks'],
-    [t('Uniques'), fmtInt(total.uniques), 'm-uniq'],
-    [t('Bots'), ratioPct(total.bots, total.clicks), 'm-bots'],
-    [t('Conv.'), fmtInt(total.conversions), 'm-conv'],
-  ]
-  // Money stays out of sight until asked for.
-  const money: [string, string, string?][] = [
-    ['CR', fmtPct(total.cr)],
-    [t('Revenue'), fmtMoney(total.revenue, cur)],
-    [t('Cost'), fmtMoney(total.cost, cur)],
-    [t('Profit'), fmtMoney(total.profit, cur), total.profit > 0 ? 'pos' : total.profit < 0 ? 'neg' : ''],
-    ['ROI', total.cost > 0 ? fmtPct(total.roi, 1) : '—', total.cost > 0 ? (total.roi > 0 ? 'pos' : total.roi < 0 ? 'neg' : '') : ''],
+  const metrics: Metric[] = [
+    { label: t('Clicks'), value: fmtInt(total.clicks), metric: 'm-clicks', to: '/clicks' + buildSearch({ range, filters: scope }), title: t('Open the click log of this campaign'), sub: tn(total.uniques, '{n} unique', '{n} unique', { n: fmtInt(total.uniques) }) },
+    { label: t('Bots'), value: ratioPct(total.bots, total.clicks), metric: 'm-bots', sub: tn(total.bots, '{n} click', '{n} clicks', { n: fmtInt(total.bots) }) },
+    { label: t('Conv.'), value: fmtInt(total.conversions), metric: 'm-conv', sub: `CR ${fmtPct(total.cr)}` },
+    { label: t('Revenue'), value: fmtMoney(total.revenue, cur), metric: 'm-conv', sub: t('cost {value}', { value: fmtMoney(total.cost, cur) }) },
+    {
+      label: t('Profit'),
+      value: fmtMoney(total.profit, cur),
+      metric: total.profit < 0 ? 'm-loss' : 'm-conv',
+      tone: total.profit > 0 ? 'pos' : total.profit < 0 ? 'neg' : '',
+      sub: total.cost > 0 ? `ROI ${fmtPct(total.roi, 1)}` : t('no cost recorded'),
+    },
   ]
 
   return (
     <div className="funnel">
-      <div className="funnel-toolbar">
-        <DateRangePicker value={range} onChange={setRange} />
-        <button className="btn" onClick={() => (res.reload(), stats.reload())} title={t('Refresh the streams and their statistics')} aria-label={t('Refresh')}>
-          <RefreshCw size={14} className={res.loading || stats.loading ? 'spin' : ''} />
-        </button>
-        <span className="grow" />
-        <button className="btn" onClick={() => setFunnelFor({})} title={t('How far the clicks of this campaign get')}>
-          <FunnelIcon size={14} /> {t('Funnel')}
-        </button>
-        <Link className="btn" to={'/clicks' + buildSearch({ range, filters: scope })} title={t('Click log filtered to this campaign')}>
-          <MousePointerClick size={14} /> {t('Click log')}
-        </Link>
-        <Link className="btn" to={'/reports' + buildSearch({ range, group: 'stream', filters: scope })} title={t('Reports filtered to this campaign')}>
-          <BarChart3 size={14} /> {t('Report')}
-        </Link>
-        {!readOnly && (
-          <div className="split-btn">
-            <button className="btn primary" onClick={() => add('regular')}>
-              <Plus size={15} /> {t('Add stream')}
-            </button>
-            <Dropdown align="right" className="btn primary split-caret" chevron={false} label={<ChevronDown size={14} />} title={t('Choose the kind of stream')}>
-              {(close) => (
-                <div className="menu">
-                  {KINDS.map((k) => (
-                    <MenuItem
-                      key={k}
-                      onClick={() => {
-                        close()
-                        add(k)
-                      }}
-                    >
-                      <span className={'lane-dot kind-' + k} /> {LANE[k].add}
-                    </MenuItem>
-                  ))}
-                </div>
-              )}
-            </Dropdown>
-          </div>
-        )}
-      </div>
-
-      <div className="fsum" title={t('This campaign in the selected period')}>
-        {summary.map(([label, value, metric]) => (
-          <div key={label} className={'fsum-item ' + metric}>
-            <span>{label}</span>
-            <b>{stats.loading && !stats.data ? '·' : value}</b>
-          </div>
-        ))}
-        <Dropdown
-          align="right"
-          className="fsum-item fsum-more"
-          title={t('CR, revenue, cost and profit of this campaign in the selected period')}
-          label={
-            <>
-              <Wallet size={15} /> {t('Profit')}
-            </>
-          }
-        >
-          {() => (
-            <div className="fmoney">
-              {money.map(([label, value, tone]) => (
-                <div key={label} className="fmoney-row">
-                  <span>{label}</span>
-                  <b className={tone || undefined}>{stats.loading && !stats.data ? '·' : value}</b>
-                </div>
-              ))}
-            </div>
-          )}
-        </Dropdown>
+      <div className="funnel-sb">
+        <StatBar
+          flat
+          loading={stats.loading && !stats.data}
+          metrics={metrics}
+        />
       </div>
 
       <ErrorBox error={res.error} retry={res.reload} />
@@ -338,25 +279,21 @@ export default function StreamFunnel({
         <Skeleton rows={8} height={18} />
       ) : (
         <div className="lanes">
-          <div className="stable">
-            {/* Column titles for every row below; the same grid as .srow. */}
-            <div className="stable-head" aria-hidden="true">
-              <span />
-              <span />
-              <span>{t('Stream')}</span>
-              <span>{t('Filters')}</span>
-              <span>{t('Action')}</span>
-              <div className="lane-cols">
-                <span>{t('Clicks')}</span>
-                <span>{t('Uniq.')}</span>
-                <span>{t('Bots')}</span>
-                <span>{t('Conv.')}</span>
-                <span>CR</span>
-                <span>{t('Revenue')}</span>
-                <span>{t('Share@@traffic')}</span>
+          <div className="stable l-flow">
+            {statsStyle === 'cols' && (
+              <div className="frow frow-head" aria-hidden="true">
+                <span />
+                <span />
+                <span className="sv sv-cols">
+                  <span>{t('Clicks')}</span>
+                  <span>{t('Conv.')}</span>
+                  <span>CR</span>
+                  <span>{t('Revenue')}</span>
+                  <span>{t('Profit')}</span>
+                </span>
+                <span className="srow-ctl" />
               </div>
-              <span />
-            </div>
+            )}
           {KINDS.map((kind) => {
             const list = byKind[kind]
             return (
@@ -389,6 +326,7 @@ export default function StreamFunnel({
                       key={s.id}
                       stream={s}
                       index={i}
+                      statsStyle={statsStyle}
                       readOnly={readOnly}
                       refNames={refNames}
                       error={errors[String(s.id)]}
@@ -489,7 +427,10 @@ function filterChip(f: Filter, def: FilterDef | undefined) {
   return { label, not, text, vals, flag: !def || def.input === 'none', title: `${label} ${not ? t('is not') : t('is')}${vals.length ? ': ' + vals.join(', ') : ''}${f.bypass ? ` (${t('bypassed@@filter')})` : ''}` }
 }
 
-/** How many filter chips a row shows before the rest fold into "+N more". */
+/** Filters whose values carry an icon (a flag, a device). */
+const ICON_DIMS = ['country', 'device_type', 'os', 'browser']
+
+/** How many filters a row spells out before the rest fold into "+N more". */
 const MAX_CHIPS = 5
 
 /** What the action does to the visitor, for the colour of its icon. */
@@ -558,6 +499,7 @@ export function actionSummary(s: Stream, actions: ActionDef[], whitepages: White
 function StreamCard({
   stream: s,
   index,
+  statsStyle,
   readOnly,
   refNames,
   error,
@@ -593,6 +535,7 @@ function StreamCard({
 }: {
   stream: Stream
   index: number
+  statsStyle: StatsStyle
   readOnly: boolean
   refNames: RefNames
   error?: string
@@ -657,13 +600,6 @@ function StreamCard({
 
   const clicks = stat?.clicks ?? 0
   const share = totalClicks > 0 ? (clicks / totalClicks) * 100 : 0
-  const cell = (label: string, value: string, zero: boolean, title?: string, tone = '') => (
-    <div className={'st' + (zero ? ' zero' : tone ? ' ' + tone : '')} title={title}>
-      <span>{label}</span>
-      <b>{statsLoading ? '·' : value}</b>
-    </div>
-  )
-
   const tone = ACTION_TONE[s.action_type] ?? 'show'
   const actionLabel = (
     <>
@@ -675,252 +611,305 @@ function StreamCard({
   const shown = filters.slice(0, MAX_CHIPS)
   const hidden = filters.slice(MAX_CHIPS)
 
-  return (
-    <div
-      className={'srow' + (s.enabled ? '' : ' off') + (dragging ? ' dragging' : '') + (dropMark ? ' drop-' + dropMark : '') + (error ? ' has-error' : '')}
-      draggable={armed && !readOnly}
-      onDragStart={(e) => {
-        e.dataTransfer.effectAllowed = 'move'
-        e.dataTransfer.setData('text/plain', String(s.id))
-        onDragStart()
-      }}
-      onDragEnd={() => {
-        setArmed(false)
-        onDragEnd()
-      }}
-      onDragOver={onDragOverCard}
-    >
-      <div className={'srow-grip' + (readOnly ? ' fixed' : '')} title={readOnly ? undefined : t('Drag to reorder')} onMouseDown={() => setArmed(!readOnly)} onMouseUp={() => setArmed(false)}>
-        {!readOnly && <GripVertical size={14} />}
-        <span>{index + 1}</span>
-      </div>
-      <Toggle checked={s.enabled} disabled={readOnly} onChange={onToggle} title={s.enabled ? t('Enabled — click to disable') : t('Disabled — click to enable')} />
+  const drag = {
+    draggable: armed && !readOnly,
+    onDragStart: (e: DragEvent<HTMLDivElement>) => {
+      e.dataTransfer.effectAllowed = 'move'
+      e.dataTransfer.setData('text/plain', String(s.id))
+      onDragStart()
+    },
+    onDragEnd: () => {
+      setArmed(false)
+      onDragEnd()
+    },
+    onDragOver: onDragOverCard,
+  }
+  const rowClass = (s.enabled ? '' : ' off') + (dragging ? ' dragging' : '') + (dropMark ? ' drop-' + dropMark : '') + (error ? ' has-error' : '')
+  const arm = { onMouseDown: () => setArmed(!readOnly), onMouseUp: () => setArmed(false) }
 
-      <div className="srow-main">
-        {rename !== null ? (
-          <input
-            className="input input-sm srow-rename"
-            autoFocus
-            value={rename}
-            onChange={(e) => setRename(e.target.value)}
-            onBlur={commitRename}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') commitRename()
-              else if (e.key === 'Escape') setRename(null)
-            }}
-          />
-        ) : (
-          <button className="srow-name ellipsis" onClick={nameClick} onDoubleClick={nameDoubleClick} title={readOnly ? t('View stream') : t('Click to edit · double-click to rename')}>
-            {s.name}
-          </button>
-        )}
-        {(s.js_check || showWeight || error) && (
-          <div className="srow-tags">
-            {s.js_check && (
-              <span className="tag info" title={t('JS check: the browser must run a script before the action')}>
-                <ShieldCheck size={11} /> JS
-              </span>
-            )}
-            {showWeight && (
-              <span className="tag" title={t('Weight and share among enabled regular streams')}>
-                {t('w {weight}', { weight: s.weight })}
-                {s.enabled && totalWeight > 0 ? ` · ${ratioPct(s.weight, totalWeight, 0)}` : ''}
-              </span>
-            )}
-            {error && (
-              <span className="tag err" title={ts(error)}>
-                <AlertTriangle size={11} /> <span className="ellipsis">{ts(error)}</span>
-              </span>
-            )}
-          </div>
-        )}
-      </div>
+  const toggle = <Toggle checked={s.enabled} disabled={readOnly} onChange={onToggle} title={s.enabled ? t('Enabled — click to disable') : t('Disabled — click to enable')} />
+  const nameEl =
+    rename !== null ? (
+      <input
+        className="input input-sm srow-rename"
+        autoFocus
+        value={rename}
+        onChange={(e) => setRename(e.target.value)}
+        onBlur={commitRename}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commitRename()
+          else if (e.key === 'Escape') setRename(null)
+        }}
+      />
+    ) : (
+      <button className="srow-name ellipsis" onClick={nameClick} onDoubleClick={nameDoubleClick} title={readOnly ? t('View stream') : t('Click to edit · double-click to rename')}>
+        {s.name}
+      </button>
+    )
+  const tagsEl = (s.js_check || showWeight || error) && (
+    <div className="srow-tags">
+      {s.js_check && (
+        <span className="tag info" title={t('JS check: the browser must run a script before the action')}>
+          <ShieldCheck size={11} /> JS
+        </span>
+      )}
+      {showWeight && (
+        <span className="tag" title={t('Weight and share among enabled regular streams')}>
+          {t('w {weight}', { weight: s.weight })}
+          {s.enabled && totalWeight > 0 ? ` · ${ratioPct(s.weight, totalWeight, 0)}` : ''}
+        </span>
+      )}
+      {error && (
+        <span className="tag err" title={ts(error)}>
+          <AlertTriangle size={11} /> <span className="ellipsis">{ts(error)}</span>
+        </span>
+      )}
+    </div>
+  )
 
-      <div className="srow-filters">
-        {filters.length === 0 ? (
-          <span className="fchip any">{t('All visitors')}</span>
-        ) : (
-          <>
-            {filters.length > 1 && s.filter_op === 'or' && (
-              <span className="fmode" title={t('Any filter may match')}>
-                {t('any of')}
+  // The same filters read as a sentence: "Country is DE, AT and not Bot".
+  const join = s.filter_op === 'or' ? t('or@@filters') : t('and@@filters')
+  const rule =
+    filters.length === 0 ? (
+      <span className="rtok any">{t('All visitors')}</span>
+    ) : (
+      <>
+        {shown.map((f, i) => {
+          const c = filterChip(f, filterDefs.get(f.type))
+          return (
+            <span key={i} className="rtok-wrap">
+              {i > 0 && <span className="rjoin">{join}</span>}
+              <span className={'rtok' + (c.not ? ' not' : '') + (f.bypass ? ' bypass' : '')} title={c.title}>
+                {c.flag ? (
+                  <>
+                    {c.not && <em>{t('not')} </em>}
+                    <b>{c.label}</b>
+                  </>
+                ) : (
+                  <>
+                    <i>
+                      {c.label} {c.not ? t('is not') : t('is')}{' '}
+                    </i>
+                    {ICON_DIMS.includes(f.type) ? (
+                      <b className="rvals">
+                        {c.vals.slice(0, 3).map((v, j) => (
+                          <span key={v} className="with-icon">
+                            {dimIcon(f.type, v)}
+                            {v}
+                            {j < Math.min(c.vals.length, 3) - 1 && ','}
+                          </span>
+                        ))}
+                        {c.vals.length > 3 && <i> +{c.vals.length - 3}</i>}
+                      </b>
+                    ) : (
+                      <b className="rvals">{c.text}</b>
+                    )}
+                  </>
+                )}
               </span>
-            )}
-            {shown.map((f, i) => {
-              const c = filterChip(f, filterDefs.get(f.type))
+            </span>
+          )
+        })}
+        {hidden.length > 0 && (
+          <span className="rtok more" title={hidden.map((f) => filterChip(f, filterDefs.get(f.type)).title).join('\n')}>
+            {t('+{n} more', { n: hidden.length })}
+          </span>
+        )}
+      </>
+    )
+
+  const actionEl = readOnly ? (
+    <div className={'srow-action static a-' + tone} title={act.title}>
+      {actionLabel}
+    </div>
+  ) : (
+    <Dropdown className={'srow-action a-' + tone} label={actionLabel} title={t('{action} — click to switch the action', { action: act.title })}>
+      {(close) => {
+        const pick = (type: string, cfg: ActionConfig, label: string) => {
+          close()
+          onAction(type, cfg, label)
+        }
+        return (
+          <div className="menu quick-menu">
+            <div className="menu-title">{t('Whitepage')}</div>
+            {whitepages.length === 0 && <div className="muted pad-s">{t('No whitepages uploaded yet.')}</div>}
+            {whitepages.map((w) => (
+              <MenuItem key={w.id} onClick={() => pick('whitepage', { whitepage_id: w.id }, t('whitepage “{name}”', { name: w.name }))}>
+                <WpIcon size={14} />
+                <span className="grow ellipsis">{w.name}</span>
+                {w.id === currentWp ? <span className="badge ok">{t('current')}</span> : <span className="muted small">{w.kind}</span>}
+              </MenuItem>
+            ))}
+            <div className="menu-title">{t('Stop')}</div>
+            <MenuItem onClick={() => pick('status', { code: 404 }, '404')}>
+              <StopIcon size={14} /> <span className="grow">404 Not Found</span> {/* i18n-ignore: HTTP status text */}
+            </MenuItem>
+            {actionPresets.length > 0 && <div className="menu-title">{t('Action presets')}</div>}
+            {actionPresets.map((p, i) => {
+              const PIcon = ACTION_ICONS[p.data.action_type ?? ''] ?? CornerDownRight
               return (
-                <span key={i} className={'fchip' + (c.not ? ' not' : '') + (f.bypass ? ' bypass' : '')} title={c.title}>
-                  {c.flag ? (
-                    <>
-                      {c.not && <em>{t('not')}</em>}
-                      <b>{c.label}</b>
-                    </>
-                  ) : (
-                    <>
-                      <i>{c.label}</i>
-                      {c.not && <em>≠</em>}
-                      {f.type === 'country' || f.type === 'device_type' || f.type === 'os' || f.type === 'browser' ? (
-                        <span className="fvals">
-                          {c.vals.slice(0, 3).map((v) => (
-                            <span key={v} className="with-icon">
-                              {dimIcon(f.type, v)}
-                              {v}
-                            </span>
-                          ))}
-                          {c.vals.length > 3 && <i>+{c.vals.length - 3}</i>}
-                        </span>
-                      ) : (
-                        <span className="fvals">{c.text}</span>
-                      )}
-                    </>
-                  )}
-                </span>
+                <MenuItem key={p.id ?? 'b' + i} onClick={() => p.data.action_type && pick(p.data.action_type, p.data.action_config ?? {}, t('preset “{name}”', { name: presetName(p) }))}>
+                  <PIcon size={14} />
+                  <span className="grow ellipsis">{presetName(p)}</span>
+                  {p.builtin && <span className="muted small">{t('built-in')}</span>}
+                </MenuItem>
               )
             })}
-            {hidden.length > 0 && (
-              <span className="fchip more" title={hidden.map((f) => filterChip(f, filterDefs.get(f.type)).title).join('\n')}>
-                {t('+{n} more', { n: hidden.length })}
-              </span>
-            )}
-          </>
-        )}
-      </div>
-
-      <div className="srow-act">
-        <ArrowRight size={14} className="act-arrow" aria-hidden="true" />
-        {readOnly ? (
-          <div className={'srow-action static a-' + tone} title={act.title}>
-            {actionLabel}
-          </div>
-        ) : (
-          <Dropdown className={'srow-action a-' + tone} label={actionLabel} title={t('{action} — click to switch the action', { action: act.title })}>
-            {(close) => {
-              const pick = (type: string, cfg: ActionConfig, label: string) => {
+            <div className="menu-sep" />
+            <MenuItem
+              onClick={() => {
                 close()
-                onAction(type, cfg, label)
-              }
-              return (
-                <div className="menu quick-menu">
-                  <div className="menu-title">{t('Whitepage')}</div>
-                  {whitepages.length === 0 && <div className="muted pad-s">{t('No whitepages uploaded yet.')}</div>}
-                  {whitepages.map((w) => (
-                    <MenuItem key={w.id} onClick={() => pick('whitepage', { whitepage_id: w.id }, t('whitepage “{name}”', { name: w.name }))}>
-                      <WpIcon size={14} />
-                      <span className="grow ellipsis">{w.name}</span>
-                      {w.id === currentWp ? <span className="badge ok">{t('current')}</span> : <span className="muted small">{w.kind}</span>}
-                    </MenuItem>
-                  ))}
-                  <div className="menu-title">{t('Stop')}</div>
-                  <MenuItem onClick={() => pick('status', { code: 404 }, '404')}>
-                    <StopIcon size={14} /> <span className="grow">404 Not Found</span> {/* i18n-ignore: HTTP status text */}
-                  </MenuItem>
-                  {actionPresets.length > 0 && <div className="menu-title">{t('Action presets')}</div>}
-                  {actionPresets.map((p, i) => {
-                    const PIcon = ACTION_ICONS[p.data.action_type ?? ''] ?? CornerDownRight
-                    return (
-                      <MenuItem key={p.id ?? 'b' + i} onClick={() => p.data.action_type && pick(p.data.action_type, p.data.action_config ?? {}, t('preset “{name}”', { name: presetName(p) }))}>
-                        <PIcon size={14} />
-                        <span className="grow ellipsis">{presetName(p)}</span>
-                        {p.builtin && <span className="muted small">{t('built-in')}</span>}
-                      </MenuItem>
-                    )
-                  })}
-                  <div className="menu-sep" />
-                  <MenuItem
-                    onClick={() => {
-                      close()
-                      onEdit()
-                    }}
-                  >
-                    <Pencil size={14} /> {t('Other action… (open editor)')}
-                  </MenuItem>
-                </div>
-              )
-            }}
-          </Dropdown>
-        )}
-      </div>
-
-      <button className="srow-stats" onClick={onStats} title={t('Statistics for the selected period — click to open the breakdown')}>
-        {cell(t('Clicks'), fmtInt(clicks), clicks === 0, undefined, 'lead')}
-        {cell(t('Uniq.'), fmtInt(stat?.uniques ?? 0), !stat?.uniques)}
-        {cell(t('Bots'), fmtInt(stat?.bots ?? 0), !stat?.bots, undefined, 'tone-warn')}
-        {cell(t('Conv.'), fmtInt(stat?.conversions ?? 0), !stat?.conversions, undefined, 'tone-good')}
-        {cell('CR', fmtPct(stat?.cr ?? 0), !stat?.cr, t('Conversions / non-bot clicks'), 'tone-accent')}
-        {cell(t('Revenue'), fmtMoney(stat?.revenue ?? 0), !stat?.revenue, currency, 'tone-good')}
-        <div className="share" title={t("{pct}% of this campaign's clicks", { pct: share.toFixed(1) })}>
-          <div className="share-bar">
-            <div style={{ width: `${share}%` }} />
+                onEdit()
+              }}
+            >
+              <Pencil size={14} /> {t('Other action… (open editor)')}
+            </MenuItem>
           </div>
-          <span>{share >= 10 ? share.toFixed(0) : share.toFixed(1)}%</span>
-        </div>
-      </button>
+        )
+      }}
+    </Dropdown>
+  )
 
-      <div className="srow-ctl">
-        <button className="icon-btn" title={t('Statistics of this stream')} aria-label={t('Statistics')} onClick={onStats}>
-          <BarChart3 size={15} />
-        </button>
-        <button className="icon-btn" title={t('Funnel of this stream')} aria-label={t('Funnel')} onClick={onFunnel}>
-          <FunnelIcon size={15} />
-        </button>
-        <button className="icon-btn" title={readOnly ? t('View') : t('Edit')} aria-label={readOnly ? t('View') : t('Edit')} onClick={onEdit}>
-          {readOnly ? <Eye size={15} /> : <Pencil size={15} />}
-        </button>
-        <Dropdown align="right" className="icon-btn" chevron={false} label={<MoreVertical size={15} />} title={t('More')}>
-          {(close) => {
-            const run = (fn: () => void) => () => {
-              close()
-              fn()
-            }
-            return (
-              <div className="menu">
-                <MenuItem onClick={run(onStats)}>
-                  <BarChart3 size={14} /> {t('Statistics')}
-                </MenuItem>
-                <MenuItem onClick={run(onFunnel)}>
-                  <FunnelIcon size={14} /> {t('Funnel')}
-                </MenuItem>
-                <MenuItem onClick={run(onClicks)}>
-                  <MousePointerClick size={14} /> {t('Click log')}
-                </MenuItem>
-                <div className="menu-sep" />
-                {!readOnly && (
-                  <MenuItem onClick={run(onDuplicate)}>
-                    <Copy size={14} /> {t('Duplicate')}
-                  </MenuItem>
-                )}
-                <MenuItem title={t('Copy this stream into another campaign you can edit')} onClick={run(onCopyTo)}>
-                  <CopyPlus size={14} /> {t('Copy to campaign…')}
-                </MenuItem>
-                <MenuItem title={t('Remember the filters, action and options of this stream to paste them into another stream')} onClick={run(onCopySettings)}>
-                  <ClipboardCopy size={14} /> {t('Copy settings')}
-                </MenuItem>
-                {!readOnly && clip !== null && (
-                  <>
-                    <MenuItem title={t('Replace the filters, action, JS check and weight of this stream with those copied from “{name}”', { name: clip })} onClick={run(() => onPaste('all'))}>
-                      <ClipboardPaste size={14} /> {t('Paste settings')}
-                    </MenuItem>
-                    <MenuItem title={t('Replace only the filters, with those copied from “{name}”', { name: clip })} onClick={run(() => onPaste('filters'))}>
-                      <ClipboardPaste size={14} /> {t('Paste filters')}
-                    </MenuItem>
-                    <MenuItem title={t('Replace only the action, with the one copied from “{name}”', { name: clip })} onClick={run(() => onPaste('action'))}>
-                      <ClipboardPaste size={14} /> {t('Paste action')}
-                    </MenuItem>
-                  </>
-                )}
-                {!readOnly && (
-                  <>
-                    <div className="menu-sep" />
-                    <MenuItem danger onClick={run(onDelete)}>
-                      <Trash2 size={14} /> {t('Delete')}
-                    </MenuItem>
-                  </>
-                )}
-              </div>
-            )
-          }}
-        </Dropdown>
+  // The stream's figures for the period, drawn in the style being compared.
+  const conv = stat?.conversions ?? 0
+  const rev = stat?.revenue ?? 0
+  const cost = stat?.cost ?? 0
+  const profit = stat?.profit ?? 0
+  const hasMoney = rev !== 0 || cost !== 0
+  const q = (v: string) => (statsLoading ? '·' : v)
+  const signed = (v: number) => (v > 0 ? '+' : v < 0 ? '−' : '') + fmtMoney(Math.abs(v), currency)
+  const ptone = profit > 0 ? 'pos' : profit < 0 ? 'neg' : 'zero'
+  const shareTxt = share >= 10 ? share.toFixed(0) + '%' : share.toFixed(1) + '%'
+  const statsTitle = t('Statistics for the selected period — click to open the breakdown')
+  let statsView: ReactNode
+  if (statsStyle === 'line') {
+    statsView = (
+      <button className="sv sv-line" onClick={onStats} title={statsTitle}>
+        <span className={clicks ? '' : 'z'}>
+          <b>{q(fmtInt(clicks))}</b> {t('clicks@@unit')}
+        </span>
+        <span className={conv ? 'good' : 'z'}>
+          <b>{q(fmtInt(conv))}</b> {t('conv.@@unit')}
+        </span>
+        {hasMoney && (
+          <span className={ptone}>
+            <b>{q(signed(profit))}</b>
+          </span>
+        )}
+      </button>
+    )
+  } else if (statsStyle === 'cols') {
+    const col = (v: number, text: string, tone = '') => <span className={'sv-c' + (v === 0 ? ' z' : tone ? ' ' + tone : '')}>{v === 0 ? '—' : q(text)}</span>
+    statsView = (
+      <button className="sv sv-cols" onClick={onStats} title={statsTitle}>
+        {col(clicks, fmtInt(clicks))}
+        {col(conv, fmtInt(conv), 'good')}
+        {col(stat?.cr ?? 0, fmtPct(stat?.cr ?? 0))}
+        {col(rev, fmtMoney(rev, currency))}
+        {col(profit, signed(profit), ptone)}
+      </button>
+    )
+  } else if (statsStyle === 'focus') {
+    statsView = (
+      <button className="sv sv-focus" onClick={onStats} title={statsTitle}>
+        <span className="sv-main">
+          <b className={clicks ? '' : 'z'}>{q(fmtInt(clicks))}</b>
+          <small>
+            {t('clicks@@unit')} · {shareTxt}
+          </small>
+        </span>
+        <span className="sv-side">
+          <span className={conv ? 'good' : 'z'}>{conv ? t('{n} conv. · CR {cr}', { n: fmtInt(conv), cr: fmtPct(stat?.cr ?? 0) }) : t('no conversions')}</span>
+          {hasMoney ? (
+            <span>
+              {rev !== 0 && <span className="z">{fmtMoney(rev, currency)} </span>}<b className={ptone}>{q(signed(profit))}</b>
+            </span>
+          ) : (
+            <span className="z">—</span>
+          )}
+        </span>
+      </button>
+    )
+  } else {
+    statsView = (
+      <button className="sv sv-bar" onClick={onStats} title={statsTitle}>
+        <span className="sv-track">
+          <span className="sv-fill" style={{ width: `${share}%` }} />
+          <span className="sv-txt">
+            <b>{q(fmtInt(clicks))}</b> <span>{shareTxt}</span>
+          </span>
+        </span>
+        <span className="sv-under">
+          <span className={conv ? 'good' : 'z'}>{t('{n} conv.', { n: fmtInt(conv) })}</span>
+          {hasMoney && <b className={ptone}>{q(signed(profit))}</b>}
+        </span>
+      </button>
+    )
+  }
+
+  const ctl = (
+    <div className="srow-ctl">
+      <button className="icon-btn" title={t('Click log of this stream')} aria-label={t('Click log')} onClick={onClicks}>
+        <MousePointerClick size={15} />
+      </button>
+      <button className="icon-btn" title={t('Funnel of this stream')} aria-label={t('Funnel')} onClick={onFunnel}>
+        <FunnelIcon size={15} />
+      </button>
+      <button className="icon-btn" title={readOnly ? t('View') : t('Edit')} aria-label={readOnly ? t('View') : t('Edit')} onClick={onEdit}>
+        {readOnly ? <Eye size={15} /> : <Pencil size={15} />}
+      </button>
+      <ActionMenu
+        sections={[
+          {
+            items: [
+              { icon: <MousePointerClick size={15} />, label: t('Click log'), onClick: onClicks },
+              { icon: <FunnelIcon size={15} />, label: t('Funnel'), onClick: onFunnel },
+              { icon: <BarChart3 size={15} />, label: t('Breakdown'), onClick: onStats },
+            ],
+          },
+          {
+            items: [
+              ...(!readOnly ? [{ icon: <Copy size={15} />, label: t('Duplicate'), onClick: onDuplicate }] : []),
+              { icon: <CopyPlus size={15} />, label: t('Copy to campaign…'), title: t('Copy this stream into another campaign you can edit'), onClick: onCopyTo },
+              { icon: <ClipboardCopy size={15} />, label: t('Copy settings'), title: t('Remember the filters, action and options of this stream to paste them into another stream'), onClick: onCopySettings },
+              ...(!readOnly && clip !== null
+                ? [
+                    { icon: <ClipboardPaste size={15} />, label: t('Paste settings'), title: t('Replace the filters, action, JS check and weight of this stream with those copied from “{name}”', { name: clip }), onClick: () => onPaste('all') },
+                    { icon: <ClipboardPaste size={15} />, label: t('Paste filters'), title: t('Replace only the filters, with those copied from “{name}”', { name: clip }), onClick: () => onPaste('filters') },
+                    { icon: <ClipboardPaste size={15} />, label: t('Paste action'), title: t('Replace only the action, with the one copied from “{name}”', { name: clip }), onClick: () => onPaste('action') },
+                  ]
+                : []),
+            ],
+          },
+          { items: readOnly ? [] : [{ icon: <Trash2 size={15} />, label: t('Delete'), danger: true, onClick: onDelete }] },
+        ]}
+      />
+    </div>
+  )
+
+  return (
+    <div className={'frow' + rowClass} {...drag}>
+      <span className={'frow-node' + (readOnly ? '' : ' grab')} title={readOnly ? undefined : t('Drag to reorder')} {...arm}>
+        {index + 1}
+      </span>
+      <div className="frow-body">
+        <div className="frow-name">
+          {toggle}
+          {nameEl}
+          {tagsEl}
+        </div>
+        {/* Alternatives stack inside a bracket marked "or"; filters that must all hold run inline joined by "and". */}
+        <div className={'frow-cond' + (filters.length > 1 && s.filter_op === 'or' ? ' grp' : '')}>
+          {filters.length > 1 && s.filter_op === 'or' && <span className="rgrp-label">{t('or@@filters')}</span>}
+          {rule}
+        </div>
       </div>
+      <div className="frow-act">
+        <ArrowRight size={15} className="act-arrow" aria-hidden="true" />
+        {actionEl}
+      </div>
+      {statsView}
+      {ctl}
     </div>
   )
 }

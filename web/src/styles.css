@@ -347,8 +347,7 @@ button {
 .m-loss {
   --metric: var(--err);
 }
-:is(.m-clicks, .m-uniq, .m-bots, .m-conv, .m-loss) > .tile-label::before,
-.fsum-item:is(.m-clicks, .m-uniq, .m-bots, .m-conv, .m-loss) > span::before {
+:is(.m-clicks, .m-uniq, .m-bots, .m-conv, .m-loss) > :is(.tile-label, .sb-label)::before {
   content: '';
   display: inline-block;
   width: 6px;
@@ -1996,18 +1995,6 @@ button.input.vp.open {
   min-width: 0;
   max-width: 100%;
 }
-.fvals {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.fvals .with-icon {
-  gap: 4px;
-}
-.fvals .flag {
-  width: 15px;
-  height: 10px;
-}
 
 /* ---- date range picker ----------------------------------------------------- */
 .dr {
@@ -3084,34 +3071,6 @@ tr.camp-off .camp-name,
 tr.camp-off .tnum {
   color: var(--text-3);
 }
-/* The totals: one strip, cells divided by hairlines however they wrap. */
-.tiles.camp-summary {
-  gap: 0;
-  overflow: hidden;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
-}
-.camp-summary .tile {
-  padding: 14px 18px;
-  border: 0;
-  border-radius: 0;
-  background: none;
-  box-shadow:
-    -1px 0 0 var(--border),
-    0 -1px 0 var(--border);
-}
-.camp-summary .tile-label {
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0;
-  text-transform: none;
-}
-.camp-summary .tile-value {
-  margin-top: 4px;
-  font-size: 22px;
-}
 .camp-card .camp {
   min-width: 190px;
 }
@@ -4033,7 +3992,6 @@ tr.camp-off .tnum {
 .ce {
   height: 100%;
   overflow: auto;
-  --ce-tabs-h: 37px;
 }
 .ce-wrap {
   width: 100%;
@@ -4044,81 +4002,11 @@ tr.camp-off .tnum {
 .ce-bar {
   background: var(--surface);
 }
-.ce-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  padding-top: 10px;
-  padding-bottom: 2px;
-}
-.ce-head > .icon-btn:first-child {
-  margin-left: -6px;
-}
-.ce-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.ce-title h1 {
-  font-size: 16px;
-  max-width: 46vw;
-}
-.ce-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 26px;
-  max-width: 300px;
-  padding: 0 4px 0 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text-3);
-  font-family: var(--mono);
-  font-size: 11.5px;
-}
-.ce-link .icon-btn {
-  width: 22px;
-  height: 22px;
-}
 .ce-tabsbar {
   position: sticky;
   top: 0;
   z-index: 8;
   border-bottom: 1px solid var(--border);
-}
-.ce-tabs {
-  display: flex;
-  gap: 2px;
-  margin: 0 -10px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.ce-tabs::-webkit-scrollbar {
-  display: none;
-}
-.ce-tabs button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 36px;
-  border: 0;
-  background: none;
-  padding: 0 10px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text-3);
-  cursor: pointer;
-  white-space: nowrap;
-  border-bottom: 2px solid transparent;
-}
-.ce-tabs button:hover {
-  color: var(--text);
-}
-.ce-tabs button.active {
-  color: var(--accent-text);
-  border-bottom-color: var(--accent);
 }
 .ce-content {
   padding-top: 14px;
@@ -4172,114 +4060,6 @@ tr.camp-off .tnum {
   --stats-cols: 52px 46px 42px 46px 56px 66px 76px;
   --ctl-w: 112px;
 }
-.funnel-toolbar {
-  position: sticky;
-  top: var(--ce-tabs-h, 0);
-  z-index: 6;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  padding: 12px 0;
-  background: var(--bg);
-}
-/* The campaign's totals for the period: one row of figures above the lanes. */
-.fsum {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
-  margin-bottom: 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-}
-.fsum-item {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-  padding: 11px 16px 12px;
-  border-left: 1px solid var(--border);
-}
-.fsum-item:first-child {
-  border-left: 0;
-}
-.fsum-item span {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.fsum-item b {
-  font-size: 16px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
-  line-height: 1.2;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-/* The last cell opens the money figures. */
-.fsum > .dropdown {
-  display: flex;
-  border-left: 1px solid var(--border);
-}
-.fsum-more {
-  flex-direction: row;
-  align-items: center;
-  gap: 7px;
-  padding: 0 18px;
-  border: 0;
-  border-radius: 0 var(--radius) var(--radius) 0;
-  background: none;
-  color: var(--text-2);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-.fsum-more:hover,
-.fsum-more.open {
-  background: var(--hover);
-  color: var(--text);
-}
-.fmoney {
-  min-width: 230px;
-  padding: 6px 14px;
-}
-.fmoney-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 8px 0;
-  border-top: 1px solid var(--border);
-}
-.fmoney-row:first-child {
-  border-top: 0;
-}
-.fmoney-row span {
-  color: var(--text-3);
-}
-.fmoney-row b {
-  font-size: 14px;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.split-btn {
-  display: inline-flex;
-}
-.split-btn > .btn {
-  border-radius: 6px 0 0 6px;
-}
-.split-btn .split-caret {
-  border-radius: 0 6px 6px 0;
-  padding: 0 7px;
-  border-left: 1px solid rgba(255, 255, 255, 0.35);
-}
 .lane-dot {
   width: 8px;
   height: 8px;
@@ -4300,33 +4080,6 @@ tr.camp-off .tnum {
   gap: 14px;
   /* Every row and the header share these tracks, so the columns line up down the page. */
   --srow-cols: 28px 38px minmax(130px, 0.7fr) minmax(220px, 1.8fr) minmax(190px, 250px) auto var(--ctl-w);
-}
-.stable-head,
-.srow {
-  display: grid;
-  grid-template-columns: var(--srow-cols);
-  align-items: stretch;
-  padding: 0 8px 0 6px;
-}
-.stable-head > *,
-.srow > * {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-}
-/* The header floats above the lane cards; its side padding makes up for their borders. */
-.stable-head {
-  height: 22px;
-  margin-bottom: -6px;
-  padding: 0 9px 0 7px;
-  font-size: 10.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-3);
-}
-.stable-head > span {
-  padding: 0 14px;
 }
 .lane {
   background: var(--surface);
@@ -4365,21 +4118,6 @@ tr.camp-off .tnum {
   font-size: 12px;
   color: var(--text-3);
 }
-.stable-head > .lane-cols,
-.srow > .srow-stats {
-  display: grid;
-  grid-template-columns: var(--stats-cols);
-  column-gap: 8px;
-  align-items: center;
-  padding: 0 14px;
-}
-.lane-cols span {
-  text-align: right;
-}
-.lane-cols span:last-child {
-  text-align: left;
-  padding-left: 8px;
-}
 .lane-empty {
   padding: 18px;
   font-size: 12px;
@@ -4389,80 +4127,6 @@ tr.camp-off .tnum {
   padding: 0 2px;
   font-size: 11.5px;
   color: var(--text-3);
-}
-.srow {
-  position: relative;
-  min-height: 58px;
-  border-top: 1px solid var(--border);
-}
-.srow:first-child {
-  border-top: 0;
-}
-.srow:last-child {
-  border-radius: 0 0 calc(var(--radius) - 1px) calc(var(--radius) - 1px);
-}
-.srow:hover {
-  background: var(--hover);
-}
-.srow.off .srow-main,
-.srow.off .srow-filters,
-.srow.off .srow-act,
-.srow.off .srow-stats {
-  opacity: 0.45;
-}
-.srow.has-error {
-  box-shadow: inset 2px 0 0 var(--err);
-}
-.srow.dragging {
-  opacity: 0.35;
-}
-.srow.drop-before::before,
-.srow.drop-after::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: var(--accent);
-  z-index: 1;
-}
-.srow.drop-before::before {
-  top: -1px;
-}
-.srow.drop-after::after {
-  bottom: -1px;
-}
-.srow-grip {
-  justify-content: flex-end;
-  gap: 1px;
-  color: var(--text-3);
-  font-size: 11px;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-  cursor: grab;
-  user-select: none;
-}
-.srow > .toggle,
-.srow > label {
-  justify-content: center;
-}
-.srow-grip svg {
-  opacity: 0;
-}
-.srow:hover .srow-grip svg {
-  opacity: 1;
-}
-.srow-grip:active {
-  cursor: grabbing;
-}
-.srow-grip.fixed {
-  cursor: default;
-}
-.srow-main {
-  flex-wrap: wrap;
-  align-content: center;
-  gap: 5px 8px;
-  padding: 10px 14px;
 }
 .srow-name {
   min-width: 0;
@@ -4687,83 +4351,9 @@ a.tag:hover {
   min-width: 0;
   overflow: hidden;
 }
-/* What a visitor must look like to land in the stream: one chip per filter. */
-.srow-filters {
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 10px 14px;
-}
-.fmode {
-  font-size: 9.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--warn);
-}
-.fchip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 22px;
-  padding: 0 8px;
-  border-radius: 5px;
-  background: var(--surface-3);
-  color: var(--text);
-  font-size: 11.5px;
-  white-space: nowrap;
-  max-width: 100%;
-  min-width: 0;
-  overflow: hidden;
-}
-.fchip i {
-  font-style: normal;
-  color: var(--text-3);
-}
-.fchip b {
-  font-weight: 600;
-}
-.fchip em {
-  font-style: normal;
-  font-weight: 700;
-  color: var(--err);
-}
-.fchip .fvals {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  font-weight: 600;
-}
-.fchip > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.fchip.not {
-  background: var(--err-soft);
-}
-.fchip.bypass {
-  opacity: 0.5;
-  text-decoration: line-through;
-}
-.fchip.any,
-.fchip.more {
-  background: none;
-  padding: 0 2px;
-  color: var(--text-3);
-}
-/* The outcome: an arrow out of the rules into a pill in the colour of what the action does. */
-.srow-act {
-  gap: 8px;
-  padding: 10px 14px;
-}
 .act-arrow {
   flex: none;
   color: var(--text-3);
-}
-.srow-act .dropdown {
-  display: block;
-  flex: 1;
-  min-width: 0;
 }
 .srow-action {
   --tone: var(--ok);
@@ -4829,57 +4419,6 @@ a.tag:hover {
   opacity: 0.45;
   cursor: not-allowed;
 }
-.srow-stats {
-  border: 0;
-  border-radius: 0;
-  background: none;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-}
-.srow-stats:hover {
-  background: var(--accent-soft);
-}
-.st {
-  text-align: right;
-  line-height: 1.2;
-  white-space: nowrap;
-}
-.st b {
-  font-size: 12.5px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-/* The table header names the columns; per-cell labels are for the stacked layout only. */
-.st span {
-  display: none;
-  margin-right: 4px;
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-3);
-}
-.st.lead b {
-  font-size: 13.5px;
-  font-weight: 700;
-}
-.st[class*='tone-'] b {
-  font-weight: 650;
-}
-.st.zero b {
-  color: var(--text-3);
-  font-weight: 400;
-}
-.share {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding-left: 8px;
-  font-size: 10.5px;
-  color: var(--text-3);
-  font-variant-numeric: tabular-nums;
-}
 .share-bar {
   flex: 1;
   height: 4px;
@@ -4893,12 +4432,6 @@ a.tag:hover {
   border-radius: 2px;
   background: var(--kind, var(--series-1));
 }
-.share span {
-  min-width: 26px;
-  text-align: right;
-  font-weight: 600;
-  color: var(--text-2);
-}
 .srow-ctl {
   display: flex;
   align-items: center;
@@ -4909,77 +4442,8 @@ a.tag:hover {
   .stable {
     --stats-cols: 52px 42px 46px 66px 76px;
   }
-  .lane-cols > :nth-child(2),
-  .lane-cols > :nth-child(5),
-  .srow-stats > :nth-child(2),
-  .srow-stats > :nth-child(5) {
-    display: none;
-  }
-}
-/* Narrow funnel: filters, the action and the stats drop below the name and carry their own labels. */
-@container funnel (max-width: 1180px) {
-  .stable-head {
-    display: none;
-  }
-  .srow {
-    grid-template-columns: 30px 34px minmax(0, 1fr) var(--ctl-w);
-    padding-bottom: 6px;
-  }
-  .srow-filters,
-  .srow-act,
-  .srow-stats {
-    padding: 4px 14px;
-  }
-  .srow-filters {
-    grid-column: 3 / -1;
-    grid-row: 2;
-  }
-  .srow-act {
-    grid-column: 3 / -1;
-    grid-row: 3;
-    max-width: 340px;
-  }
-  .srow-stats {
-    grid-column: 3 / -1;
-    grid-row: 4;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 2px 16px;
-    height: auto;
-    justify-self: start;
-  }
-  .st span {
-    display: inline;
-  }
-  .share {
-    flex: 0 0 110px;
-    padding-left: 0;
-  }
 }
 @container funnel (max-width: 560px) {
-  .funnel-toolbar {
-    position: static;
-  }
-  .fsum {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .fsum-item:nth-child(odd) {
-    border-left: 0;
-  }
-  .fsum-item:nth-child(n + 3),
-  .fsum > .dropdown {
-    border-top: 1px solid var(--border);
-  }
-  .fsum > .dropdown {
-    grid-column: 1 / -1;
-    border-left: 0;
-  }
-  .fsum-more {
-    width: 100%;
-    height: 40px;
-    justify-content: center;
-    border-radius: 0 0 var(--radius) var(--radius);
-  }
   .lane-desc {
     visibility: hidden;
   }
@@ -6813,4 +6277,868 @@ a.rep-chip:hover {
   .ref-profile .tiles {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+/* ---- action menus ---------------------------------------------------------- */
+.amenu {
+  padding: 4px;
+  min-width: 210px;
+  max-height: min(70vh, 560px);
+  overflow: auto;
+}
+.amenu-sec + .amenu-sec {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+.amenu-title {
+  padding: 6px 8px 3px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+}
+.amenu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.amenu-item:hover,
+.amenu-item:focus-visible {
+  background: var(--hover);
+  outline: none;
+}
+.amenu-item.danger {
+  color: var(--err);
+}
+.amenu-ico {
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+}
+.amenu-item.danger .amenu-ico {
+  color: var(--err);
+}
+.amenu-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A row that unfolds into choices: its current value on the right, the choices indented below. */
+.amenu-value {
+  margin-left: auto;
+  padding-left: 16px;
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.amenu-caret {
+  flex: none;
+  color: var(--text-3);
+  transition: transform 0.12s;
+}
+.amenu-caret.open {
+  transform: rotate(90deg);
+}
+.amenu-item.amenu-sub {
+  padding-left: 32px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.amenu-sub .amenu-check {
+  margin-left: auto;
+}
+.amenu-check {
+  flex: none;
+  color: var(--accent-text);
+}
+
+/* ---- period totals --------------------------------------------------------- */
+/* One card: the figures of the period, and at its right end the period itself. */
+.sb {
+  display: flex;
+  align-items: stretch;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.sb-kpis {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+}
+.sb-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px 16px 11px;
+  border-left: 1px solid var(--border);
+  color: inherit;
+}
+.sb-kpi:first-child {
+  border-left: 0;
+}
+.sb-link:hover {
+  background: var(--hover);
+  text-decoration: none;
+}
+.sb-link:hover .sb-label {
+  color: var(--accent-text);
+}
+.sb-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.sb-value {
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sb-sub {
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sb-ctl {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-left: 1px solid var(--border);
+}
+@media (max-width: 760px) {
+  .sb {
+    flex-direction: column-reverse;
+  }
+  .sb-ctl {
+    padding: 8px 12px;
+    border-left: 0;
+    border-bottom: 1px solid var(--border);
+  }
+}
+/* Above the streams the card keeps the spacing the toolbar had. */
+/* Above the streams the totals are part of the header: a strip with a hairline under it. */
+.funnel-sb {
+  margin-bottom: 22px;
+  padding: 24px 0;
+  border-bottom: 1px solid var(--border);
+}
+.sb.flat {
+  align-items: center;
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+.sb.flat .sb-kpi {
+  gap: 4px;
+  padding: 6px 32px 6px 24px;
+}
+.sb.flat .sb-kpi:first-child {
+  padding-left: 0;
+}
+.sb.flat .sb-value {
+  order: -1;
+  font-size: 19px;
+  font-weight: 700;
+}
+.sb.flat .sb-ctl {
+  padding: 0;
+  border-left: 0;
+}
+/* Campaign groups listed under Campaigns in the sidebar. */
+.nav-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* ---- campaign header -------------------------------------------------------- */
+/* One sticky line: back, the campaign picker, the tabs as pills, and the status and menu. */
+.ce-slim {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  flex-wrap: wrap;
+}
+.ce-slim > .icon-btn:first-child {
+  margin-left: -6px;
+}
+.ce-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 320px;
+  height: 34px;
+  padding: 0 8px 0 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.ce-switch h1 {
+  font-size: 16px;
+  min-width: 0;
+}
+.ce-switch svg {
+  flex: none;
+  color: var(--text-3);
+}
+.ce-switch:hover,
+.ce-switch.open {
+  border-color: var(--border);
+  background: var(--hover);
+}
+/* The campaign picker: a search line, then every campaign under its group. */
+.ce-switch-menu {
+  width: 340px;
+}
+.ce-switch-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-3);
+}
+.ce-switch-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.ce-switch-search kbd {
+  font-family: inherit;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.ce-switch-list {
+  max-height: 420px;
+  overflow: auto;
+  padding: 4px;
+}
+.ce-switch-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 8px 3px;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--text-3);
+}
+.ce-switch-group + .ce-pick,
+.ce-switch-group ~ .ce-pick {
+  padding-left: 22px;
+}
+.ce-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ce-pick.active {
+  background: var(--hover);
+}
+.ce-pick.current {
+  font-weight: 650;
+}
+.ce-pick mark {
+  background: none;
+  color: var(--accent-text);
+  font-weight: 700;
+}
+.dot.muted {
+  background: var(--border-strong);
+}
+/* The campaign's one control: its state, opening everything else. */
+.ce-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 9px 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: var(--surface);
+  color: var(--text-2);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ce-status:hover,
+.ce-status.open {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.ce-status svg {
+  color: var(--text-3);
+}
+.ce-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+.ce-status.live .ce-status-dot {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent);
+}
+/* A switch as the first line of a menu. */
+.amenu-switch {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 260px;
+  padding: 8px 8px 9px;
+  cursor: pointer;
+}
+.amenu-switch.disabled {
+  cursor: default;
+}
+.amenu-switch span {
+  display: flex;
+  flex-direction: column;
+}
+.amenu-switch small {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+/* "Campaign / Section": the slash between the two pickers. */
+.ce-slim-sep {
+  margin: 0 -2px;
+  font-size: 18px;
+  font-weight: 300;
+  color: var(--border-strong);
+}
+/* The section picker reads like the second half of a breadcrumb. */
+.ce-tabpick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 8px 0 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ce-tabpick svg {
+  color: var(--text-3);
+}
+.ce-tabpick:hover,
+.ce-tabpick.open {
+  border-color: var(--border);
+  background: var(--hover);
+  color: var(--text);
+}
+.ce-tabmenu {
+  min-width: 200px;
+}
+
+/* ---- stream list layouts (preview) ------------------------------------------ */
+/* Filters read as a sentence: muted field names, the values in full colour, "and"/"or" between. */
+.rtok-wrap {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+.rjoin {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.rtok {
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rtok i {
+  font-style: normal;
+  color: var(--text-3);
+}
+.rtok b {
+  font-weight: 600;
+}
+.rtok em {
+  font-style: normal;
+  font-weight: 600;
+  color: var(--err);
+}
+.rtok.not i {
+  color: color-mix(in srgb, var(--err) 70%, var(--text-3));
+}
+.rtok.bypass {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+.rtok.any,
+.rtok.more {
+  color: var(--text-3);
+}
+.rvals {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+/* Clean, Rules and Flow: the action is a quiet line of text, its colour only in the icon. */
+.l-flow .srow-action {
+  height: 30px;
+  padding: 0 8px;
+  border-color: transparent;
+  background: none;
+}
+.l-flow .srow-action:hover,
+.l-flow .srow-action.open {
+  border-color: var(--border);
+  background: var(--surface-2);
+}
+.l-flow .srow-action > svg:last-child:not(:first-child) {
+  opacity: 0;
+}
+.l-flow .srow-action:hover > svg:last-child:not(:first-child) {
+  opacity: 1;
+}
+/* Rules: each stream is a card that reads "if … then …". */
+.l-flow .lane {
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+.l-flow .lane-head h3 {
+  color: var(--kind);
+}
+/* Flow: the lanes are stops on one line a visitor travels down; each stream hangs off it. */
+.stable.l-flow {
+  gap: 6px;
+}
+.l-flow .lane {
+  position: relative;
+  padding-left: 36px;
+}
+.l-flow .lane::before {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 18px;
+  bottom: -24px;
+  width: 2px;
+  background: color-mix(in srgb, var(--kind) 40%, var(--border));
+}
+.l-flow .lane:last-of-type::before {
+  bottom: 18px;
+}
+.l-flow .lane-head {
+  position: relative;
+  height: 36px;
+  padding: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+.l-flow .lane-head::before {
+  content: '';
+  position: absolute;
+  left: -29px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--kind);
+  box-shadow: 0 0 0 4px var(--bg);
+}
+.l-flow .lane-empty {
+  padding: 2px 0 12px;
+}
+.frow {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(200px, 290px) auto auto;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 2px;
+  padding: 10px 8px 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+}
+.frow:hover {
+  background: var(--surface);
+  border-color: var(--border);
+}
+.frow-node {
+  position: absolute;
+  left: -31px;
+  top: 50%;
+  translate: 0 -50%;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--kind);
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--text-2);
+  font-size: 9.5px;
+  font-weight: 700;
+  user-select: none;
+}
+.frow-node.grab {
+  cursor: grab;
+}
+.frow.off .frow-node {
+  border-style: dashed;
+  color: var(--text-3);
+}
+.frow.off .frow-body,
+.frow.off .frow-act {
+  opacity: 0.45;
+}
+.frow.has-error {
+  box-shadow: inset 2px 0 0 var(--err);
+}
+.frow-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.frow-name {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.frow-name .srow-name {
+  font-size: 14px;
+}
+.frow-cond {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 5px;
+}
+/* Each condition is a small outlined pill; only the word "not" carries colour. */
+.frow-cond .rtok-wrap {
+  align-items: center;
+  gap: 5px;
+}
+.frow-cond .rtok {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.frow-cond .rtok.not i {
+  color: var(--err);
+}
+.frow-cond .rtok.any {
+  padding: 0;
+  border: 0;
+}
+.frow-cond .rtok.more {
+  border-style: dashed;
+}
+.frow-cond .rjoin {
+  font-size: 11px;
+  color: var(--text-3);
+}
+/* Alternatives: one per line inside a square bracket, "or" written once beside it. */
+.frow-cond.grp {
+  position: relative;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  margin: 2px 0 2px 26px;
+  padding: 2px 0 2px 13px;
+}
+.frow-cond.grp::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  border: 1px solid var(--border-strong);
+  border-right: 0;
+  border-radius: 6px 0 0 6px;
+}
+.frow-cond.grp .rjoin {
+  display: none;
+}
+.rgrp-label {
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  translate: -7px -50%;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.frow-act {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.frow-act .dropdown {
+  flex: 1;
+  min-width: 0;
+  display: block;
+}
+.frow .srow-ctl {
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.frow:hover .srow-ctl,
+.frow .srow-ctl:focus-within {
+  opacity: 1;
+}
+.frow.drop-before::before,
+.frow.drop-after::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  z-index: 1;
+}
+.frow.drop-before::before {
+  top: -5px;
+}
+.frow.drop-after::after {
+  bottom: -5px;
+}
+@container funnel (max-width: 900px) {
+  .frow {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .frow-act {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .frow .srow-ctl {
+    grid-column: 2;
+    grid-row: 1;
+    opacity: 1;
+  }
+  .frow .sv {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .frow-head {
+    display: none;
+  }
+}
+
+/* ---- stream figures (styles being compared) ---------------------------------- */
+.frow .srow-ctl {
+  width: 116px;
+  justify-content: flex-end;
+}
+.sv {
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.sv:hover {
+  background: var(--hover);
+}
+.sv .z {
+  color: var(--text-3);
+}
+.sv .good {
+  color: var(--ok);
+}
+.sv .zero {
+  color: var(--text-3);
+}
+/* Line: three figures in words on one line. */
+.sv-line {
+  display: flex;
+  justify-content: flex-end;
+  gap: 14px;
+  width: 270px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.sv-line b {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text);
+}
+.sv-line .z b {
+  font-weight: 500;
+  color: var(--text-3);
+}
+.sv-line :is(.good, .pos) b {
+  color: var(--ok);
+}
+.sv-line .neg b {
+  color: var(--err);
+}
+/* Columns: bare numbers under one header, aligned down the whole list. */
+.sv-cols {
+  display: grid;
+  grid-template-columns: 64px 50px 54px 84px 84px;
+  gap: 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.sv-cols .sv-c.z {
+  font-weight: 400;
+}
+.frow-head {
+  padding-top: 0;
+  padding-bottom: 0;
+  margin-bottom: -2px;
+}
+.frow-head:hover {
+  background: none;
+  border-color: transparent;
+}
+.frow-head .sv-cols {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  cursor: default;
+}
+.frow-head .sv:hover {
+  background: none;
+}
+/* Focus: clicks large, then conversions and money in a small second block. */
+.sv-focus {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  width: 260px;
+}
+.sv-main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.1;
+}
+.sv-main b {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.sv-main small {
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.sv-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 128px;
+  padding-left: 14px;
+  border-left: 1px solid var(--border);
+  font-size: 11.5px;
+}
+.sv-side b {
+  font-weight: 650;
+}
+/* Bar: the stream's share of clicks as a bar, conversions and profit under it. */
+.sv-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 210px;
+}
+.sv-track {
+  position: relative;
+  display: block;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.sv-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--kind) 45%, transparent);
+}
+.sv-txt {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 8px;
+  line-height: 22px;
+  font-size: 12px;
+}
+.sv-txt span {
+  color: var(--text-2);
+}
+.sv-under {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 2px;
+  font-size: 11.5px;
 }

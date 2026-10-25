@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
-import { Activity, AppWindow, BarChart3, Bookmark, Check, ChevronDown, ChevronsUpDown, Earth, EyeOff, FileCode2, Globe, HeartPulse, KeyRound, LayoutDashboard, LayoutTemplate, Layers, Link2, ListOrdered, LogOut, Menu, MonitorSmartphone, Moon, MousePointerClick, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, ShieldCheck, Split, Sun, Target, Unlink, UserCog, Users as UsersIcon, Webhook } from 'lucide-react'
+import { Activity, AppWindow, BarChart3, Bookmark, Check, ChevronDown, ChevronsUpDown, Earth, EyeOff, FileCode2, Folder, Globe, HeartPulse, KeyRound, LayoutDashboard, LayoutTemplate, Layers, Link2, ListOrdered, LogOut, Menu, MonitorSmartphone, Moon, MousePointerClick, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, ShieldCheck, Split, Sun, Target, Unlink, UserCog, Users as UsersIcon, Webhook } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { User } from '../types'
 import type { Theme } from '../hooks'
@@ -9,6 +9,7 @@ import { Flag, FunnelIcon } from './icons'
 import { APP_NAME, Logo } from './Logo'
 import { BUILTIN_PINS_DEFAULT, BUILTIN_PINS_PREF, BUILTIN_PRESETS, TOP_PATH, builtinHref, builtinOf, presetHref, reloadReportPresets, useReportPresets } from '../reportPresets'
 import { usePref } from '../hooks'
+import { groupHref, reloadCampaignGroups, useCampaignGroups } from '../campaignGroups'
 import { Dropdown } from './ui'
 
 interface Item {
@@ -114,7 +115,11 @@ export function Sidebar({ user, theme, toggleTheme, logout }: { user: User; them
   const presets = useReportPresets()
   useEffect(() => {
     reloadReportPresets()
+    reloadCampaignGroups()
   }, [user.id])
+  // Campaign groups hang under Campaigns: each opens the list filtered to it.
+  const campGroups = useCampaignGroups() ?? []
+  const openGroup = loc.pathname === '/campaigns' ? campGroups.find((g) => String(g.id) === new URLSearchParams(loc.search).get('group')) : undefined
   const pinned = (presets ?? []).filter((p) => p.pinned)
   const openPreset = loc.pathname === TOP_PATH ? pinned.find((p) => String(p.id) === new URLSearchParams(loc.search).get('preset')) : undefined
   // And the built-in ones: which of them are listed is a preference on the account.
@@ -160,7 +165,7 @@ export function Sidebar({ user, theme, toggleTheme, logout }: { user: User; them
   }
 
   // A pinned preset is a view of the report constructor: while one is open it is lit instead of the page's own item.
-  const isActive = (it: Item) => (it.to === TOP_PATH && (openPreset || openBuiltin) ? false : it.end ? loc.pathname === it.to : loc.pathname === it.to || loc.pathname.startsWith(it.to + '/'))
+  const isActive = (it: Item) => ((it.to === TOP_PATH && (openPreset || openBuiltin)) || (it.to === '/campaigns' && openGroup) ? false : it.end ? loc.pathname === it.to : loc.pathname === it.to || loc.pathname.startsWith(it.to + '/'))
   const groups = GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => !i.admin || admin) })).filter((g) => g.items.length > 0)
   // The rail has no room for headers, so folding only applies to the full sidebar.
   const compact = rail && !mobileOpen
@@ -188,7 +193,7 @@ export function Sidebar({ user, theme, toggleTheme, logout }: { user: User; them
           {groups.map((g) => {
             const isFolded = !compact && folded.includes(g.id)
             // A folded group still shows its active page, so the current location is never hidden.
-            const items = isFolded ? g.items.filter(isActive) : g.items
+            const items = isFolded ? g.items.filter((i) => isActive(i) || (i.to === '/campaigns' && openGroup)) : g.items
             return (
               <div className="nav-group" key={g.id}>
                 <button className={'nav-group-head' + (isFolded ? ' folded' : '')} onClick={() => toggleGroup(g.id)} aria-expanded={!isFolded} title={compact ? g.label : undefined}>
@@ -196,10 +201,24 @@ export function Sidebar({ user, theme, toggleTheme, logout }: { user: User; them
                   <ChevronDown size={13} />
                 </button>
                 {items.map((n) => (
-                  <NavLink key={n.to} to={n.to} end={n.end} data-tip={n.label} className={() => 'nav-item' + (isActive(n) ? ' active' : '')}>
-                    <n.icon size={17} />
-                    <span>{n.label}</span>
-                  </NavLink>
+                  <div key={n.to} className="nav-entry">
+                    <NavLink to={n.to} end={n.end} data-tip={n.label} className={() => 'nav-item' + (isActive(n) ? ' active' : '')}>
+                      <n.icon size={17} />
+                      <span>{n.label}</span>
+                    </NavLink>
+                    {n.to === '/campaigns' && campGroups.length > 0 && (!isFolded || openGroup) && (
+                      <div className="nav-sub">
+                        {campGroups
+                          .filter((cg) => !isFolded || cg === openGroup)
+                          .map((cg) => (
+                            <Link key={cg.id} to={groupHref(cg.id)} data-tip={cg.name} title={cg.name} className={'nav-item' + (cg === openGroup ? ' active' : '')} aria-current={cg === openGroup ? 'page' : undefined}>
+                              <Folder size={16} />
+                              <span className="ellipsis">{cg.name}</span>
+                            </Link>
+                          ))}
+                      </div>
+                    )}
+                  </div>
                 ))}
                 {/* The pinned views of Top lists hang under it, the last item of the group. */}
                 {g.id === 'reports' && (isFolded ? !!(openBuiltin || openPreset) : builtins.length + pinned.length > 0) && (
