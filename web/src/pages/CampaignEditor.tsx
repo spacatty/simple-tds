@@ -19,10 +19,11 @@ import { ActionMenu } from '../components/ActionMenu'
 import { FunnelIcon } from '../components/icons'
 import FunnelDrawer from './FunnelDrawer'
 import { buildSearch } from '../filters'
+import { confirmCutOff } from '../reports'
 import { useCampaignGroups } from '../campaignGroups'
 import TestMode, { syncFork } from './TestMode'
 import { downloadText } from '../format'
-import { t, ts, tx } from '../i18n'
+import { t, tn, ts, tx } from '../i18n'
 import { domainStatus } from './Domains'
 
 type Tab = 'streams' | 'settings' | 'link' | 'funnel' | 'integration' | 'sharing' | 'simulator' | 'test'
@@ -218,6 +219,13 @@ function PurgeIPs({ campaign, onClose, onDone }: { campaign: Campaign; onClose: 
   const [error, setError] = useState('')
   const ips = text.split(/[\s,;]+/).filter(Boolean)
   const run = async () => {
+    const ok = await confirmDialog({
+      title: tn(ips.length, 'Delete the data of {n} address?', 'Delete the data of {n} addresses?'),
+      confirmLabel: t('Delete their data'),
+      message: tx('Their clicks in <b>{name}</b> and the conversions of those clicks are deleted for good. This cannot be undone.', { b: (c) => <b>{c}</b>, name: campaign.name }),
+      typeToConfirm: campaign.name,
+    })
+    if (!ok) return
     setBusy(true)
     setError('')
     try {
@@ -234,6 +242,7 @@ function PurgeIPs({ campaign, onClose, onDone }: { campaign: Campaign; onClose: 
     <Modal
       title={t('Delete data by IP')}
       onClose={onClose}
+      dirty={text.trim() !== ''}
       footer={
         <>
           {error && <div className="field-error grow">{error}</div>}
@@ -408,6 +417,7 @@ export default function CampaignEditor() {
   }
   const setEnabled = async (enabled: boolean) => {
     if (!campaign) return
+    if (!enabled && !(await confirmCutOff('campaign', campaign.name, { campaign_id: campaign.id }))) return
     // The switch moves at once and goes back if the server refuses.
     update({ ...campaign, enabled })
     try {
@@ -445,7 +455,7 @@ export default function CampaignEditor() {
   }
   const remove = async () => {
     if (!campaign) return
-    if (!(await confirmDialog({ title: t('Delete campaign?'), message: tx('<b>{name}</b> and all of its streams will be deleted and its link stops working. Collected statistics are kept.', { b: (c) => <b>{c}</b>, name: campaign.name }) }))) return
+    if (!(await confirmDialog({ title: t('Delete campaign?'), typeToConfirm: campaign.name, message: tx('<b>{name}</b> and all of its streams will be deleted and its link stops working. Collected statistics are kept.', { b: (c) => <b>{c}</b>, name: campaign.name }) }))) return
     try {
       await del(`campaigns/${id}`)
       toast.ok(t('Campaign deleted'))
@@ -460,6 +470,7 @@ export default function CampaignEditor() {
       title: t('Clear statistics?'),
       confirmLabel: t('Clear statistics'),
       message: tx('All clicks and conversions of <b>{name}</b> will be deleted for good, and its visitors will count as unique again. The campaign, its streams and its link stay as they are.', { b: (c) => <b>{c}</b>, name: campaign.name }),
+      typeToConfirm: campaign.name,
     })
     if (!ok) return
     try {

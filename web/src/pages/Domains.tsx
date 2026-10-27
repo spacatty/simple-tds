@@ -171,6 +171,8 @@ export default function Domains() {
         which.length === 1
           ? tx('<b>{name}</b> will stop serving campaigns immediately. Statistics are kept.', { b: (c) => <b>{c}</b>, name: which[0].name })
           : tn(which.length, '{n} selected domain will stop serving campaigns immediately. Statistics are kept.', '{n} selected domains will stop serving campaigns immediately. Statistics are kept.'),
+      // A name to type for one domain, the count for several: deleting cuts live links at once.
+      typeToConfirm: which.length === 1 ? which[0].name : String(which.length),
     })
     if (!ok) return
     try {

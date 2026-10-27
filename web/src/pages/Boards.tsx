@@ -544,7 +544,16 @@ export function BoardView({ board, range, setRange, tick, onChange, onDeleted }:
                       <button className="icon-btn" onClick={() => setEditing({ index: i, draft: { ...w } })} title={t('Widget settings')}>
                         <Pencil size={13} />
                       </button>
-                      <button className="icon-btn danger" disabled={busy} onClick={() => save(widgets.filter((_, j) => j !== i))} title={t('Remove widget')}>
+                      <button
+                        className="icon-btn danger"
+                        disabled={busy}
+                        onClick={() => {
+                          save(widgets.filter((_, j) => j !== i))
+                          toast.ok(t('Widget removed'), { label: t('Undo'), run: () => save(widgets) })
+                        }}
+                        title={t('Remove widget')}
+                        aria-label={t('Remove widget')}
+                      >
                         <Trash2 size={13} />
                       </button>
                     </div>

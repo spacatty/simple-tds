@@ -8,12 +8,13 @@ import { useStatsStyle } from '../streamStats'
 import type { StatsStyle } from '../streamStats'
 import type { ActionConfig, ActionDef, Campaign, Filter, FilterDef, GeoPreset, LandingRef, ReportRow, Stream, StreamPreset, Whitepage } from '../types'
 import { Dropdown, ErrorBox, Field, MenuItem, Modal, Select, Skeleton, Toggle, confirmDialog, toast } from '../components/ui'
+import type { ToastAction } from '../components/ui'
 import type { DateRange } from '../components/DateRangePicker'
 import StreamEditor, { ACTION_ICONS, draftFromStream, landingPresets, newDraft, presetName, streamBody } from './StreamEditor'
 import type { RefNames, StreamDraft } from './StreamEditor'
 import StreamStats from './StreamStats'
 import FunnelDrawer from './FunnelDrawer'
-import { loadReport, sumRows } from '../reports'
+import { confirmCutOff, loadReport, sumRows } from '../reports'
 import { buildSearch } from '../filters'
 import { fmtInt, fmtMoney, fmtPct, ratioPct } from '../format'
 import { dimIcon, FunnelIcon } from '../components/icons'
@@ -174,12 +175,12 @@ export default function StreamFunnel({
   }
 
   /** Partial update of one stream, shown immediately. */
-  const patch = async (s: Stream, body: Partial<Stream>, ok?: string) => {
+  const patch = async (s: Stream, body: Partial<Stream>, ok?: string, action?: ToastAction) => {
     try {
       const n = await put<Stream>(`streams/${s.id}`, body)
       // From the latest list, not the one captured before the request: another toggle may have landed meanwhile.
       res.setData((d) => d && { ...d, streams: (d.streams ?? []).map((x) => (x.id === s.id ? n : x)) })
-      if (ok) toast.ok(ok)
+      if (ok) toast.ok(ok, action)
       // Names of newly referenced whitepages and the error map come with the list.
       if (body.action_type !== undefined) res.reload()
     } catch (e) {
@@ -215,7 +216,24 @@ export default function StreamFunnel({
   const paste = (s: Stream, what: PasteWhat) => {
     if (!clip) return
     const ok = what === 'filters' ? t('Filters pasted into “{name}”', { name: s.name }) : what === 'action' ? t('Action pasted into “{name}”', { name: s.name }) : t('Settings pasted into “{name}”', { name: s.name })
-    patch(s, pasteBody(clip, what), ok)
+    const body = pasteBody(clip, what)
+    // What the paste overwrites, so Undo can put it back.
+    const before = Object.fromEntries(Object.keys(body).map((k) => [k, s[k as keyof Stream] ?? (k === 'filters' ? [] : k === 'action_config' ? {} : null)])) as Partial<Stream>
+    patch(s, body, ok, { label: t('Undo'), run: () => patch(s, before, t('“{name}” is back as it was', { name: s.name })) })
+  }
+
+  /** The switch moves at once and goes back if the server refuses; live traffic is asked about first. */
+  const setStreamEnabled = async (s: Stream, enabled: boolean) => {
+    if (!enabled && !(await confirmCutOff('stream', s.name, { campaign_id: campaign.id, stream_id: s.id }))) return
+    const apply = (v: boolean) => res.setData((d) => d && { ...d, streams: (d.streams ?? []).map((x) => (x.id === s.id ? { ...x, enabled: v } : x)) })
+    apply(enabled)
+    try {
+      const n = await put<Stream>(`streams/${s.id}`, { enabled })
+      res.setData((d) => d && { ...d, streams: (d.streams ?? []).map((x) => (x.id === s.id ? n : x)) })
+    } catch (e) {
+      apply(!enabled)
+      toast.err(e)
+    }
   }
 
   const remove = async (s: Stream) => {
@@ -355,7 +373,7 @@ export default function StreamFunnel({
                         if (!over || over.id !== s.id || over.after !== after) setOver({ id: s.id, after })
                       }}
                       onEdit={() => setEditing(draftFromStream(s))}
-                      onToggle={(enabled) => patch(s, { enabled })}
+                      onToggle={(enabled) => setStreamEnabled(s, enabled)}
                       onRename={(name) => patch(s, { name })}
                       onAction={(action_type, action_config, label) => patch(s, { action_type, action_config }, `${s.name}: ${label}`)}
                       onDuplicate={() => duplicate(s)}

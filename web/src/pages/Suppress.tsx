@@ -95,7 +95,18 @@ export default function Suppress({ kind }: { kind: Kind }) {
       try {
         await del(`suppress-rules/${e.id}`)
         rules.setData((all) => all?.filter((r) => r.id !== e.id))
-        toast.ok(t('{name} is no longer suppressed', { name: e.value }))
+        // Undo writes the rule again; its numbers start from that moment.
+        const again = () =>
+          run(async () => {
+            try {
+              await post('suppress-rules', { kind: e.kind, value: e.value, campaign_ids: e.campaign_ids, store: e.store })
+              await rules.reload()
+              toast.ok(t('{name} is suppressed again', { name: e.value }))
+            } catch (err) {
+              toast.err(err)
+            }
+          })
+        toast.ok(t('{name} is no longer suppressed', { name: e.value }), { label: t('Undo'), run: again })
       } catch (err) {
         toast.err(err)
       }

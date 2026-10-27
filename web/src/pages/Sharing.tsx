@@ -50,11 +50,12 @@ export function SharePanel({ endpoint, ownerId, kind }: { endpoint: string; owne
   const taken = new Set(list.map((s) => s.user_id))
   const candidates = (dir.data ?? []).filter((u) => u.id !== ownerId && !taken.has(u.id))
 
-  const setShare = (uid: number, access: string, name: string) =>
+  const setShare = (uid: number, access: string, name: string, was?: string) =>
     run(async () => {
       try {
         shares.setData(await put<Person[] | null>(endpoint, { user_id: uid, access }))
-        toast.ok(access === 'none' ? t('{name} no longer has access', { name }) : `${name}: ${levels.find((l) => l.value === access)?.label ?? access}`)
+        if (access === 'none' && was) toast.ok(t('{name} no longer has access', { name }), { label: t('Undo'), run: () => setShare(uid, was, name) })
+        else toast.ok(access === 'none' ? t('{name} no longer has access', { name }) : `${name}: ${levels.find((l) => l.value === access)?.label ?? access}`)
       } catch (e) {
         toast.err(e)
       }
@@ -85,7 +86,7 @@ export function SharePanel({ endpoint, ownerId, kind }: { endpoint: string; owne
           {list.map((s) => (
             <div className="list-row" key={s.user_id}>
               <span className="grow strong">{s.username}</span>
-              <Select value={s.access} disabled={busy} onChange={(v) => v !== s.access && setShare(s.user_id, v, s.username)} options={[...levels.map((l) => ({ value: l.value, label: l.label })), { value: 'none', label: t('Remove access') }]} />
+              <Select value={s.access} disabled={busy} onChange={(v) => v !== s.access && setShare(s.user_id, v, s.username, s.access)} options={[...levels.map((l) => ({ value: l.value, label: l.label })), { value: 'none', label: t('Remove access') }]} />
             </div>
           ))}
         </div>

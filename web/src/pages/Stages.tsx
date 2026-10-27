@@ -413,7 +413,16 @@ export function StageRows({ rows, setRows, readOnly, actions, children }: { rows
               <button className="icon-btn" title={t('Move down')} disabled={i === rows.length - 1} onClick={() => move(i, 1)}>
                 <ArrowDown size={14} />
               </button>
-              <button className="icon-btn danger" title={t('Remove stage')} onClick={() => setRows((r) => r.filter((_, j) => j !== i))}>
+              <button
+                className="icon-btn danger"
+                title={t('Remove stage')}
+                aria-label={t('Remove stage')}
+                onClick={() => {
+                  const before = rows
+                  setRows((r) => r.filter((_, j) => j !== i))
+                  toast.ok(t('Stage “{name}” removed — it is gone once you save the funnel', { name: s.name || s.key }), { label: t('Undo'), run: () => setRows(before) })
+                }}
+              >
                 <Trash2 size={14} />
               </button>
             </div>

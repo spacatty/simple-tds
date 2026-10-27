@@ -7,22 +7,28 @@ import { AlertTriangle, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRi
 import { errMsg } from '../api'
 import { useTitle } from '../hooks'
 import { fmtInt } from '../format'
-import { t } from '../i18n'
+import { t, tx } from '../i18n'
 
 // ---- toast ------------------------------------------------------------------
 
+/** A button on a toast, such as Undo. */
+export interface ToastAction {
+  label: string
+  run: () => void
+}
 interface ToastItem {
   id: number
   kind: 'ok' | 'err' | 'info'
   text: string
+  action?: ToastAction
 }
 let toastSeq = 0
 let toastItems: ToastItem[] = []
 const toastSubs = new Set<() => void>()
-function pushToast(kind: ToastItem['kind'], text: string) {
+function pushToast(kind: ToastItem['kind'], text: string, action?: ToastAction) {
   // A repeated message (a polling request that keeps failing) replaces its twin instead of stacking up.
   const rest = toastItems.filter((t) => t.kind !== kind || t.text !== text)
-  toastItems = [...rest, { id: ++toastSeq, kind, text }].slice(-5)
+  toastItems = [...rest, { id: ++toastSeq, kind, text, action }].slice(-5)
   toastSubs.forEach((f) => f())
 }
 function dismissToast(id: number) {
@@ -30,8 +36,8 @@ function dismissToast(id: number) {
   toastSubs.forEach((f) => f())
 }
 export const toast = {
-  ok: (text: string) => pushToast('ok', text),
-  info: (text: string) => pushToast('info', text),
+  ok: (text: string, action?: ToastAction) => pushToast('ok', text, action),
+  info: (text: string, action?: ToastAction) => pushToast('info', text, action),
   err: (e: unknown) => pushToast('err', typeof e === 'string' ? e : errMsg(e)),
 }
 
@@ -59,9 +65,10 @@ function Toast({ item }: { item: ToastItem }) {
   const [held, setHeld] = useState(false)
   useEffect(() => {
     if (held) return
-    const timer = setTimeout(() => dismissToast(item.id), item.kind === 'err' ? 7000 : 3500)
+    // An Undo needs time to be noticed and reached.
+    const timer = setTimeout(() => dismissToast(item.id), item.kind === 'err' || item.action ? 7000 : 3500)
     return () => clearTimeout(timer)
-  }, [held, item.id, item.kind])
+  }, [held, item.id, item.kind, item.action])
   return (
     <div
       className={'toast ' + item.kind}
@@ -73,6 +80,17 @@ function Toast({ item }: { item: ToastItem }) {
     >
       {item.kind === 'err' ? <XCircle size={16} /> : item.kind === 'info' ? <Info size={16} /> : <CheckCircle2 size={16} />}
       <span>{item.text}</span>
+      {item.action && (
+        <button
+          className="btn small toast-action"
+          onClick={() => {
+            dismissToast(item.id)
+            item.action?.run()
+          }}
+        >
+          {item.action.label}
+        </button>
+      )}
       <button className="icon-btn" onClick={() => dismissToast(item.id)} aria-label={t('Dismiss')}>
         <X size={14} />
       </button>
@@ -87,13 +105,16 @@ interface ConfirmOpts {
   message?: ReactNode
   confirmLabel?: string
   danger?: boolean
+  /** For what cannot be undone: the button works only once this text (a name) is typed. */
+  typeToConfirm?: string
 }
-let confirmState: (ConfirmOpts & { resolve: (v: boolean) => void }) | null = null
+let confirmSeq = 0
+let confirmState: (ConfirmOpts & { resolve: (v: boolean) => void; seq: number }) | null = null
 const confirmSubs = new Set<() => void>()
 
 export function confirmDialog(opts: ConfirmOpts): Promise<boolean> {
   return new Promise((resolve) => {
-    confirmState = { ...opts, resolve }
+    confirmState = { ...opts, resolve, seq: ++confirmSeq }
     confirmSubs.forEach((f) => f())
   })
 }
@@ -114,6 +135,15 @@ export function ConfirmHost() {
     confirmSubs.forEach((f) => f())
     st.resolve(v)
   }
+  return <ConfirmView key={st.seq} st={st} done={done} />
+}
+
+function ConfirmView({ st, done }: { st: ConfirmOpts; done: (v: boolean) => void }) {
+  const [typed, setTyped] = useState('')
+  const danger = st.danger !== false
+  const need = st.typeToConfirm?.trim() ?? ''
+  const ready = !need || typed.trim().toLowerCase() === need.toLowerCase()
+  // Enter must not destroy anything by accident: a dangerous dialog opens on Cancel, or on the box to type into.
   return (
     <Modal
       title={st.title}
@@ -121,16 +151,29 @@ export function ConfirmHost() {
       onClose={() => done(false)}
       footer={
         <>
-          <button className="btn" onClick={() => done(false)}>
+          <button className="btn" autoFocus={danger && !need} onClick={() => done(false)}>
             {t('Cancel')}
           </button>
-          <button className={'btn ' + (st.danger === false ? 'primary' : 'danger')} autoFocus onClick={() => done(true)}>
+          <button className={'btn ' + (danger ? 'danger' : 'primary')} autoFocus={!danger} disabled={!ready} onClick={() => done(true)}>
             {st.confirmLabel ?? t('Delete')}
           </button>
         </>
       }
     >
       <div className="confirm-body">{st.message}</div>
+      {need && (
+        <Field label={tx('Type <b>{name}</b> to confirm', { b: (c) => <b>{c}</b>, name: need })} className="confirm-type">
+          <input
+            className="input"
+            autoFocus
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && ready && done(true)}
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </Field>
+      )}
     </Modal>
   )
 }

@@ -12,7 +12,7 @@ import type { Metric } from '../components/StatBar'
 import { GROUP_PINS_DEFAULT, GROUP_PINS_PREF, isPinned, reloadCampaignGroups, useCampaignGroups, withPin } from '../campaignGroups'
 import { Badge, CopyButton, Empty, ErrorBox, Field, Modal, PageHeader, SearchInput, Segmented, Select, Toggle, confirmDialog, toast, useBusy } from '../components/ui'
 import { DateRangePicker, useDateRange } from '../components/DateRangePicker'
-import { loadReport, sumRows } from '../reports'
+import { confirmCutOff, loadReport, sumRows } from '../reports'
 import { buildSearch } from '../filters'
 import { fmtInt, fmtMoney, fmtPct, ratioPct } from '../format'
 import { errMsg } from '../api'
@@ -155,6 +155,7 @@ export default function Campaigns() {
   )
 
   const setEnabled = async (c: Campaign, enabled: boolean) => {
+    if (!enabled && !(await confirmCutOff('campaign', c.name, { campaign_id: c.id }))) return
     // The switch moves at once and goes back if the server refuses. Updating from the
     // latest list (not the one captured at click time) keeps two quick switches from undoing each other.
     const apply = (v: boolean) => list.setData((d) => d?.map((x) => (x.id === c.id ? { ...x, enabled: v } : x)))
@@ -197,6 +198,7 @@ export default function Campaigns() {
     const ok = await confirmDialog({
       title: t('Delete campaign?'),
       message: tx('<b>{name}</b> and all of its streams will be deleted and its link stops working. Collected statistics are kept.', { b: (x) => <b>{x}</b>, name: c.name }),
+      typeToConfirm: c.name,
     })
     if (!ok) return
     try {

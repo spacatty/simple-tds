@@ -2,8 +2,9 @@ import { get } from './api'
 import type { Params } from './api'
 import type { DateRange } from './components/DateRangePicker'
 import { browserTZ, fmtInt, fmtMoney, fmtPct } from './format'
-import { t } from './i18n'
+import { t, tn } from './i18n'
 import type { ReportRow } from './types'
+import { confirmDialog } from './components/ui'
 
 export function rangeParams(range: DateRange): Params {
   return { from: range.from, to: range.to, tz: browserTZ }
@@ -12,6 +13,37 @@ export function rangeParams(range: DateRange): Params {
 export async function loadReport(group: string, range: DateRange, extra: Params = {}): Promise<ReportRow[]> {
   const r = await get<{ rows: ReportRow[] | null }>('reports', { group, ...rangeParams(range), ...extra })
   return r.rows ?? []
+}
+
+/** Clicks of the last hour for these filters; 0 when the report cannot be had. */
+export async function lastHourClicks(filters: Params): Promise<number> {
+  const to = Math.floor(Date.now() / 1000)
+  try {
+    const rows = await loadReport('total', { preset: 'custom', from: to - 3600, to }, filters)
+    return rows[0]?.clicks ?? 0
+  } catch {
+    return 0
+  }
+}
+
+/**
+ * Asks before a switch cuts off traffic that is arriving right now. A campaign or stream
+ * that had no clicks in the last hour is switched off without a question.
+ */
+export async function confirmCutOff(kind: 'campaign' | 'stream', name: string, filters: Params): Promise<boolean> {
+  const n = await lastHourClicks(filters)
+  if (n === 0) return true
+  return kind === 'campaign'
+    ? confirmDialog({
+        title: t('Pause “{name}”?', { name }),
+        confirmLabel: t('Pause@@campaign action'),
+        message: tn(n, '{n} click arrived in the last hour. While the campaign is paused, its link answers 404.', '{n} clicks arrived in the last hour. While the campaign is paused, its link answers 404.'),
+      })
+    : confirmDialog({
+        title: t('Turn off “{name}”?', { name }),
+        confirmLabel: t('Turn off'),
+        message: tn(n, '{n} click went through this stream in the last hour. Turned off, its visitors go on to the streams below it.', '{n} clicks went through this stream in the last hour. Turned off, its visitors go on to the streams below it.'),
+      })
 }
 
 export const emptyRow = (key = ''): ReportRow => ({

@@ -7351,3 +7351,13 @@ tr.camp-child .tnum {
     display: none !important;
   }
 }
+
+/* An Undo (or another action) on a toast. */
+.toast .toast-action {
+  flex: none;
+  margin-left: 4px;
+}
+.confirm-type {
+  margin-top: 12px;
+  margin-bottom: 0;
+}
