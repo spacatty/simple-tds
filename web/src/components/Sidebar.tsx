@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 import { Activity, AppWindow, BarChart3, Bookmark, Check, ChevronDown, ChevronsUpDown, Earth, EyeOff, FileCode2, Folder, Globe, HeartPulse, KeyRound, LayoutDashboard, LayoutTemplate, Layers, Link2, ListOrdered, LogOut, Menu, MonitorSmartphone, Moon, MousePointerClick, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, ShieldCheck, Split, Sun, Target, Unlink, UserCog, Users as UsersIcon, Webhook } from 'lucide-react'
 import type { ReactNode } from 'react'
@@ -9,7 +9,7 @@ import { Flag, FunnelIcon } from './icons'
 import { APP_NAME, Logo } from './Logo'
 import { BUILTIN_PINS_DEFAULT, BUILTIN_PINS_PREF, BUILTIN_PRESETS, TOP_PATH, builtinHref, builtinOf, presetHref, reloadReportPresets, useReportPresets } from '../reportPresets'
 import { usePref } from '../hooks'
-import { groupHref, reloadCampaignGroups, useCampaignGroups } from '../campaignGroups'
+import { GROUP_PINS_DEFAULT, GROUP_PINS_PREF, groupHref, pinOrder, pinnedGroups, reloadCampaignGroups, useCampaignGroups } from '../campaignGroups'
 import { Dropdown } from './ui'
 
 interface Item {
@@ -117,9 +117,28 @@ export function Sidebar({ user, theme, toggleTheme, logout }: { user: User; them
     reloadReportPresets()
     reloadCampaignGroups()
   }, [user.id])
-  // Campaign groups hang under Campaigns: each opens the list filtered to it.
-  const campGroups = useCampaignGroups() ?? []
+  // The pinned campaign groups hang under Campaigns, in the order the user keeps them: each opens the list filtered to it.
+  const allGroups = useCampaignGroups() ?? []
+  const [groupPins, setGroupPins] = usePref<string>(GROUP_PINS_PREF, GROUP_PINS_DEFAULT)
+  const campGroups = pinnedGroups(groupPins, allGroups)
   const openGroup = loc.pathname === '/campaigns' ? campGroups.find((g) => String(g.id) === new URLSearchParams(loc.search).get('group')) : undefined
+  // Dragging a pinned group up or down the list saves the new order. The dragged id lives in
+  // a ref: drag events come fast, and the state (for the styling) may lag a render behind.
+  const dragging = useRef<number | null>(null)
+  const [dragId, setDragId] = useState<number | null>(null)
+  const [overId, setOverId] = useState<number | null>(null)
+  const startDrag = (id: number | null) => {
+    dragging.current = id
+    setDragId(id)
+    if (id === null) setOverId(null)
+  }
+  const dropGroup = (onto: number) => {
+    const from = dragging.current
+    if (from === null || from === onto) return
+    const ids = campGroups.map((g) => g.id).filter((id) => id !== from)
+    ids.splice(ids.indexOf(onto), 0, from)
+    setGroupPins(pinOrder(ids))
+  }
   const pinned = (presets ?? []).filter((p) => p.pinned)
   const openPreset = loc.pathname === TOP_PATH ? pinned.find((p) => String(p.id) === new URLSearchParams(loc.search).get('preset')) : undefined
   // And the built-in ones: which of them are listed is a preference on the account.
@@ -211,7 +230,31 @@ export function Sidebar({ user, theme, toggleTheme, logout }: { user: User; them
                         {campGroups
                           .filter((cg) => !isFolded || cg === openGroup)
                           .map((cg) => (
-                            <Link key={cg.id} to={groupHref(cg.id)} data-tip={cg.name} title={cg.name} className={'nav-item' + (cg === openGroup ? ' active' : '')} aria-current={cg === openGroup ? 'page' : undefined}>
+                            <Link
+                              key={cg.id}
+                              to={groupHref(cg.id)}
+                              data-tip={cg.name}
+                              title={campGroups.length > 1 ? t('{name} — drag to reorder', { name: cg.name }) : cg.name}
+                              className={'nav-item' + (cg === openGroup ? ' active' : '') + (dragId === cg.id ? ' dragging' : '') + (overId === cg.id && dragId !== cg.id ? ' drop-target' : '')}
+                              aria-current={cg === openGroup ? 'page' : undefined}
+                              draggable={campGroups.length > 1 && !isFolded}
+                              onDragStart={(e) => {
+                                e.dataTransfer.effectAllowed = 'move'
+                                startDrag(cg.id)
+                              }}
+                              onDragEnter={() => dragging.current !== null && setOverId(cg.id)}
+                              onDragOver={(e) => {
+                                if (dragging.current === null) return
+                                e.preventDefault()
+                                e.dataTransfer.dropEffect = 'move'
+                              }}
+                              onDrop={(e) => {
+                                e.preventDefault()
+                                dropGroup(cg.id)
+                                startDrag(null)
+                              }}
+                              onDragEnd={() => startDrag(null)}
+                            >
                               <Folder size={16} />
                               <span className="ellipsis">{cg.name}</span>
                             </Link>

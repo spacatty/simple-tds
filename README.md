@@ -176,12 +176,16 @@ be added there as well, and TLS-fingerprint bot checks are unavailable.
 
   Only the owner (or an admin) can share or delete a campaign. Domains,
   whitepages and keys are not shareable.
-- Campaigns can be filed into **groups** (Campaigns → Groups) and a group can
-  be shared at the same three levels: the share then covers every campaign in
-  the group, including the ones moved into it later. With both a group share
-  and a direct one, the higher level counts. A group holds only its owner's
-  campaigns, and only the owner moves campaigns in or out; deleting the group
-  or taking a campaign out of it ends that access at once.
+- Campaigns can be filed into **groups**: the strip above the campaign list
+  has a tab per group, **+** creates one, and the open tab's menu renames,
+  shares, pins and deletes it. A group can be shared at the same three levels:
+  the share then covers every campaign in the group, including the ones moved
+  into it later. With both a group share and a direct one, the higher level
+  counts. A group holds only its owner's campaigns, and only the owner moves
+  campaigns in or out (⋯ → Group on the row); deleting the group or taking a
+  campaign out of it ends that access at once. Which groups hang under
+  **Campaigns** in the sidebar, and in what order, is each user's own choice:
+  pin and unpin from the tab menu, drag to reorder.
 - **Dashboards** next to the built-in overview are personal: each user
   composes their own from numbers, charts, top lists and pinned funnels
   ("Pin" in any funnel drawer). They store only the layout — the figures come
@@ -222,6 +226,14 @@ yourself without deleting the rule. The actions:
 
 Typical setup: an intercepting stream `Bot IS` → whitepage, regular streams by geo and
 device → offers, default stream → whitepage or 404.
+
+The campaign list shows who feeds whom. A campaign whose every delivering stream
+is **Send to campaign** (intercepting streams and 404/whitepage dead ends do not
+count) is a *donor*: when it feeds one campaign that is in the list, its row sits
+under that campaign; when it splits between several, it stays a row of its own
+with a "→ 2 campaigns" chip. The campaign on the receiving end carries a
+"fed by N" chip, in the list and in its header. Clicks and conversions stay with
+the donor, so the totals are not counted twice.
 
 Integrations (Campaign → Integration): direct URL, a JS snippet for existing
 pages, and a `tds.php` include for server-side use.

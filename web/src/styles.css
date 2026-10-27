@@ -7150,3 +7150,183 @@ a.rep-chip:hover {
   padding: 0 2px;
   font-size: 11.5px;
 }
+
+/* Campaign groups as a strip of tabs above the list; the open one carries its menu. */
+.camp-bar {
+  padding-top: 0;
+  padding-bottom: 0;
+  min-height: 46px;
+  gap: 8px 10px;
+}
+.camp-bar .segmented,
+.camp-bar .search {
+  margin: 7px 0;
+}
+.group-tabs {
+  display: flex;
+  align-items: stretch;
+  align-self: stretch;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.group-tabs::-webkit-scrollbar {
+  display: none;
+}
+.group-tab {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  flex: none;
+  max-width: 220px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.group-tab.active {
+  border-bottom-color: var(--accent);
+}
+.group-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-3);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.group-tab-btn:hover,
+.group-tab.active .group-tab-btn {
+  color: var(--text);
+}
+.group-tab.active .group-tab-btn {
+  color: var(--accent-text);
+}
+.group-tab.active .group-tab-btn + .group-tab-menu {
+  margin-left: -8px;
+}
+.group-tab-n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--surface-3);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+}
+.group-tab.active .group-tab-n {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+/* The menu's wrapper sits in the tab's row; the button itself fills the tab height. */
+.group-tab > .dropdown,
+.group-tabs > .dropdown {
+  display: flex;
+  align-items: stretch;
+  flex: none;
+}
+.group-tab-menu {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px 0 2px;
+  border: 0;
+  background: none;
+  color: var(--accent-text);
+  cursor: pointer;
+}
+.group-tab-menu:hover {
+  color: var(--text);
+}
+.group-tab-more .group-tab-n {
+  margin: 0 2px;
+}
+.group-tab-add {
+  padding: 0 8px;
+}
+.group-tab-add:hover {
+  color: var(--accent-text);
+}
+.amenu-item .group-tab-n {
+  margin-right: -2px;
+}
+@media (max-width: 700px) {
+  .camp-bar .search {
+    width: 100%;
+  }
+}
+
+/* Who feeds whom: a donor sits under its target with a corner, the chips name the other end. */
+.camp-flow {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 9px;
+  background: var(--surface-3);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  white-space: nowrap;
+  text-decoration: none;
+}
+.camp-flow svg {
+  flex: none;
+}
+a.camp-flow:hover {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  text-decoration: none;
+}
+.camp-flow.donor {
+  background: var(--info-soft);
+  color: var(--info);
+}
+.camp-flow.in {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+.camp-nested {
+  padding-left: 4px;
+}
+.camp-corner {
+  flex: none;
+  color: var(--text-3);
+}
+/* The target and its donors read as one block. */
+.table tr:has(+ tr.camp-child) > td {
+  border-bottom-color: transparent;
+}
+tr.camp-child .camp-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+tr.camp-child .camp-clicks,
+tr.camp-child .tnum {
+  font-weight: 500;
+}
+
+/* Pinned groups in the sidebar: dragged into the order the user wants. */
+.nav-item[draggable='true'] {
+  cursor: grab;
+}
+.nav-item.dragging {
+  opacity: 0.45;
+}
+.nav-item.drop-target {
+  box-shadow: inset 0 2px 0 var(--accent);
+}

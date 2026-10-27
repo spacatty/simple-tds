@@ -1,15 +1,15 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, BarChart3, Copy, Eye, FlaskConical, Folder, FolderCog, FolderMinus, MousePointerClick, Pencil, Plus, RefreshCw, Trash2, Users } from 'lucide-react'
+import { BarChart3, Copy, CornerDownRight, Eye, FlaskConical, Folder, FolderMinus, MousePointerClick, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { del, get, post, put } from '../api'
-import { canEdit, canRead, isOwner, useLoad } from '../hooks'
+import { canEdit, canRead, isOwner, useLoad, usePref } from '../hooks'
 import type { Campaign, CampaignGroup, Domain, FunnelPreset, ReportRow, Stream } from '../types'
 import { DataTable } from '../components/DataTable'
 import type { Column } from '../components/DataTable'
 import { ActionMenu } from '../components/ActionMenu'
 import { StatBar } from '../components/StatBar'
 import type { Metric } from '../components/StatBar'
-import { reloadCampaignGroups, useCampaignGroups } from '../campaignGroups'
+import { GROUP_PINS_DEFAULT, GROUP_PINS_PREF, isPinned, reloadCampaignGroups, useCampaignGroups, withPin } from '../campaignGroups'
 import { Badge, CopyButton, Empty, ErrorBox, Field, Modal, PageHeader, SearchInput, Segmented, Select, Toggle, confirmDialog, toast, useBusy } from '../components/ui'
 import { DateRangePicker, useDateRange } from '../components/DateRangePicker'
 import { loadReport, sumRows } from '../reports'
@@ -18,7 +18,8 @@ import { fmtInt, fmtMoney, fmtPct, ratioPct } from '../format'
 import { errMsg } from '../api'
 import { t, tn, tx } from '../i18n'
 import FunnelDrawer from './FunnelDrawer'
-import { GroupsModal, ownsGroup } from './CampaignGroups'
+import { GroupNameModal, GroupTabs, ShareGroupModal, deleteGroup } from './CampaignGroups'
+import { FlowChips, useCampaignFlow } from '../components/CampaignFlow'
 import { FunnelIcon } from '../components/icons'
 
 export function costLabel(c: Campaign): string {
@@ -81,10 +82,13 @@ export default function Campaigns() {
   const [sp, setSp] = useSearchParams()
   const groupFilter = sp.get('group') ?? ''
   const setGroupFilter = (v: string) => setSp(v ? { group: v } : {})
-  const [managing, setManaging] = useState<{ shareId?: number } | null>(null)
+  const [naming, setNaming] = useState<{ group?: CampaignGroup } | null>(null)
+  const [sharing, setSharing] = useState<CampaignGroup | null>(null)
   const groupList = useMemo(() => groups ?? [], [groups])
-  const openGroup = groupList.find((g) => String(g.id) === groupFilter)
   const groupOf = (c: Campaign) => groupList.find((g) => g.id === c.group_id)
+  // Which groups the sidebar lists is the viewer's own choice.
+  const [pins, setPins] = usePref<string>(GROUP_PINS_PREF, GROUP_PINS_DEFAULT)
+  const flow = useCampaignFlow(streams.data)
 
   const everything = useMemo(() => list.data ?? [], [list.data])
   // A group view is a page of its own: its totals and counts are the group's.
@@ -110,6 +114,45 @@ export default function Campaigns() {
     const s = q.trim().toLowerCase()
     return all.filter((c) => (show === 'all' || (show === 'active') === c.enabled) && (!s || c.name.toLowerCase().includes(s) || c.alias.toLowerCase() === s || (c.note ?? '').toLowerCase().includes(s)))
   }, [all, q, show])
+  // A campaign that only feeds one other campaign sits under it — when that campaign is in
+  // the list too. Otherwise it stays a row of its own, with the arrow chip saying where it goes.
+  const parentOf = useMemo(() => {
+    const present = new Set(rows.map((c) => c.id))
+    const m = new Map<number, number>()
+    for (const c of rows) {
+      const to = flow.targets.get(c.id)
+      if (flow.donors.has(c.id) && to?.length === 1 && present.has(to[0])) m.set(c.id, to[0])
+    }
+    return m
+  }, [rows, flow])
+  const depthOf = (c: Campaign) => {
+    let d = 0
+    for (let id = parentOf.get(c.id); id !== undefined && d < 3; id = parentOf.get(id)) d++
+    return d
+  }
+  // Keeps the sort order for the top-level rows and tucks each donor right after its target.
+  const arrange = useCallback(
+    (sorted: Campaign[]) => {
+      const kids = new Map<number, Campaign[]>()
+      for (const c of sorted) {
+        const p = parentOf.get(c.id)
+        if (p !== undefined) kids.set(p, [...(kids.get(p) ?? []), c])
+      }
+      const out: Campaign[] = []
+      const seen = new Set<number>()
+      const walk = (c: Campaign) => {
+        if (seen.has(c.id)) return
+        seen.add(c.id)
+        out.push(c)
+        for (const k of kids.get(c.id) ?? []) walk(k)
+      }
+      for (const c of sorted) if (!parentOf.has(c.id)) walk(c)
+      // Donors that feed each other in a ring have no top-level row to hang from.
+      for (const c of sorted) walk(c)
+      return out
+    },
+    [parentOf],
+  )
 
   const setEnabled = async (c: Campaign, enabled: boolean) => {
     // The switch moves at once and goes back if the server refuses. Updating from the
@@ -187,9 +230,11 @@ export default function Campaigns() {
         const n = streamCount.get(c.id)
         // A test campaign answers nothing without its key.
         const path = c.alias + (c.test && c.test_key ? `?key=${c.test_key}` : '')
+        const nested = parentOf.has(c.id)
         return (
-          <div className="camp">
+          <div className={'camp' + (nested ? ' camp-nested' : '')} style={nested ? { marginLeft: (depthOf(c) - 1) * 22 } : undefined}>
             <div className="camp-title">
+              {nested && <CornerDownRight size={14} className="camp-corner" aria-label={t('Sends all of its traffic to the campaign above')} />}
               <Link to={campaignLink(c)} className="camp-name ellipsis" title={canRead(c) ? c.note || undefined : t('Only statistics are shared with you: opens the reports for this campaign')}>
                 {c.name}
               </Link>
@@ -197,6 +242,7 @@ export default function Campaigns() {
               <TestBadge c={c} />
               <AccessBadge c={c} />
               {c.access && c.access !== 'owner' && c.owner_name && <span className="muted small">{t('by {name}@@owner', { name: c.owner_name })}</span>}
+              <FlowChips c={c} flow={flow} campaigns={everything} nested={nested} />
             </div>
             <div className="camp-meta">
               {!groupFilter && groupOf(c) && (
@@ -290,7 +336,7 @@ export default function Campaigns() {
                         ...(c.group_id ? [{ icon: <FolderMinus size={15} />, label: t('Remove from the group'), onClick: () => moveTo(c, null) }] : []),
                       ]
                     : [],
-                  extra: isOwner(c) && own.length === 0 && <div className="muted pad-s small">{t('No groups yet — create one with “Groups” above the list.')}</div>,
+                  extra: isOwner(c) && own.length === 0 && <div className="muted pad-s small">{t('No groups yet — create one with “+” in the strip above the list.')}</div>,
                 },
                 { items: isOwner(c) ? [{ icon: <Trash2 size={15} />, label: t('Delete'), danger: true, onClick: () => remove(c) }] : [] },
               ]}
@@ -313,27 +359,18 @@ export default function Campaigns() {
     { value: 'active' as Show, label: t('Active {n}', { n: active }) },
     { value: 'paused' as Show, label: t('Paused {n}', { n: all.length - active }) },
   ]
-  const title = openGroup ? openGroup.name : groupFilter === 'none' ? t('Campaigns without a group') : t('Campaigns')
+  const groupCount = (g: CampaignGroup) => everything.filter((c) => c.group_id === g.id).length
+  const removeGroup = async (g: CampaignGroup) => {
+    if (!(await deleteGroup(g, everything))) return
+    if (String(g.id) === groupFilter) setGroupFilter('')
+    reloadCampaignGroups()
+    // Deleting a group ungroups its campaigns.
+    list.reload()
+  }
 
   return (
     <div className="page">
-      <PageHeader
-        title={title}
-        sub={
-          groupFilter ? (
-            <Link to="/campaigns" className="back">
-              <ArrowLeft size={13} /> {t('All campaigns')}
-            </Link>
-          ) : (
-            t('Each campaign is a URL that routes visitors through its streams.')
-          )
-        }
-      >
-        {openGroup && ownsGroup(openGroup) && (
-          <button className="btn" onClick={() => setManaging({ shareId: openGroup.id })} title={t('Choose who gets the campaigns of this group')}>
-            <Users size={14} /> {t('Share group')}
-          </button>
-        )}
+      <PageHeader title={t('Campaigns')} sub={t('Each campaign is a URL that routes visitors through its streams.')}>
         <button className="btn primary" onClick={() => setCreating(true)}>
           <Plus size={15} /> {t('New campaign')}
         </button>
@@ -356,12 +393,22 @@ export default function Campaigns() {
 
       <div className="card camp-card">
         <div className="card-head camp-bar">
-          <Segmented small value={show} onChange={setShow} options={showOptions} />
+          <GroupTabs
+            groups={groupList}
+            value={groupFilter}
+            onChange={setGroupFilter}
+            count={groupCount}
+            ungrouped={everything.filter((c) => !c.group_id).length}
+            isPinned={(g) => isPinned(pins, groupList, g.id)}
+            onPin={(g, on) => setPins(withPin(pins, groupList, g.id, on))}
+            onRename={(g) => setNaming({ group: g })}
+            onShare={setSharing}
+            onDelete={removeGroup}
+            onCreate={() => setNaming({})}
+          />
           <span className="grow" />
-          <button className="btn small ghost" onClick={() => setManaging({})} title={t('Create, rename, share and delete campaign groups')}>
-            <FolderCog size={13} /> {t('Groups')}
-          </button>
-          <SearchInput value={q} onChange={setQ} placeholder={t('Search name, note or link ID…')} width={260} />
+          <Segmented small value={show} onChange={setShow} options={showOptions} />
+          <SearchInput value={q} onChange={setQ} placeholder={t('Search name, note or link ID…')} width={220} />
         </div>
         <DataTable
           columns={columns}
@@ -369,7 +416,8 @@ export default function Campaigns() {
           rowKey={(c) => c.id}
           loading={list.loading}
           defaultSort={{ key: 'clicks', dir: 'desc' }}
-          rowClass={(c) => (c.enabled ? '' : 'camp-off')}
+          arrange={arrange}
+          rowClass={(c) => (c.enabled ? '' : 'camp-off') + (parentOf.has(c.id) ? ' camp-child' : '')}
           empty={
             <Empty title={q || show !== 'all' || groupFilter ? t('No campaigns match') : t('No campaigns yet')} action={!q && show === 'all' && !groupFilter && <button className="btn primary" onClick={() => setCreating(true)}><Plus size={15} /> {t('Create the first campaign')}</button>}>
               {!q && show === 'all' && !groupFilter && t('Create a campaign, add streams with filters, and point a domain at it.')}
@@ -378,19 +426,22 @@ export default function Campaigns() {
         />
       </div>
       {funnelFor && <FunnelDrawer campaign={funnelFor} range={range} setRange={setRange} onClose={() => setFunnelFor(null)} />}
-      {managing && (
-        <GroupsModal
-          groups={groupList}
-          campaigns={everything}
-          shareId={managing.shareId}
-          onClose={() => setManaging(null)}
-          onChanged={() => {
+      {naming && (
+        <GroupNameModal
+          group={naming.group}
+          onClose={() => setNaming(null)}
+          onSaved={(g) => {
+            setNaming(null)
             reloadCampaignGroups()
-            // Deleting a group ungroups its campaigns.
-            list.reload()
+            if (!naming.group) {
+              // A group you just made is one you will want at hand.
+              if (pins !== GROUP_PINS_DEFAULT) setPins(withPin(pins, [...groupList, g], g.id, true))
+              setGroupFilter(String(g.id))
+            }
           }}
         />
       )}
+      {sharing && <ShareGroupModal group={sharing} campaigns={everything} onClose={() => setSharing(null)} />}
       {creating && <CreateCampaign onClose={() => setCreating(false)} onCreated={(c) => nav(`/campaigns/${c.id}`)} />}
     </div>
   )

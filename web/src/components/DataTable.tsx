@@ -27,28 +27,33 @@ interface Props<T> {
   /** Renders a detail panel under the row when it is clicked. */
   expand?: (row: T) => ReactNode
   defaultSort?: { key: string; dir: 'asc' | 'desc' }
+  /** Reorders the sorted rows, e.g. to keep children right after their parent whatever the sort. */
+  arrange?: (sorted: T[]) => T[]
   maxHeight?: number | string
   rowClass?: (row: T) => string
   onRowClick?: (row: T) => void
 }
 
-export function DataTable<T>({ columns, rows, rowKey, loading, empty, footer, expand, defaultSort, maxHeight, rowClass, onRowClick }: Props<T>) {
+export function DataTable<T>({ columns, rows, rowKey, loading, empty, footer, expand, defaultSort, arrange, maxHeight, rowClass, onRowClick }: Props<T>) {
   const [sort, setSort] = useState(defaultSort)
   const [open, setOpen] = useState<Set<string | number>>(new Set())
 
   const sorted = useMemo(() => {
     if (!rows) return []
     const col = sort && columns.find((c) => c.key === sort.key)
-    if (!col || !col.sort || !sort) return rows
+    const done = (list: T[]) => (arrange ? arrange(list) : list)
+    if (!col || !col.sort || !sort) return done(rows)
     const get = col.sort
     const dir = sort.dir === 'asc' ? 1 : -1
-    return [...rows].sort((a, b) => {
-      const x = get(a)
-      const y = get(b)
-      if (typeof x === 'number' && typeof y === 'number') return (x - y) * dir
-      return String(x).localeCompare(String(y), undefined, { numeric: true }) * dir
-    })
-  }, [rows, sort, columns])
+    return done(
+      [...rows].sort((a, b) => {
+        const x = get(a)
+        const y = get(b)
+        if (typeof x === 'number' && typeof y === 'number') return (x - y) * dir
+        return String(x).localeCompare(String(y), undefined, { numeric: true }) * dir
+      }),
+    )
+  }, [rows, sort, columns, arrange])
 
   const clickHead = (c: Column<T>) => {
     if (!c.sort) return

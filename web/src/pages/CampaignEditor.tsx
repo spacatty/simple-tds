@@ -4,7 +4,7 @@ import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-r
 import { ArrowLeft, BarChart3, Check, ChevronDown, ChevronRight, ChevronsUpDown, Copy, Download, Eraser, FlaskConical, Folder, GitMerge, Link2, MousePointerClick, RefreshCw, Search, Save, Settings, ShieldX, Trash2 } from 'lucide-react'
 import { del, errMsg, get, post, put } from '../api'
 import { canEdit, canRead, isOwner, useLoad, useMeta, useTitle } from '../hooks'
-import type { Campaign, CampaignGroup, Domain, GeoPreset, IntegrationSnippets, Whitepage } from '../types'
+import type { Campaign, CampaignGroup, Domain, GeoPreset, IntegrationSnippets, Stream, Whitepage } from '../types'
 import { Card, CodeBlock, CopyButton, Dropdown, ErrorBox, Field, MenuItem, Modal, Notice, NumberInput, Segmented, Select, Skeleton, Toggle, confirmDialog, copyText, toast } from '../components/ui'
 import { DateRangePicker, useDateRange } from '../components/DateRangePicker'
 import StreamFunnel from './StreamFunnel'
@@ -14,6 +14,7 @@ import Simulator from './Simulator'
 import Sharing from './Sharing'
 import Stages from './Stages'
 import { AccessBadge, TestBadge } from './Campaigns'
+import { FlowChips, useCampaignFlow } from '../components/CampaignFlow'
 import { ActionMenu } from '../components/ActionMenu'
 import { FunnelIcon } from '../components/icons'
 import FunnelDrawer from './FunnelDrawer'
@@ -319,6 +320,9 @@ export default function CampaignEditor() {
   const presets = useLoad(() => get<GeoPreset[]>('geo-presets'), [])
   const domains = useLoad(() => get<Domain[]>('domains'), [])
   const groups = useLoad(() => get<CampaignGroup[] | null>('campaign-groups'), [])
+  // Every stream, for the "fed by" and "→" chips in the header: other campaigns may send here.
+  const allStreams = useLoad(() => get<Stream[]>('streams'), [])
+  const flow = useCampaignFlow(allStreams.data)
   const [range, setRange] = useDateRange()
 
   const campaign = camps.data?.find((c) => c.id === id)
@@ -544,6 +548,7 @@ export default function CampaignEditor() {
     <>
       <TestBadge c={campaign} />
       <AccessBadge c={campaign} />
+      <FlowChips c={campaign} flow={flow} campaigns={camps.data ?? []} />
     </>
   )
   const copyLink = async () => {
