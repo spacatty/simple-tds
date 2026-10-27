@@ -1,6 +1,8 @@
 import { Component, Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent, ReactNode, RefObject } from 'react'
 import { createPortal } from 'react-dom'
+import { useBlocker } from 'react-router-dom'
+import type { Location } from 'react-router-dom'
 import { AlertTriangle, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Copy, Inbox, Info, Search, X, XCircle } from 'lucide-react'
 import { errMsg } from '../api'
 import { useTitle } from '../hooks'
@@ -141,6 +143,84 @@ interface OverlayProps {
   children: ReactNode
   footer?: ReactNode
   size?: 'sm' | 'md' | 'lg' | 'xl'
+  /** Edits not saved yet: Escape, a click beside the dialog and its ✕ ask before throwing them away. */
+  dirty?: boolean
+}
+
+/** Whether value differs from what it was when the component mounted. */
+export function useDirty(value: unknown): boolean {
+  const [initial] = useState(() => JSON.stringify(value))
+  return JSON.stringify(value) !== initial
+}
+
+/** Asks whether unsaved edits may go. */
+export const discardEdits = () =>
+  confirmDialog({ title: t('Discard unsaved changes?'), confirmLabel: t('Discard'), message: t('The changes you made here have not been saved.') })
+
+/** onClose, behind a confirmation while there are unsaved edits. */
+function useGuardedClose(onClose: () => void, dirty?: boolean) {
+  const ref = useRef({ onClose, dirty })
+  ref.current = { onClose, dirty }
+  return useCallback(async () => {
+    if (ref.current.dirty && !(await discardEdits())) return
+    ref.current.onClose()
+  }, [])
+}
+
+// ---- leaving a page with unsaved edits ------------------------------------------
+
+interface LeaveGuard {
+  dirty: boolean
+  message: string
+  /** Whether going from one address to the other loses the edits; by default any other page does. */
+  blocks: (from: Location, to: Location) => boolean
+  onDiscard?: () => void
+}
+const leaveGuards = new Set<{ current: LeaveGuard }>()
+const leavesPage = (from: Location, to: Location) => from.pathname !== to.pathname
+
+/**
+ * Asks before the app navigates away from edits that are not saved (links, Back, the sidebar),
+ * and lets the browser warn on reload or close.
+ */
+export function useLeaveGuard(dirty: boolean, message: string, opts: { blocks?: LeaveGuard['blocks']; onDiscard?: () => void } = {}) {
+  const ref = useRef<LeaveGuard>({ dirty, message, blocks: opts.blocks ?? leavesPage, onDiscard: opts.onDiscard })
+  ref.current = { dirty, message, blocks: opts.blocks ?? leavesPage, onDiscard: opts.onDiscard }
+  useEffect(() => {
+    leaveGuards.add(ref)
+    return () => {
+      leaveGuards.delete(ref)
+    }
+  }, [])
+  useEffect(() => {
+    if (!dirty) return
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault()
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [dirty])
+}
+
+/** The one router blocker behind every useLeaveGuard (a router takes only one). */
+export function LeaveGuardHost() {
+  const hit = useRef<LeaveGuard[]>([])
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => {
+    hit.current = [...leaveGuards].map((g) => g.current).filter((g) => g.dirty && g.blocks(currentLocation, nextLocation))
+    return hit.current.length > 0
+  })
+  const latest = useRef(blocker)
+  latest.current = blocker
+  useEffect(() => {
+    if (blocker.state !== 'blocked') return
+    const guards = hit.current
+    confirmDialog({ title: t('Leave without saving?'), confirmLabel: t('Discard and leave'), message: guards.map((g) => g.message).join(' ') }).then((ok) => {
+      const b = latest.current
+      if (b.state !== 'blocked') return
+      if (!ok) return b.reset()
+      guards.forEach((g) => g.onDiscard?.())
+      b.proceed()
+    })
+  }, [blocker.state])
+  return null
 }
 
 function useOverlay(onClose: () => void, active = true) {
@@ -219,7 +299,8 @@ const stack = (() => {
   }
 })()
 
-export function Modal({ title, onClose, children, footer, size = 'md' }: OverlayProps) {
+export function Modal({ title, onClose: close, children, footer, dirty, size = 'md' }: OverlayProps) {
+  const onClose = useGuardedClose(close, dirty)
   const dialog = useDialog(onClose)
   return createPortal(
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -238,7 +319,8 @@ export function Modal({ title, onClose, children, footer, size = 'md' }: Overlay
   )
 }
 
-export function Drawer({ title, onClose, children, footer, size = 'lg' }: OverlayProps) {
+export function Drawer({ title, onClose: close, children, footer, dirty, size = 'lg' }: OverlayProps) {
+  const onClose = useGuardedClose(close, dirty)
   const dialog = useDialog(onClose)
   return createPortal(
     <div className="overlay overlay-drawer" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>

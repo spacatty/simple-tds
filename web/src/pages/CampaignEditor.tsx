@@ -5,7 +5,7 @@ import { ArrowLeft, BarChart3, Check, ChevronDown, ChevronRight, ChevronsUpDown,
 import { del, errMsg, get, post, put } from '../api'
 import { canEdit, canRead, isOwner, useLoad, useMeta, useTitle } from '../hooks'
 import type { Campaign, CampaignGroup, Domain, GeoPreset, IntegrationSnippets, Stream, Whitepage } from '../types'
-import { Card, CodeBlock, CopyButton, Dropdown, ErrorBox, Field, MenuItem, Modal, Notice, NumberInput, Segmented, Select, Skeleton, Tabs, Toggle, confirmDialog, copyText, toast } from '../components/ui'
+import { Card, CodeBlock, CopyButton, Dropdown, ErrorBox, Field, MenuItem, Modal, Notice, NumberInput, Segmented, Select, Skeleton, Tabs, Toggle, confirmDialog, copyText, toast, useLeaveGuard } from '../components/ui'
 import { DateRangePicker, useDateRange } from '../components/DateRangePicker'
 import StreamFunnel from './StreamFunnel'
 import { STATS_STYLES, useStatsStyle } from '../streamStats'
@@ -355,12 +355,8 @@ export default function CampaignEditor() {
   }, [campaign?.id])
   const dirty = !!campaign && !!form && JSON.stringify(form) !== JSON.stringify(formOf(campaign))
 
-  useEffect(() => {
-    if (!dirty) return
-    const warn = (e: BeforeUnloadEvent) => e.preventDefault()
-    window.addEventListener('beforeunload', warn)
-    return () => window.removeEventListener('beforeunload', warn)
-  }, [dirty])
+  // The form outlives a switch between sections; only leaving the campaign loses it.
+  useLeaveGuard(dirty, t('The campaign settings you changed have not been saved.'))
 
   // One domain choice shared by the Link and Integration tabs.
   const sortedDomains = useMemo(() => [...(domains.data ?? [])].sort((a, b) => Number(b.status === 'ok') - Number(a.status === 'ok') || a.name.localeCompare(b.name)), [domains.data])
@@ -405,19 +401,10 @@ export default function CampaignEditor() {
       setSaving(false)
     }
   }
-  /** Runs go() unless the Settings form has unsaved edits the user wants to keep. */
-  const leave = async (go: () => void) => {
-    if (tab === 'settings' && dirty && campaign) {
-      const ok = await confirmDialog({ title: t('Discard unsaved settings?'), confirmLabel: t('Discard'), message: t('The campaign settings you changed have not been saved.') })
-      if (!ok) return
-      setForm(formOf(campaign))
-    }
-    go()
-  }
   const goTab = (t: Tab) => {
     if (t === tab) return
     // Switching tabs also drops the simulator prefill parameters.
-    leave(() => nav(`/campaigns/${id}${t === 'streams' ? '' : '?tab=' + t}`))
+    nav(`/campaigns/${id}${t === 'streams' ? '' : '?tab=' + t}`)
   }
   const setEnabled = async (enabled: boolean) => {
     if (!campaign) return
@@ -540,7 +527,7 @@ export default function CampaignEditor() {
   const link = `https://${domain || 'YOUR-DOMAIN'}/${campaign.alias}` + (campaign.test && campaign.test_key ? `?key=${campaign.test_key}` : '')
 
   const back = (
-    <button className="icon-btn" onClick={() => leave(() => nav('/campaigns'))} title={t('Back to campaigns')} aria-label={t('Back to campaigns')}>
+    <button className="icon-btn" onClick={() => nav('/campaigns')} title={t('Back to campaigns')} aria-label={t('Back to campaigns')}>
       <ArrowLeft size={17} />
     </button>
   )
@@ -562,7 +549,7 @@ export default function CampaignEditor() {
       <div className="ce-bar ce-tabsbar">
         <header className="ce-wrap ce-slim">
           {back}
-          <CampaignSwitch campaign={campaign} campaigns={camps.data ?? []} name={form.name || campaign.name} onPick={(c) => leave(() => nav(`/campaigns/${c.id}${tab === 'streams' ? '' : '?tab=' + tab}`))} />
+          <CampaignSwitch campaign={campaign} campaigns={camps.data ?? []} name={form.name || campaign.name} onPick={(c) => nav(`/campaigns/${c.id}${tab === 'streams' ? '' : '?tab=' + tab}`)} />
           {badges}
           {/* On a phone the sections do not fit in a strip, so they fold into a picker after the name. */}
           <span className="ce-slim-sep narrow-only">/</span>

@@ -7,7 +7,7 @@ import { canEdit, useInterval, useIsAdmin, useLoad, usePref } from '../hooks'
 import type { BulkAddResult, Campaign, Domain, DomainGroup, SystemInfo } from '../types'
 import { HEALTH, HealthTiles, RepChips, domainHealth, useProviderNames } from '../components/DomainHealth'
 import type { Health } from '../components/DomainHealth'
-import { Badge, CopyButton, Dropdown, Empty, ErrorBox, Field, MenuItem, Modal, Notice, PageHeader, SearchInput, Select, Skeleton, Toggle, confirmDialog, toast, useBusy } from '../components/ui'
+import { Badge, CopyButton, Dropdown, Empty, ErrorBox, Field, MenuItem, Modal, Notice, PageHeader, SearchInput, Select, Skeleton, Toggle, confirmDialog, toast, useBusy, useDirty } from '../components/ui'
 import type { Tone } from '../components/ui'
 import { fmtAgo, fmtDateTime } from '../format'
 import { t, tn, ts, tx } from '../i18n'
@@ -478,6 +478,7 @@ function AddDomains({ isAdmin, groups, campaigns, onClose, onAdded }: { isAdmin:
   const [admin, setAdmin] = useState(false)
   const [result, setResult] = useState<BulkAddResult | null>(null)
   const [error, setError] = useState('')
+  const dirty = useDirty({ names, v, admin })
   const [busy, run] = useBusy()
   const count = names.split(/[\s,;]+/).filter(Boolean).length
 
@@ -529,6 +530,7 @@ function AddDomains({ isAdmin, groups, campaigns, onClose, onAdded }: { isAdmin:
       title={t('Add domains')}
       size="lg"
       onClose={onClose}
+      dirty={dirty}
       footer={
         <>
           {error && <div className="field-error grow">{error}</div>}
@@ -562,6 +564,7 @@ function EditDomain({ domain, isAdmin, groups, campaigns, onClose, onSaved }: { 
   const [admin, setAdmin] = useState(domain.admin_enabled)
   const [enabled, setEnabled] = useState(domain.enabled)
   const [error, setError] = useState('')
+  const dirty = useDirty({ name, note, v, admin, enabled })
   const [busy, run] = useBusy()
   const names = useProviderNames()
   const reputation = domain.reputation ?? []
@@ -581,6 +584,7 @@ function EditDomain({ domain, isAdmin, groups, campaigns, onClose, onSaved }: { 
       title={t('Edit {name}', { name: domain.name })}
       size="lg"
       onClose={onClose}
+      dirty={dirty}
       footer={
         <>
           {error && <div className="field-error grow">{error}</div>}

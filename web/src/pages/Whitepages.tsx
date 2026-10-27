@@ -5,7 +5,7 @@ import { useLoad } from '../hooks'
 import type { SystemInfo, WPFile, Whitepage } from '../types'
 import { DataTable } from '../components/DataTable'
 import type { Column } from '../components/DataTable'
-import { Badge, Empty, ErrorBox, Field, Modal, Notice, PageHeader, Select, Toggle, confirmDialog, toast, useBusy } from '../components/ui'
+import { Badge, Empty, ErrorBox, Field, Modal, Notice, PageHeader, Select, Toggle, confirmDialog, toast, useBusy, useDirty, discardEdits } from '../components/ui'
 import { fmtBytes, fmtDateTime, fmtInt } from '../format'
 import { t, tn, tx } from '../i18n'
 
@@ -219,6 +219,7 @@ function UploadModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
   const [note, setNote] = useState('')
   const [injectBase, setInjectBase] = useState(true)
   const [error, setError] = useState('')
+  const dirty = useDirty({ file: !!file, name, note, injectBase })
   const [busy, run] = useBusy()
   const submit = () =>
     run(async () => {
@@ -241,6 +242,7 @@ function UploadModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
     <Modal
       title={t('Upload whitepage')}
       onClose={onClose}
+      dirty={dirty}
       footer={
         <>
           {error && <div className="field-error grow">{error}</div>}
@@ -275,6 +277,8 @@ function EditModal({ wp: initial, phpOff, onClose, onPreview }: { wp: Whitepage;
   const [injectBase, setInjectBase] = useState(initial.inject_base)
   const [file, setFile] = useState<File | null>(null)
   const [error, setError] = useState('')
+  // Against the saved row, which a file replacement also moves on.
+  const dirty = name !== wp.name || note !== wp.note || entry !== wp.entry || injectBase !== wp.inject_base
   const [busy, run] = useBusy()
   const files = useLoad(() => get<WPFile[]>(`whitepages/${initial.id}/files`), [initial.id])
 
@@ -315,13 +319,14 @@ function EditModal({ wp: initial, phpOff, onClose, onPreview }: { wp: Whitepage;
       title={t('Whitepage: {name}', { name: wp.name })}
       size="lg"
       onClose={onClose}
+      dirty={dirty}
       footer={
         <>
           {error && <div className="field-error grow">{error}</div>}
           <button className="btn" onClick={() => onPreview(wp)}>
             <Eye size={14} /> {t('Preview')}
           </button>
-          <button className="btn" onClick={onClose}>
+          <button className="btn" onClick={async () => (!dirty || (await discardEdits())) && onClose()}>
             {t('Close')}
           </button>
           <button className="btn primary" disabled={busy || !name.trim()} onClick={save}>

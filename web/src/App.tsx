@@ -4,7 +4,7 @@ import { ApiError, api, errMsg, get, onUnauthorized, post } from './api'
 import { AppContext, useTheme } from './hooks'
 import { t } from './i18n'
 import type { Meta, User } from './types'
-import { ConfirmHost, ErrorBoundary, ErrorBox, ToastHost } from './components/ui'
+import { ConfirmHost, ErrorBoundary, ErrorBox, LeaveGuardHost, ToastHost } from './components/ui'
 import { Sidebar } from './components/Sidebar'
 import { BUILTIN_PRESETS, builtinHref } from './reportPresets'
 import Login from './pages/Login'
@@ -165,6 +165,7 @@ export default function App() {
       </div>
       <ToastHost />
       <ConfirmHost />
+      <LeaveGuardHost />
     </AppContext.Provider>
   )
 }

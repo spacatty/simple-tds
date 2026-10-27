@@ -6,7 +6,7 @@ import { useLoad, useMeta } from '../hooks'
 import type { ConvKey, Domain } from '../types'
 import { DataTable } from '../components/DataTable'
 import type { Column } from '../components/DataTable'
-import { Badge, Chips, CodeBlock, CopyButton, Empty, ErrorBox, Field, Modal, Notice, NumberInput, Select, Toggle, confirmDialog, toast, useBusy } from '../components/ui'
+import { Badge, Chips, CodeBlock, CopyButton, Empty, ErrorBox, Field, Modal, Notice, NumberInput, Select, Toggle, confirmDialog, toast, useBusy, useDirty } from '../components/ui'
 import { humanize } from '../format'
 import { t, ts, tx } from '../i18n'
 
@@ -287,6 +287,7 @@ function KeyEditor({ k, types, onClose, onSaved }: { k: ConvKey | null; types: s
     note: k?.note ?? '',
   })
   const [error, setError] = useState('')
+  const dirty = useDirty(f)
   const [busy, run] = useBusy()
   const set = (p: Partial<typeof f>) => setF((x) => ({ ...x, ...p }))
   const attr = ATTRIBUTION.find((a) => a.value === f.attribution)
@@ -317,6 +318,7 @@ function KeyEditor({ k, types, onClose, onSaved }: { k: ConvKey | null; types: s
       title={k ? t('Key: {name}', { name: k.name }) : t('New conversion key')}
       size="lg"
       onClose={onClose}
+      dirty={dirty}
       footer={
         <>
           {error && <div className="field-error grow">{error}</div>}

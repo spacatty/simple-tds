@@ -5,7 +5,7 @@ import { canEdit, useApp, useLoad } from '../hooks'
 import type { Campaign, Row, SuppressRule } from '../types'
 import { DataTable } from '../components/DataTable'
 import type { Column } from '../components/DataTable'
-import { Card, Empty, ErrorBox, Field, Modal, MultiSelect, PageHeader, Pagination, SearchInput, Segmented, Select, confirmDialog, toast, useBusy } from '../components/ui'
+import { Card, Empty, ErrorBox, Field, Modal, MultiSelect, PageHeader, Pagination, SearchInput, Segmented, Select, confirmDialog, toast, useBusy, useDirty } from '../components/ui'
 import { fmtAgo, fmtDateTime, fmtInt, num } from '../format'
 import { t, tn, tx } from '../i18n'
 
@@ -258,6 +258,7 @@ function RuleEditor({ kind, rule, campaigns, onClose, onSaved }: { kind: Kind; r
   const [scope, setScope] = useState<'all' | 'some'>(ids.length ? 'some' : 'all')
   const [store, setStore] = useState<Store>(rule?.store ?? 'count')
   const [error, setError] = useState('')
+  const dirty = useDirty({ values, ids, scope, store })
   const [busy, run] = useBusy()
   const lines = values.split(/[\s,;]+/).filter(Boolean).length
   // Campaigns the rule may be pointed at, plus the ones it already names.
@@ -286,6 +287,7 @@ function RuleEditor({ kind, rule, campaigns, onClose, onSaved }: { kind: Kind; r
     <Modal
       title={rule ? rule.value : text.add}
       onClose={onClose}
+      dirty={dirty}
       footer={
         <>
           {error && <div className="field-error grow">{error}</div>}

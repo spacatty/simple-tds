@@ -6,7 +6,7 @@ import { errMsg, get, post, put } from '../api'
 import { useLoad, useMeta } from '../hooks'
 import type { Campaign, ConvKey, FunnelPreset, Outcome, Stage } from '../types'
 import type { DateRange } from '../components/DateRangePicker'
-import { Card, CopyButton, Dropdown, Field, MenuItem, Modal, Notice, Select, confirmDialog, useBusy, toast } from '../components/ui'
+import { Card, CopyButton, Dropdown, Field, MenuItem, Modal, Notice, Select, confirmDialog, useBusy, toast, useLeaveGuard } from '../components/ui'
 import { FunnelView } from './FunnelDrawer'
 import { t, tn, tx } from '../i18n'
 
@@ -61,6 +61,8 @@ const outcomeError = (rows: Stage[], s: Stage, o: Outcome) =>
 /** Whether the server would refuse these stages for a key that is malformed or repeated. */
 export const stagesInvalid = (rows: Stage[]) => rows.some((s) => stageKeyError(rows, s) || outs(s).some((o) => outcomeError(rows, s, o)))
 
+const sectionOf = (search: string) => new URLSearchParams(search).get('tab')
+
 /** The campaign's own funnel: its stages, and the preset they can be taken from or saved as. */
 function StageEditor({ campaign, saved, readOnly, onSaved }: { campaign: Campaign; saved: Stage[]; readOnly: boolean; onSaved: (c: Campaign) => void }) {
   const [rows, setRows] = useState<Stage[]>(saved)
@@ -72,6 +74,8 @@ function StageEditor({ campaign, saved, readOnly, onSaved }: { campaign: Campaig
   const presets = useLoad(() => (readOnly ? Promise.resolve([]) : get<FunnelPreset[] | null>('funnel-presets')), [readOnly])
   const list = presets.data ?? []
   const dirty = JSON.stringify(rows) !== JSON.stringify(saved) || from !== undefined
+  // The editor is gone as soon as another section or page opens.
+  useLeaveGuard(dirty && !readOnly, t('The funnel stages you changed have not been saved.'), { blocks: (a, b) => a.pathname !== b.pathname || sectionOf(a.search) !== sectionOf(b.search) })
   const invalid = stagesInvalid(rows)
   // Presets are personal: the one this funnel came from is known only to whoever owns it.
   const origin = list.find((p) => p.id === (from ? from.id : campaign.funnel_preset_id))

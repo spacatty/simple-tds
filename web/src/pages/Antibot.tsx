@@ -5,7 +5,7 @@ import { useLoad, useMeta } from '../hooks'
 import type { GeoPreset, GeoStatus, IPList, Integration, IntegrationTestResult, Settings } from '../types'
 import { DataTable } from '../components/DataTable'
 import type { Column } from '../components/DataTable'
-import { Badge, Card, Chips, Empty, ErrorBox, Field, Modal, Notice, NumberInput, PageHeader, Select, Skeleton, Tabs, Toggle, confirmDialog, toast, useBusy } from '../components/ui'
+import { Badge, Card, Chips, Empty, ErrorBox, Field, Modal, Notice, NumberInput, PageHeader, Select, Skeleton, Tabs, Toggle, confirmDialog, toast, useBusy, useDirty } from '../components/ui'
 import type { Tone } from '../components/ui'
 import { CountrySelect } from '../components/CountrySelect'
 import { fmtAgo, fmtBytes, fmtDateTime, fmtInt } from '../format'
@@ -319,6 +319,7 @@ function ListEditor({ list, onClose, onSaved }: { list: IPList | null; onClose: 
     enabled: list?.enabled ?? true,
   })
   const [error, setError] = useState('')
+  const dirty = useDirty(f)
   const [busy, run] = useBusy()
   const set = (p: Partial<typeof f>) => setF((x) => ({ ...x, ...p }))
   const save = () =>
@@ -340,6 +341,7 @@ function ListEditor({ list, onClose, onSaved }: { list: IPList | null; onClose: 
       title={list ? t('IP list: {name}', { name: displayName(list) }) : t('New IP list')}
       size="lg"
       onClose={onClose}
+      dirty={dirty}
       footer={
         <>
           {error && <div className="field-error grow">{error}</div>}
@@ -490,6 +492,7 @@ function IntegrationEditor({ item, onClose, onSaved }: { item: Integration | nul
   const [testErr, setTestErr] = useState('')
   const [testing, setTesting] = useState(false)
   const [error, setError] = useState('')
+  const dirty = useDirty({ f, headers, mapping })
   const [busy, run] = useBusy()
   const set = (p: Partial<typeof f>) => setF((x) => ({ ...x, ...p }))
   const fields = f.kind === 'geo' ? GEO_FIELDS : BOT_FIELDS
@@ -545,6 +548,7 @@ function IntegrationEditor({ item, onClose, onSaved }: { item: Integration | nul
       title={item ? t('Integration: {name}', { name: item.name }) : t('New integration')}
       size="xl"
       onClose={onClose}
+      dirty={dirty}
       footer={
         <>
           {error && <div className="field-error grow">{error}</div>}
@@ -902,6 +906,7 @@ function PresetEditor({ preset, onClose, onSaved }: { preset: GeoPreset | null; 
   const [name, setName] = useState(preset?.name ?? '')
   const [countries, setCountries] = useState<string[]>(preset?.countries ?? [])
   const [error, setError] = useState('')
+  const dirty = useDirty({ name, countries })
   const [busy, run] = useBusy()
   const save = () =>
     run(async () => {
@@ -920,6 +925,7 @@ function PresetEditor({ preset, onClose, onSaved }: { preset: GeoPreset | null; 
       title={preset ? t('Preset: {name}', { name: displayName(preset) }) : t('New geo preset')}
       size="lg"
       onClose={onClose}
+      dirty={dirty}
       footer={
         <>
           {error && <div className="field-error grow">{error}</div>}

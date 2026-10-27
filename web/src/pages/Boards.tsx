@@ -8,7 +8,7 @@ import type { Board, BoardWidget, Campaign, ReportRow } from '../types'
 import { rangeBuckets } from '../components/DateRangePicker'
 import type { DateRange } from '../components/DateRangePicker'
 import { BarList, Spark, TimeChart } from '../components/charts'
-import { Dropdown, Empty, ErrorBox, Field, MenuItem, Modal, Segmented, Select, Skeleton, confirmDialog, toast, useBusy } from '../components/ui'
+import { Dropdown, Empty, ErrorBox, Field, MenuItem, Modal, Segmented, Select, Skeleton, confirmDialog, toast, useBusy, useDirty } from '../components/ui'
 import { METRICS, loadReport, sumRows } from '../reports'
 import type { MetricKey } from '../reports'
 import { buildSearch, dimLabel } from '../filters'
@@ -615,6 +615,7 @@ function withCustom(presets: { value: string; label: string }[], n: number, labe
 function WidgetEditor({ draft, isNew, campaigns, onClose, onSave }: { draft: BoardWidget; isNew: boolean; campaigns: Campaign[]; onClose: () => void; onSave: (w: BoardWidget) => void }) {
   const [w, setW] = useState<BoardWidget>(draft)
   const [error, setError] = useState('')
+  const dirty = useDirty(w)
   const set = (p: Partial<BoardWidget>) => setW((x) => ({ ...x, ...p }))
   const type = TYPES.find((x) => x.value === w.type) ?? TYPES[0]
   const submit = () => {
@@ -626,6 +627,7 @@ function WidgetEditor({ draft, isNew, campaigns, onClose, onSave }: { draft: Boa
       title={isNew ? t('Add widget') : t('Widget settings')}
       size="md"
       onClose={onClose}
+      dirty={dirty}
       footer={
         <>
           {error && <div className="field-error grow">{error}</div>}

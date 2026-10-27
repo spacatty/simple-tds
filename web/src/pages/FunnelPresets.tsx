@@ -4,7 +4,7 @@ import { Copy, Pencil, Plus, Star, Trash2 } from 'lucide-react'
 import { del, errMsg, get, post, put } from '../api'
 import { useLoad } from '../hooks'
 import type { Campaign, FunnelPreset, Stage } from '../types'
-import { Drawer, Empty, ErrorBox, Field, PageHeader, Skeleton, confirmDialog, toast, useBusy } from '../components/ui'
+import { Drawer, Empty, ErrorBox, Field, PageHeader, Skeleton, confirmDialog, toast, useBusy, useDirty } from '../components/ui'
 import { StageRows, stagesInvalid } from './Stages'
 import { t, tn } from '../i18n'
 
@@ -162,6 +162,7 @@ function PresetEditor({ draft, used, onClose, onSaved }: { draft: Draft; used: n
   const [note, setNote] = useState(draft.note)
   const [rows, setRows] = useState<Stage[]>(draft.stages)
   const [error, setError] = useState('')
+  const dirty = useDirty({ name, note, rows })
   const [busy, run] = useBusy()
   const changed = JSON.stringify(rows) !== JSON.stringify(draft.stages)
   const save = () =>
@@ -181,6 +182,7 @@ function PresetEditor({ draft, used, onClose, onSaved }: { draft: Draft; used: n
     <Drawer
       size="lg"
       onClose={onClose}
+      dirty={dirty}
       title={draft.id ? t('Edit preset') : t('New preset')}
       footer={
         <>
