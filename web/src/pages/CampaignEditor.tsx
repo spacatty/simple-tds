@@ -5,7 +5,7 @@ import { ArrowLeft, BarChart3, Check, ChevronDown, ChevronRight, ChevronsUpDown,
 import { del, errMsg, get, post, put } from '../api'
 import { canEdit, canRead, isOwner, useLoad, useMeta, useTitle } from '../hooks'
 import type { Campaign, CampaignGroup, Domain, GeoPreset, IntegrationSnippets, Stream, Whitepage } from '../types'
-import { Card, CodeBlock, CopyButton, Dropdown, ErrorBox, Field, MenuItem, Modal, Notice, NumberInput, Segmented, Select, Skeleton, Toggle, confirmDialog, copyText, toast } from '../components/ui'
+import { Card, CodeBlock, CopyButton, Dropdown, ErrorBox, Field, MenuItem, Modal, Notice, NumberInput, Segmented, Select, Skeleton, Tabs, Toggle, confirmDialog, copyText, toast } from '../components/ui'
 import { DateRangePicker, useDateRange } from '../components/DateRangePicker'
 import StreamFunnel from './StreamFunnel'
 import { STATS_STYLES, useStatsStyle } from '../streamStats'
@@ -564,9 +564,10 @@ export default function CampaignEditor() {
           {back}
           <CampaignSwitch campaign={campaign} campaigns={camps.data ?? []} name={form.name || campaign.name} onPick={(c) => leave(() => nav(`/campaigns/${c.id}${tab === 'streams' ? '' : '?tab=' + tab}`))} />
           {badges}
-          <span className="ce-slim-sep">/</span>
+          {/* On a phone the sections do not fit in a strip, so they fold into a picker after the name. */}
+          <span className="ce-slim-sep narrow-only">/</span>
           <Dropdown
-            className="ce-tabpick"
+            className="ce-tabpick narrow-only"
             chevron={false}
             title={t('Switch section')}
             label={
@@ -578,7 +579,7 @@ export default function CampaignEditor() {
             }
           >
             {(close) => (
-              <div className="menu ce-tabmenu" role="tablist">
+              <div className="menu ce-tabmenu">
                 {tabs.map((x) => (
                   <MenuItem
                     key={x.value}
@@ -669,6 +670,22 @@ export default function CampaignEditor() {
             <RefreshCw size={14} className={spin ? 'spin' : ''} />
           </button>
         </header>
+        {/* Every section in sight: the strip is the main way between them. */}
+        <div className="ce-wrap ce-tabrow wide-only">
+          <Tabs
+            value={tab}
+            onChange={goTab}
+            tabs={tabs.map((x) => ({
+              value: x.value,
+              label: (
+                <>
+                  {x.label}
+                  {x.value === 'settings' && dirty && <i className="dot warn" title={t('Unsaved changes')} />}
+                </>
+              ),
+            }))}
+          />
+        </div>
       </div>
       {inheriting && (
         <Inherit
