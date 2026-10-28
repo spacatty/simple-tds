@@ -4,8 +4,6 @@ import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, BarChart3, ClipboardCopy, ClipboardPaste, Copy, CopyPlus, CornerDownRight, CornerRightDown, Eye, MousePointerClick, Pencil, Plus, ShieldCheck, Target, Trash2 } from 'lucide-react'
 import { del, errMsg, get, post, put } from '../api'
 import { canEdit, useLoad, useMeta } from '../hooks'
-import { useStatsStyle } from '../streamStats'
-import type { StatsStyle } from '../streamStats'
 import type { ActionConfig, ActionDef, Campaign, Filter, FilterDef, GeoPreset, LandingRef, ReportRow, Stream, StreamPreset, Whitepage } from '../types'
 import { Dropdown, ErrorBox, Field, MenuItem, Modal, Select, Skeleton, Toggle, confirmDialog, toast } from '../components/ui'
 import type { ToastAction } from '../components/ui'
@@ -122,7 +120,6 @@ export default function StreamFunnel({
   const [over, setOver] = useState<{ id: number; after: boolean } | null>(null)
   const [copying, setCopying] = useState<Stream | null>(null)
   const [clip, setClip] = useState<StreamClip | null>(readClip)
-  const [statsStyle] = useStatsStyle()
   // Copied in another tab: offer it here too.
   useEffect(() => {
     const onStorage = (e: StorageEvent) => e.key === CLIP_KEY && setClip(readClip())
@@ -316,20 +313,6 @@ export default function StreamFunnel({
       ) : (
         <div className="lanes">
           <div className="stable l-flow">
-            {statsStyle === 'cols' && (
-              <div className="frow frow-head" aria-hidden="true">
-                <span />
-                <span />
-                <span className="sv sv-cols">
-                  <span>{t('Clicks')}</span>
-                  <span>{t('Conv.')}</span>
-                  <span>CR</span>
-                  <span>{t('Revenue')}</span>
-                  <span>{t('Profit')}</span>
-                </span>
-                <span className="srow-ctl" />
-              </div>
-            )}
           {KINDS.map((kind) => {
             const list = byKind[kind]
             return (
@@ -362,7 +345,6 @@ export default function StreamFunnel({
                       key={s.id}
                       stream={s}
                       index={i}
-                      statsStyle={statsStyle}
                       readOnly={readOnly}
                       refNames={refNames}
                       error={errors[String(s.id)]}
@@ -540,7 +522,6 @@ export function actionSummary(s: Stream, actions: ActionDef[], whitepages: White
 function StreamCard({
   stream: s,
   index,
-  statsStyle,
   readOnly,
   refNames,
   error,
@@ -581,7 +562,6 @@ function StreamCard({
 }: {
   stream: Stream
   index: number
-  statsStyle: StatsStyle
   readOnly: boolean
   refNames: RefNames
   error?: string
@@ -822,7 +802,7 @@ function StreamCard({
     </Dropdown>
   )
 
-  // The stream's figures for the period, drawn in the style being compared.
+  // The stream's figures for the period: clicks large, conversions and money beside them.
   const conv = stat?.conversions ?? 0
   const rev = stat?.revenue ?? 0
   const cost = stat?.cost ?? 0
@@ -849,74 +829,26 @@ function StreamCard({
     ) : (
       <span className={className}>{node}</span>
     )
-  let statsView: ReactNode
-  if (statsStyle === 'line') {
-    statsView = (
-      <button className="sv sv-line" onClick={onStats} title={statsTitle}>
-        <span className={clicks ? '' : 'z'}>
-          <b>{q(fmtInt(clicks))}</b> {t('clicks@@unit')}
-        </span>
-        {convLink(
-          <>
-            <b>{q(fmtInt(conv))}</b> {t('conv.@@unit')}
-          </>,
-          conv ? 'good' : 'z',
-        )}
-        {hasMoney && (
-          <span className={ptone}>
-            <b>{q(signed(profit))}</b>
+  const statsView = (
+    <button className="sv sv-focus" onClick={onStats} title={statsTitle}>
+      <span className="sv-main">
+        <b className={clicks ? '' : 'z'}>{q(fmtInt(clicks))}</b>
+        <small>
+          {t('clicks@@unit')} · {shareTxt}
+        </small>
+      </span>
+      <span className="sv-side">
+        {convLink(conv ? t('{n} conv. · CR {cr}', { n: fmtInt(conv), cr: fmtPct(stat?.cr ?? 0) }) : t('no conversions'), conv ? 'good' : 'z')}
+        {hasMoney ? (
+          <span>
+            {rev !== 0 && <span className="z">{fmtMoney(rev, currency)} </span>}<b className={ptone}>{q(signed(profit))}</b>
           </span>
+        ) : (
+          <span className="z">—</span>
         )}
-      </button>
-    )
-  } else if (statsStyle === 'cols') {
-    const col = (v: number, text: string, tone = '') => <span className={'sv-c' + (v === 0 ? ' z' : tone ? ' ' + tone : '')}>{v === 0 ? '—' : q(text)}</span>
-    statsView = (
-      <button className="sv sv-cols" onClick={onStats} title={statsTitle}>
-        {col(clicks, fmtInt(clicks))}
-        {conv ? convLink(q(fmtInt(conv)), 'sv-c good') : col(conv, fmtInt(conv))}
-        {col(stat?.cr ?? 0, fmtPct(stat?.cr ?? 0))}
-        {col(rev, fmtMoney(rev, currency))}
-        {col(profit, signed(profit), ptone)}
-      </button>
-    )
-  } else if (statsStyle === 'focus') {
-    statsView = (
-      <button className="sv sv-focus" onClick={onStats} title={statsTitle}>
-        <span className="sv-main">
-          <b className={clicks ? '' : 'z'}>{q(fmtInt(clicks))}</b>
-          <small>
-            {t('clicks@@unit')} · {shareTxt}
-          </small>
-        </span>
-        <span className="sv-side">
-          {convLink(conv ? t('{n} conv. · CR {cr}', { n: fmtInt(conv), cr: fmtPct(stat?.cr ?? 0) }) : t('no conversions'), conv ? 'good' : 'z')}
-          {hasMoney ? (
-            <span>
-              {rev !== 0 && <span className="z">{fmtMoney(rev, currency)} </span>}<b className={ptone}>{q(signed(profit))}</b>
-            </span>
-          ) : (
-            <span className="z">—</span>
-          )}
-        </span>
-      </button>
-    )
-  } else {
-    statsView = (
-      <button className="sv sv-bar" onClick={onStats} title={statsTitle}>
-        <span className="sv-track">
-          <span className="sv-fill" style={{ width: `${share}%` }} />
-          <span className="sv-txt">
-            <b>{q(fmtInt(clicks))}</b> <span>{shareTxt}</span>
-          </span>
-        </span>
-        <span className="sv-under">
-          {convLink(t('{n} conv.', { n: fmtInt(conv) }), conv ? 'good' : 'z')}
-          {hasMoney && <b className={ptone}>{q(signed(profit))}</b>}
-        </span>
-      </button>
-    )
-  }
+      </span>
+    </button>
+  )
 
   const ctl = (
     <div className="srow-ctl">

@@ -6680,7 +6680,7 @@ a.rep-chip:hover {
   min-width: 200px;
 }
 
-/* ---- stream list layouts (preview) ------------------------------------------ */
+/* ---- stream list layout ------------------------------------------------------ */
 /* Filters read as a sentence: muted field names, the values in full colour, "and"/"or" between. */
 .rtok-wrap {
   display: inline-flex;
@@ -6979,12 +6979,9 @@ a.rep-chip:hover {
     grid-column: 2;
     grid-row: 2;
   }
-  .frow-head {
-    display: none;
-  }
 }
 
-/* ---- stream figures (styles being compared) ---------------------------------- */
+/* ---- stream figures ------------------------------------------------------------ */
 .frow .srow-ctl {
   width: 116px;
   justify-content: flex-end;
@@ -7021,62 +7018,7 @@ a.rep-chip:hover {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-/* Line: three figures in words on one line. */
-.sv-line {
-  display: flex;
-  justify-content: flex-end;
-  gap: 14px;
-  width: 270px;
-  font-size: 12px;
-  color: var(--text-3);
-}
-.sv-line b {
-  font-size: 13px;
-  font-weight: 650;
-  color: var(--text);
-}
-.sv-line .z b {
-  font-weight: 500;
-  color: var(--text-3);
-}
-.sv-line :is(.good, .pos) b {
-  color: var(--ok);
-}
-.sv-line .neg b {
-  color: var(--err);
-}
-/* Columns: bare numbers under one header, aligned down the whole list. */
-.sv-cols {
-  display: grid;
-  grid-template-columns: 64px 50px 54px 84px 84px;
-  gap: 0 10px;
-  font-size: 13px;
-  font-weight: 600;
-}
-.sv-cols .sv-c.z {
-  font-weight: 400;
-}
-.frow-head {
-  padding-top: 0;
-  padding-bottom: 0;
-  margin-bottom: -2px;
-}
-.frow-head:hover {
-  background: none;
-  border-color: transparent;
-}
-.frow-head .sv-cols {
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-3);
-  cursor: default;
-}
-.frow-head .sv:hover {
-  background: none;
-}
-/* Focus: clicks large, then conversions and money in a small second block. */
+/* Clicks large, then conversions and money in a small second block. */
 .sv-focus {
   display: flex;
   align-items: center;
@@ -7111,44 +7053,6 @@ a.rep-chip:hover {
 }
 .sv-side b {
   font-weight: 650;
-}
-/* Bar: the stream's share of clicks as a bar, conversions and profit under it. */
-.sv-bar {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: 210px;
-}
-.sv-track {
-  position: relative;
-  display: block;
-  height: 22px;
-  border-radius: 6px;
-  background: var(--surface-3);
-  overflow: hidden;
-}
-.sv-fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--kind) 45%, transparent);
-}
-.sv-txt {
-  position: relative;
-  display: flex;
-  justify-content: space-between;
-  padding: 0 8px;
-  line-height: 22px;
-  font-size: 12px;
-}
-.sv-txt span {
-  color: var(--text-2);
-}
-.sv-under {
-  display: flex;
-  justify-content: space-between;
-  padding: 0 2px;
-  font-size: 11.5px;
 }
 
 /* Campaign groups as a strip of tabs above the list; the open one carries its menu. */

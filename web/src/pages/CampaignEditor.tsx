@@ -1,15 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, BarChart3, Check, ChevronDown, ChevronRight, ChevronsUpDown, Copy, Download, Eraser, FlaskConical, Folder, GitMerge, Link2, MousePointerClick, RefreshCw, Search, Save, Settings, ShieldX, Trash2 } from 'lucide-react'
+import { ArrowLeft, BarChart3, Check, ChevronDown, ChevronsUpDown, Copy, Download, Eraser, FlaskConical, Folder, GitMerge, Link2, MousePointerClick, RefreshCw, Search, Save, Settings, ShieldX, Trash2 } from 'lucide-react'
 import { del, errMsg, get, post, put } from '../api'
 import { canEdit, canRead, isOwner, useLoad, useMeta, useTitle } from '../hooks'
 import type { Campaign, CampaignGroup, Domain, GeoPreset, IntegrationSnippets, Stream, Whitepage } from '../types'
 import { Card, CodeBlock, CopyButton, Dropdown, ErrorBox, Field, MenuItem, Modal, Notice, NumberInput, Segmented, Select, Skeleton, Tabs, Toggle, confirmDialog, copyText, toast, useLeaveGuard } from '../components/ui'
 import { DateRangePicker, useDateRange } from '../components/DateRangePicker'
 import StreamFunnel from './StreamFunnel'
-import { STATS_STYLES, useStatsStyle } from '../streamStats'
-import type { StatsStyle } from '../streamStats'
 import Simulator from './Simulator'
 import Sharing from './Sharing'
 import Stages from './Stages'
@@ -164,30 +162,6 @@ function CampaignSwitch({ campaign, campaigns, name, onPick }: { campaign: Campa
         )
       }}
     </Dropdown>
-  )
-}
-
-/** The way stream rows show their figures: one line in the menu that unfolds into the choices. */
-function FiguresPicker({ value, onChange }: { value: StatsStyle; onChange: (v: StatsStyle) => void }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <>
-      <button type="button" className="amenu-item" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        <span className="amenu-ico">
-          <BarChart3 size={15} />
-        </span>
-        <span className="amenu-label">{t('Stream figures')}</span>
-        <span className="amenu-value">{STATS_STYLES.find((o) => o.value === value)?.label}</span>
-        <ChevronRight size={14} className={'amenu-caret' + (open ? ' open' : '')} />
-      </button>
-      {open &&
-        STATS_STYLES.map((o) => (
-          <button key={o.value} type="button" className="amenu-item amenu-sub" onClick={() => onChange(o.value)}>
-            <span className="amenu-label">{o.label}</span>
-            {o.value === value && <Check size={14} className="amenu-check" />}
-          </button>
-        ))}
-    </>
   )
 }
 
@@ -355,7 +329,6 @@ export default function CampaignEditor() {
   const [inheriting, setInheriting] = useState(false)
   const [funnelOpen, setFunnelOpen] = useState(false)
   const [spin, setSpin] = useState(false)
-  const [statsStyle, setStatsStyle] = useStatsStyle()
   useEffect(() => {
     setForm(campaign ? formOf(campaign) : null)
     setFormError('')
@@ -633,7 +606,6 @@ export default function CampaignEditor() {
                   { icon: <FunnelIcon size={15} />, label: t('Funnel'), title: t('How far the clicks of this campaign get'), onClick: () => setFunnelOpen(true) },
                   { icon: <BarChart3 size={15} />, label: t('Report'), title: t('Reports filtered to this campaign'), onClick: () => nav('/reports' + buildSearch({ range, group: 'stream', filters: scope })) },
                 ],
-                extra: <FiguresPicker value={statsStyle} onChange={setStatsStyle} />,
               },
               {
                 items: [
