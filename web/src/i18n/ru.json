@@ -2009,6 +2009,7 @@
   "Used when the postback has no type parameter.": "Используется, если в постбэке нет параметра type.",
   "User": "Пользователь",
   "User {name} created": "Пользователь {name} создан",
+  "User-Agent@@column": "User-Agent",
   "Username": "Имя пользователя",
   "Users": "Пользователи",
   "Utilities": "Утилиты",

@@ -891,6 +891,57 @@ func (db *DB) Postbacks(ctx context.Context, q Query) ([]Row, uint64, error) {
 
 const csvMaxRows = 1_000_000
 
+// clickCSVCols are the click log columns of a CSV export, after the time; the
+// header uses the column names as they are.
+var clickCSVCols = []string{"click_id", "campaign_id", "stream_id", "domain", "ip", "country", "region", "city", "asn", "isp",
+	"device_type", "os", "os_version", "browser", "browser_version", "lang", "referer", "is_bot", "bot_reason", "is_dc",
+	"is_unique", "action", "integration", "sub1", "sub2", "sub3", "sub4", "sub5", "keyword", "cost", "ua"}
+
+// ClicksCSV streams the click log of the selection as CSV, newest first, with
+// the same filters as Clicks.
+func (db *DB) ClicksCSV(ctx context.Context, out io.Writer, q Query) error {
+	w := q.clickWhere()
+	if q.Reached != "" {
+		q.stageClicks(w, false, q.Reached)
+	}
+	if q.NotReached != "" {
+		q.stageClicks(w, true, q.NotReached)
+	}
+	sel := make([]string, len(clickCSVCols))
+	for i, c := range clickCSVCols {
+		sel[i] = "toString(" + c + ")"
+	}
+	rows, err := db.conn.Query(ctx, fmt.Sprintf("SELECT ts, %s FROM clicks WHERE %s ORDER BY ts DESC LIMIT %d",
+		strings.Join(sel, ", "), w.sql(), csvMaxRows), w.args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	cw := csv.NewWriter(out)
+	cw.Write(append([]string{"time"}, clickCSVCols...))
+	var ts time.Time
+	vals := make([]string, len(clickCSVCols))
+	dst := []any{&ts}
+	for i := range vals {
+		dst = append(dst, &vals[i])
+	}
+	rec := make([]string, 0, len(vals)+1)
+	for rows.Next() {
+		if err := rows.Scan(dst...); err != nil {
+			return err
+		}
+		rec = append(rec[:0], ts.UTC().Format(time.RFC3339))
+		for _, v := range vals {
+			rec = append(rec, csvSafe(v))
+		}
+		if err := cw.Write(rec); err != nil {
+			return err
+		}
+	}
+	cw.Flush()
+	return rows.Err()
+}
+
 // ConversionsCSV streams the selection as CSV with one column per postback param.
 // keyNames maps key ids to their display names.
 func (db *DB) ConversionsCSV(ctx context.Context, out io.Writer, q Query, keyNames map[uint32]string) error {

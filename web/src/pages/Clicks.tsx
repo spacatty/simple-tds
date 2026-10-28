@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { BarChart3, Bot, FlaskConical, RefreshCw } from 'lucide-react'
-import { get } from '../api'
+import { BarChart3, Bot, Columns3, Download, FlaskConical, RefreshCw } from 'lucide-react'
+import { get, qs } from '../api'
 import type { Params } from '../api'
 import { canRead, useLoad } from '../hooks'
 import type { Campaign, ClickEvent, ConvKey, Row, Stage, Stream } from '../types'
@@ -10,17 +10,51 @@ import { DataTable } from '../components/DataTable'
 import type { Column } from '../components/DataTable'
 import { DateRangePicker, currentRange, rememberRange } from '../components/DateRangePicker'
 import type { DateRange } from '../components/DateRangePicker'
-import { Badge, CopyButton, Empty, ErrorBox, FilterField, PageHeader, Pagination, Select } from '../components/ui'
+import { Badge, CopyButton, Dropdown, Empty, ErrorBox, FilterField, PageHeader, Pagination, Select } from '../components/ui'
 import { FilterPanel } from '../components/Filters'
 import type { CustomFilter } from '../components/Filters'
 import { buildSearch, filterParams, parseFilters, rangeApiParams, rangeFromSearch, urlFilterParams, writeRange } from '../filters'
-import { fmtDateTime, humanize, num } from '../format'
+import { fmtDateTime, fmtMoney, humanize, num } from '../format'
 import { countryName } from '../countries'
 import { Browser, BrowserIcon, Country, Device, DeviceIcon, Flag, Os, OsIcon, dimIcon } from '../components/icons'
 import { Journey, StagePips } from '../components/Journey'
 import { t, ts } from '../i18n'
 
 const LIMIT = 100
+
+// Columns the viewer can show or hide; the time is always there. Kept in this browser.
+const COLS: { key: string; label: string; def: boolean }[] = [
+  { key: 'campaign', label: t('Campaign'), def: true },
+  { key: 'stream', label: t('Stream'), def: true },
+  { key: 'funnel', label: t('Funnel'), def: true },
+  { key: 'ip', label: 'IP', def: true },
+  { key: 'country', label: t('Geo'), def: true },
+  { key: 'device', label: t('Device'), def: true },
+  { key: 'flags', label: t('Flags'), def: true },
+  { key: 'action', label: t('Action'), def: true },
+  { key: 'ref', label: t('Referrer'), def: true },
+  { key: 'domain', label: t('Domain'), def: false },
+  { key: 'isp', label: t('ISP'), def: false },
+  { key: 'lang', label: t('Language'), def: false },
+  { key: 'keyword', label: t('Keyword'), def: false },
+  { key: 'sub1', label: 'Sub1', def: false },
+  { key: 'sub2', label: 'Sub2', def: false },
+  { key: 'sub3', label: 'Sub3', def: false },
+  { key: 'sub4', label: 'Sub4', def: false },
+  { key: 'sub5', label: 'Sub5', def: false },
+  { key: 'cost', label: t('Cost'), def: false },
+  { key: 'click_id', label: t('Click ID'), def: false },
+  { key: 'ua', label: t('User-Agent@@column'), def: false },
+]
+const LS_COLS = 'tds_click_cols'
+function loadCols(): Record<string, boolean> {
+  try {
+    const v = JSON.parse(localStorage.getItem(LS_COLS) ?? '{}')
+    return v && typeof v === 'object' ? v : {}
+  } catch {
+    return {}
+  }
+}
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v))
 const truthy = (v: unknown) => v === true || num(v) > 0
 
@@ -62,6 +96,20 @@ export default function Clicks() {
   useEffect(() => setOffset(0), [queryKey])
 
   const res = useLoad(() => get<{ rows: Row[] | null; total: number }>('clicks', { ...query, limit: LIMIT, offset }), [queryKey, offset])
+  const csvHref = 'api/clicks' + qs({ format: 'csv', ...query })
+
+  const [cols, setCols] = useState<Record<string, boolean>>(loadCols)
+  const visible = (key: string) => key === 'ts' || (cols[key] ?? COLS.find((c) => c.key === key)?.def ?? true)
+  const toggleCol = (key: string) => {
+    const next = { ...cols, [key]: !visible(key) }
+    setCols(next)
+    try {
+      localStorage.setItem(LS_COLS, JSON.stringify(next))
+    } catch {
+      /* private mode: the choice holds until reload */
+    }
+  }
+  const text = (key: string, mono = false) => (r: Row) => (str(r[key]) ? <span className={'ellipsis cell-w' + (mono ? ' mono' : '')} title={str(r[key])}>{str(r[key])}</span> : <span className="muted">—</span>)
 
   const campById = (id: unknown) => camps.data?.find((c) => c.id === Number(id))
   const campName = (id: unknown) => campById(id)?.name ?? (Number(id) ? `#${id}` : '—')
@@ -97,7 +145,7 @@ export default function Clicks() {
   const funnelFilters: CustomFilter[] = progress ? [{ key: 'funnel', label: t('Funnel'), text: progressOptions.find((o) => o.value === progress)?.label ?? progress.slice(2), params: ['reached', 'not_reached'] }] : []
   const showFunnel = (res.data?.rows ?? []).some((r) => stagesOf(r.campaign_id).length > 0 || eventsOf(r).length > 0)
 
-  const columns: Column<Row>[] = [
+  const allColumns: Column<Row>[] = [
     { key: 'ts', title: t('Time'), render: (r) => <span className="nowrap">{fmtDateTime(r.ts)}</span> },
     { key: 'campaign', title: t('Campaign'), render: (r) => <span className="ellipsis cell-w">{campName(r.campaign_id)}</span> },
     { key: 'stream', title: t('Stream'), render: (r) => <span className="ellipsis cell-w">{streamName(r.stream_id)}</span> },
@@ -174,7 +222,16 @@ export default function Clicks() {
           <span className="muted">—</span>
         ),
     },
+    { key: 'domain', title: t('Domain'), render: text('domain') },
+    { key: 'isp', title: t('ISP'), render: text('isp') },
+    { key: 'lang', title: t('Language'), render: text('lang') },
+    { key: 'keyword', title: t('Keyword'), render: text('keyword') },
+    ...[1, 2, 3, 4, 5].map((n) => ({ key: 'sub' + n, title: 'Sub' + n, render: text('sub' + n) })),
+    { key: 'cost', title: t('Cost'), align: 'right', render: (r) => (num(r.cost) ? <span className="nowrap">{fmtMoney(num(r.cost), campById(r.campaign_id)?.currency)}</span> : <span className="muted">—</span>) },
+    { key: 'click_id', title: t('Click ID'), render: text('click_id', true) },
+    { key: 'ua', title: t('User-Agent@@column'), render: text('ua') },
   ]
+  const columns = allColumns.filter((c) => visible(c.key))
 
   return (
     <div className="page">
@@ -182,6 +239,27 @@ export default function Clicks() {
         <Link className="btn" to={'/reports' + buildSearch({ range, filters: filterParams(filters) })} title={t('Open Reports with the same filters')}>
           <BarChart3 size={14} /> {t('Report')}
         </Link>
+        <Dropdown
+          align="right"
+          label={
+            <>
+              <Columns3 size={14} /> {t('Columns')}
+            </>
+          }
+        >
+          {() => (
+            <div className="menu menu-scroll">
+              {COLS.map((c) => (
+                <label className="menu-item" key={c.key}>
+                  <input type="checkbox" checked={visible(c.key)} onChange={() => toggleCol(c.key)} /> {c.label}
+                </label>
+              ))}
+            </div>
+          )}
+        </Dropdown>
+        <a className="btn" href={csvHref} download title={t('Download every matching row (not just this page) as CSV')}>
+          <Download size={14} /> {t('Download CSV')}
+        </a>
         <DateRangePicker value={range} onChange={setRange} />
         <button className="btn" onClick={() => res.reload()} title={t('Refresh')} aria-label={t('Refresh')}>
           <RefreshCw size={14} className={res.loading ? 'spin' : ''} />

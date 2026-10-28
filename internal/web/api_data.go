@@ -417,32 +417,7 @@ func (s *Server) dataRoutes(r chi.Router) {
 		}
 		return map[string]any{"stages": stages, "rows": rows, "funnel_from": from}, nil
 	}))
-	r.Get("/clicks", handler(func(r *http.Request) (any, error) {
-		q, err := parseQuery(r)
-		if err != nil {
-			return nil, err
-		}
-		if err := s.scope(r.Context(), &q); err != nil {
-			return nil, err
-		}
-		// reached / not_reached: clicks that did, or did not, get to a funnel stage.
-		q.Reached, q.NotReached = r.URL.Query().Get("reached"), r.URL.Query().Get("not_reached")
-		// reached may also name how the stage ended: stage:outcome.
-		stage, outcome, split := strings.Cut(q.Reached, ":")
-		for _, k := range []string{stage, q.NotReached} {
-			if k != "" && !events.ValidStageKey(k) {
-				return nil, bad("bad stage key")
-			}
-		}
-		if split && !events.ValidStageKey(outcome) {
-			return nil, bad("bad stage key")
-		}
-		rows, total, err := s.ev.Clicks(r.Context(), q)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{"rows": rows, "total": total}, nil
-	}))
+	r.Get("/clicks", s.clicks)
 	r.Get("/conversions", s.conversions)
 	r.Get("/postbacks", handler(func(r *http.Request) (any, error) {
 		q, err := parseQuery(r)
@@ -552,6 +527,57 @@ func refQuery(r *http.Request) (events.Query, error) {
 		}
 	}
 	return q, nil
+}
+
+// clickQuery is the selection of the click log: the report filters, the
+// viewer's scope, and reached / not_reached funnel stages.
+func (s *Server) clickQuery(r *http.Request) (events.Query, error) {
+	q, err := parseQuery(r)
+	if err != nil {
+		return q, err
+	}
+	if err := s.scope(r.Context(), &q); err != nil {
+		return q, err
+	}
+	// reached / not_reached: clicks that did, or did not, get to a funnel stage.
+	q.Reached, q.NotReached = r.URL.Query().Get("reached"), r.URL.Query().Get("not_reached")
+	// reached may also name how the stage ended: stage:outcome.
+	stage, outcome, split := strings.Cut(q.Reached, ":")
+	for _, k := range []string{stage, q.NotReached} {
+		if k != "" && !events.ValidStageKey(k) {
+			return q, bad("bad stage key")
+		}
+	}
+	if split && !events.ValidStageKey(outcome) {
+		return q, bad("bad stage key")
+	}
+	return q, nil
+}
+
+// clicks is the click log: a page of rows as JSON, or with format=csv the
+// whole selection as a download.
+func (s *Server) clicks(w http.ResponseWriter, r *http.Request) {
+	q, err := s.clickQuery(r)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if r.URL.Query().Get("format") == "csv" {
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="clicks-`+time.Now().UTC().Format("20060102-150405")+`.csv"`)
+		w.Write([]byte{0xEF, 0xBB, 0xBF}) // BOM so Excel reads UTF-8
+		if err := s.ev.ClicksCSV(r.Context(), w, q); err != nil {
+			// Headers are gone; all we can do is leave a trace in the file.
+			fmt.Fprintf(w, "\nERROR: %v\n", err)
+		}
+		return
+	}
+	rows, total, err := s.ev.Clicks(r.Context(), q)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"rows": rows, "total": total})
 }
 
 func (s *Server) conversions(w http.ResponseWriter, r *http.Request) {
