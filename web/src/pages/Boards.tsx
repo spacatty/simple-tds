@@ -532,16 +532,16 @@ export function BoardView({ board, range, setRange, tick, onChange, onDeleted }:
                   </div>
                   {arranging ? (
                     <div className="wdg-tools">
-                      <button className="icon-btn" disabled={busy || i === 0} onClick={() => move(i, -1)} title={t('Move earlier')}>
+                      <button className="icon-btn" disabled={busy || i === 0} onClick={() => move(i, -1)} title={t('Move earlier')} aria-label={t('Move earlier')}>
                         <ArrowLeft size={14} />
                       </button>
-                      <button className="icon-btn" disabled={busy || i === widgets.length - 1} onClick={() => move(i, 1)} title={t('Move later')}>
+                      <button className="icon-btn" disabled={busy || i === widgets.length - 1} onClick={() => move(i, 1)} title={t('Move later')} aria-label={t('Move later')}>
                         <ArrowRight size={14} />
                       </button>
-                      <button className="icon-btn" disabled={busy} onClick={() => resize(i)} title={t('Change the width')}>
+                      <button className="icon-btn" disabled={busy} onClick={() => resize(i)} title={t('Change the width')} aria-label={t('Change the width')}>
                         <Maximize2 size={13} />
                       </button>
-                      <button className="icon-btn" onClick={() => setEditing({ index: i, draft: { ...w } })} title={t('Widget settings')}>
+                      <button className="icon-btn" onClick={() => setEditing({ index: i, draft: { ...w } })} title={t('Widget settings')} aria-label={t('Widget settings')}>
                         <Pencil size={13} />
                       </button>
                       <button

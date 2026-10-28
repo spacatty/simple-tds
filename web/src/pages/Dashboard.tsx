@@ -54,12 +54,26 @@ export default function Dashboard() {
         </button>
       </PageHeader>
 
-      <div className="dash-tabs" role="tablist">
-        <button role="tab" aria-selected={!board} className={!board ? 'active' : ''} onClick={() => open(0)}>
+      <div
+        className="dash-tabs"
+        role="tablist"
+        onKeyDown={(e) => {
+          // Left and Right walk the dashboards, as in every tab strip.
+          const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0
+          if (!step) return
+          const ids = [0, ...list.map((b) => b.id)]
+          const next = ids[(ids.indexOf(board?.id ?? 0) + step + ids.length) % ids.length]
+          e.preventDefault()
+          open(next)
+          const tabs = e.currentTarget.querySelectorAll<HTMLElement>('[role=tab]')
+          tabs[ids.indexOf(next)]?.focus()
+        }}
+      >
+        <button role="tab" aria-selected={!board} tabIndex={board ? -1 : 0} className={!board ? 'active' : ''} onClick={() => open(0)}>
           <LayoutDashboard size={14} /> {t('Overview')}
         </button>
         {list.map((b) => (
-          <button key={b.id} role="tab" aria-selected={b.id === board?.id} className={b.id === board?.id ? 'active' : ''} onClick={() => open(b.id)} title={b.name}>
+          <button key={b.id} role="tab" aria-selected={b.id === board?.id} tabIndex={b.id === board?.id ? 0 : -1} className={b.id === board?.id ? 'active' : ''} onClick={() => open(b.id)} title={b.name}>
             <span className="ellipsis">{b.name}</span>
           </button>
         ))}

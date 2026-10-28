@@ -399,7 +399,8 @@ export function Toggle({
 }) {
   return (
     <label className={'toggle' + (disabled ? ' disabled' : '')} title={title} onClick={(e) => e.stopPropagation()}>
-      <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+      {/* A switch with no visible text is named by its tooltip, or a screen reader announces only "checkbox". */}
+      <input type="checkbox" role="switch" checked={checked} disabled={disabled} aria-label={label === undefined ? title : undefined} onChange={(e) => onChange(e.target.checked)} />
       <span className="toggle-track" />
       {label !== undefined && <span className="toggle-label">{label}</span>}
     </label>

@@ -86,13 +86,13 @@ export default function FunnelPresets() {
                   {p.note && <div className="fpc-note">{p.note}</div>}
                 </div>
                 <span className="row-actions">
-                  <button className="icon-btn" title={t('Edit')} onClick={() => edit(p)}>
+                  <button className="icon-btn" title={t('Edit')} aria-label={t('Edit')} onClick={() => edit(p)}>
                     <Pencil size={14} />
                   </button>
-                  <button className="icon-btn" title={t('Duplicate')} onClick={() => setDraft({ name: t('{name} (copy)', { name: p.name }), note: p.note, stages: p.stages })}>
+                  <button className="icon-btn" title={t('Duplicate')} aria-label={t('Duplicate')} onClick={() => setDraft({ name: t('{name} (copy)', { name: p.name }), note: p.note, stages: p.stages })}>
                     <Copy size={14} />
                   </button>
-                  <button className="icon-btn danger" title={t('Delete')} onClick={() => remove(p)}>
+                  <button className="icon-btn danger" title={t('Delete')} aria-label={t('Delete')} onClick={() => remove(p)}>
                     <Trash2 size={14} />
                   </button>
                 </span>

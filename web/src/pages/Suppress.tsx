@@ -164,10 +164,10 @@ export default function Suppress({ kind }: { kind: Kind }) {
       width: 90,
       render: (e) => (
         <div className="row-actions">
-          <button className="icon-btn" title={t('Edit')} onClick={() => setEditing(e)}>
+          <button className="icon-btn" title={t('Edit')} aria-label={t('Edit')} onClick={() => setEditing(e)}>
             <Pencil size={15} />
           </button>
-          <button className="icon-btn danger" title={t('Remove from the list')} disabled={busy} onClick={() => remove(e)}>
+          <button className="icon-btn danger" title={t('Remove from the list')} aria-label={t('Remove from the list')} disabled={busy} onClick={() => remove(e)}>
             <Trash2 size={15} />
           </button>
         </div>

@@ -200,13 +200,13 @@ export default function Domains() {
   const enabledToggle = (d: Domain, text?: ReactNode) => <Toggle checked={d.enabled} onChange={(v) => patch(d, { enabled: v })} label={text} />
   const actions = (d: Domain) => (
     <div className="row-actions">
-      <button className="icon-btn" title={t('Re-check now')} onClick={() => recheck([d.id])}>
+      <button className="icon-btn" title={t('Re-check now')} aria-label={t('Re-check now')} onClick={() => recheck([d.id])}>
         <RefreshCw size={15} />
       </button>
-      <button className="icon-btn" title={t('Edit')} onClick={() => setEditing(d)}>
+      <button className="icon-btn" title={t('Edit')} aria-label={t('Edit')} onClick={() => setEditing(d)}>
         <Pencil size={15} />
       </button>
-      <button className="icon-btn danger" title={t('Delete')} onClick={() => remove([d])}>
+      <button className="icon-btn danger" title={t('Delete')} aria-label={t('Delete')} onClick={() => remove([d])}>
         <Trash2 size={15} />
       </button>
     </div>
@@ -800,10 +800,10 @@ function GroupsModal({ groups, domains, reload, onClose }: { groups: DomainGroup
               <>
                 <span className="grow strong">{g.name}</span>
                 <span className="muted">{tn(count(g.id), '{n} domain', '{n} domains')}</span>
-                <button className="icon-btn" title={t('Rename')} onClick={() => setEdit({ id: g.id, name: g.name })}>
+                <button className="icon-btn" title={t('Rename')} aria-label={t('Rename')} onClick={() => setEdit({ id: g.id, name: g.name })}>
                   <Pencil size={15} />
                 </button>
-                <button className="icon-btn danger" title={t('Delete')} onClick={() => remove(g)}>
+                <button className="icon-btn danger" title={t('Delete')} aria-label={t('Delete')} onClick={() => remove(g)}>
                   <Trash2 size={15} />
                 </button>
               </>

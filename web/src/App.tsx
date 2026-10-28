@@ -45,7 +45,8 @@ export default function App() {
   const [setup, setSetup] = useState(false)
   // Set when the server ends a session that was in use, so the login form can say why it appeared.
   const [expired, setExpired] = useState(false)
-  const [theme, toggleTheme] = useTheme()
+  const themeState = useTheme()
+  const { theme, toggle: toggleTheme } = themeState
 
   // A newly opened page starts at its top; Back and Forward keep whatever the browser restores.
   const main = useRef<HTMLElement>(null)
@@ -140,7 +141,7 @@ export default function App() {
   return (
     <AppContext.Provider value={ctx}>
       <div className="app">
-        <Sidebar user={user} theme={theme} toggleTheme={toggleTheme} logout={logout} />
+        <Sidebar user={user} theme={themeState} logout={logout} />
         <main className="main" ref={main}>
           <ErrorBoundary key={loc.pathname}>
             <Routes>

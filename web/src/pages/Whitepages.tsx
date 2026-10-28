@@ -92,16 +92,16 @@ export default function Whitepages() {
       width: 150,
       render: (w) => (
         <div className="row-actions">
-          <button className="icon-btn" title={t('Copy to a landing')} onClick={() => toLanding(w)}>
+          <button className="icon-btn" title={t('Copy to a landing')} aria-label={t('Copy to a landing')} onClick={() => toLanding(w)}>
             <LayoutTemplate size={15} />
           </button>
-          <button className="icon-btn" title={t('Preview')} onClick={() => openPreview(w)}>
+          <button className="icon-btn" title={t('Preview')} aria-label={t('Preview')} onClick={() => openPreview(w)}>
             <Eye size={15} />
           </button>
-          <button className="icon-btn" title={t('Edit / replace files')} onClick={() => setEditing(w)}>
+          <button className="icon-btn" title={t('Edit / replace files')} aria-label={t('Edit / replace files')} onClick={() => setEditing(w)}>
             <Pencil size={15} />
           </button>
-          <button className="icon-btn danger" title={t('Delete')} onClick={() => remove(w)}>
+          <button className="icon-btn danger" title={t('Delete')} aria-label={t('Delete')} onClick={() => remove(w)}>
             <Trash2 size={15} />
           </button>
         </div>

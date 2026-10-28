@@ -383,12 +383,12 @@ export function StageRows({ rows, setRows, readOnly, actions, children }: { rows
                       <button
                         className={'icon-btn' + (o.linked ? ' on' : '')}
                         aria-pressed={!!o.linked}
-                        title={o.linked ? t('Linked: the key starts with the stage key and follows it. Click to edit the key freely.') : t('Not linked: the key is free. Click to prefix it with the stage key.')}
+                        title={o.linked ? t('Linked: the key starts with the stage key and follows it. Click to edit the key freely.') : t('Not linked: the key is free. Click to prefix it with the stage key.')} aria-label={o.linked ? t('Linked: the key starts with the stage key and follows it. Click to edit the key freely.') : t('Not linked: the key is free. Click to prefix it with the stage key.')}
                         onClick={() => setLinked(i, j, !o.linked)}
                       >
                         {o.linked ? <Link2 size={13} /> : <Unlink2 size={13} />}
                       </button>
-                      <button className="icon-btn" title={t('Remove outcome')} onClick={() => setOuts(i, outs(s).filter((_, k) => k !== j))}>
+                      <button className="icon-btn" title={t('Remove outcome')} aria-label={t('Remove outcome')} onClick={() => setOuts(i, outs(s).filter((_, k) => k !== j))}>
                         <X size={13} />
                       </button>
                       {suffixOf(s, o) !== '' && outError(s, o) && <div className="field-error">{t('Key: {error}', { error: outError(s, o) })}</div>}
@@ -404,13 +404,13 @@ export function StageRows({ rows, setRows, readOnly, actions, children }: { rows
               )}
             </div>
             <div className="stg-actions">
-              <button className="icon-btn" title={outs(s).length ? t('Add outcome') : t('Split into outcomes: tell a success from a failure inside this stage')} disabled={outs(s).length >= maxOut} onClick={() => addOut(i)}>
+              <button className="icon-btn" title={outs(s).length ? t('Add outcome') : t('Split into outcomes: tell a success from a failure inside this stage')} aria-label={outs(s).length ? t('Add outcome') : t('Split into outcomes: tell a success from a failure inside this stage')} disabled={outs(s).length >= maxOut} onClick={() => addOut(i)}>
                 <Split size={14} />
               </button>
-              <button className="icon-btn" title={t('Move up')} disabled={i === 0} onClick={() => move(i, -1)}>
+              <button className="icon-btn" title={t('Move up')} aria-label={t('Move up')} disabled={i === 0} onClick={() => move(i, -1)}>
                 <ArrowUp size={14} />
               </button>
-              <button className="icon-btn" title={t('Move down')} disabled={i === rows.length - 1} onClick={() => move(i, 1)}>
+              <button className="icon-btn" title={t('Move down')} aria-label={t('Move down')} disabled={i === rows.length - 1} onClick={() => move(i, 1)}>
                 <ArrowDown size={14} />
               </button>
               <button

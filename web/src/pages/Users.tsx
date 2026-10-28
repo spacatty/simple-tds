@@ -103,18 +103,18 @@ export default function UsersPage() {
       render: (u) => (
         <div className="row-actions">
           {u.role === 'admin' ? (
-            <button className="icon-btn" title={t('Make a regular user')} disabled={u.id === me.id} onClick={() => setRole(u, 'user')}>
+            <button className="icon-btn" title={t('Make a regular user')} aria-label={t('Make a regular user')} disabled={u.id === me.id} onClick={() => setRole(u, 'user')}>
               <ShieldOff size={15} />
             </button>
           ) : (
-            <button className="icon-btn" title={t('Make administrator')} onClick={() => setRole(u, 'admin')}>
+            <button className="icon-btn" title={t('Make administrator')} aria-label={t('Make administrator')} onClick={() => setRole(u, 'admin')}>
               <ShieldCheck size={15} />
             </button>
           )}
-          <button className="icon-btn" title={t('Reset password')} onClick={() => setResetting(u)}>
+          <button className="icon-btn" title={t('Reset password')} aria-label={t('Reset password')} onClick={() => setResetting(u)}>
             <KeyRound size={15} />
           </button>
-          <button className="icon-btn danger" title={u.id === me.id ? t('You cannot delete your own account') : t('Delete user')} disabled={u.id === me.id} onClick={() => remove(u)}>
+          <button className="icon-btn danger" title={u.id === me.id ? t('You cannot delete your own account') : t('Delete user')} aria-label={u.id === me.id ? t('You cannot delete your own account') : t('Delete user')} disabled={u.id === me.id} onClick={() => remove(u)}>
             <Trash2 size={15} />
           </button>
         </div>

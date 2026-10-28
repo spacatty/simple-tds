@@ -3,7 +3,7 @@ import { Link, NavLink, useLocation } from 'react-router-dom'
 import { Activity, AppWindow, BarChart3, Bookmark, Check, ChevronDown, ChevronsUpDown, Earth, EyeOff, FileCode2, Folder, Globe, HeartPulse, KeyRound, LayoutDashboard, LayoutTemplate, Layers, Link2, ListOrdered, LogOut, MapPin, Menu, MonitorSmartphone, Moon, MousePointerClick, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, ShieldCheck, Split, Sun, Target, Unlink, UserCog, Users as UsersIcon, Webhook } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { User } from '../types'
-import type { Theme } from '../hooks'
+import type { ThemePref, ThemeState } from '../hooks'
 import { LANGS, lang, setLang, t } from '../i18n'
 import { Flag, FunnelIcon } from './icons'
 import { APP_NAME, Logo } from './Logo'
@@ -102,7 +102,13 @@ function save(key: string, v: unknown) {
   }
 }
 
-export function Sidebar({ user, theme, toggleTheme, logout }: { user: User; theme: Theme; toggleTheme: () => void; logout: () => void }) {
+const THEMES: { pref: ThemePref; label: string; icon: (props: { size?: number }) => ReactNode }[] = [
+  { pref: 'system', label: t('As the system@@theme'), icon: MonitorSmartphone },
+  { pref: 'light', label: t('Light@@theme'), icon: Sun },
+  { pref: 'dark', label: t('Dark@@theme'), icon: Moon },
+]
+
+export function Sidebar({ user, theme, logout }: { user: User; theme: ThemeState; logout: () => void }) {
   const [rail, setRail] = useState<boolean>(() => load('tds_nav_rail', false))
   const [folded, setFolded] = useState<string[]>(() => load('tds_nav_folded', []))
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -198,7 +204,7 @@ export function Sidebar({ user, theme, toggleTheme, logout }: { user: User; them
         <b className="wordmark">{APP_NAME}</b>
       </header>
       {mobileOpen && <div className="sidebar-backdrop" onClick={() => setMobileOpen(false)} />}
-      <aside className={'sidebar' + (compact ? ' rail' : '') + (mobileOpen ? ' mobile-open' : '')}>
+      <aside className={'sidebar' + (compact ? ' rail' : '') + (mobileOpen ? ' mobile-open' : '')} {...(mobileOpen ? { role: 'dialog', 'aria-modal': true, 'aria-label': t('Main navigation') } : {})}>
         <div className="sidebar-head">
           <Logo />
           <span className="brand-name wordmark">{APP_NAME}</span>
@@ -331,15 +337,13 @@ export function Sidebar({ user, theme, toggleTheme, logout }: { user: User; them
                   </button>
                 ))}
                 <div className="menu-sep" />
-                <button
-                  className="menu-item"
-                  onClick={() => {
-                    close()
-                    toggleTheme()
-                  }}
-                >
-                  {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />} {theme === 'dark' ? t('Light theme') : t('Dark theme')}
-                </button>
+                <div className="menu-title">{t('Theme')}</div>
+                {THEMES.map((x) => (
+                  <button key={x.pref} className="menu-item" role="menuitemradio" aria-checked={theme.pref === x.pref} onClick={() => (close(), theme.setPref(x.pref))}>
+                    <x.icon size={15} /> {x.label}
+                    {theme.pref === x.pref && <Check size={14} className="menu-check" />}
+                  </button>
+                ))}
                 <div className="menu-sep" />
                 <button
                   className="menu-item danger"

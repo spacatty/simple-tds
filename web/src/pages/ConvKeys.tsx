@@ -112,13 +112,13 @@ export default function ConvKeys() {
       width: 120,
       render: (k) => (
         <div className="row-actions" onClick={(e) => e.stopPropagation()}>
-          <button className="icon-btn" title={t('Edit')} onClick={() => setEditing(k)}>
+          <button className="icon-btn" title={t('Edit')} aria-label={t('Edit')} onClick={() => setEditing(k)}>
             <Pencil size={15} />
           </button>
-          <button className="icon-btn" title={t('Regenerate key')} onClick={() => regenerate(k)}>
+          <button className="icon-btn" title={t('Regenerate key')} aria-label={t('Regenerate key')} onClick={() => regenerate(k)}>
             <KeyRound size={15} />
           </button>
-          <button className="icon-btn danger" title={t('Delete')} onClick={() => remove(k)}>
+          <button className="icon-btn danger" title={t('Delete')} aria-label={t('Delete')} onClick={() => remove(k)}>
             <Trash2 size={15} />
           </button>
         </div>

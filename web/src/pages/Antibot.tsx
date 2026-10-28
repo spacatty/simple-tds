@@ -281,13 +281,13 @@ function Lists() {
       width: 120,
       render: (l) => (
         <div className="row-actions">
-          <button className="icon-btn" title={t('Refresh now')} disabled={refreshing === l.id} onClick={() => refresh(l)}>
+          <button className="icon-btn" title={t('Refresh now')} aria-label={t('Refresh now')} disabled={refreshing === l.id} onClick={() => refresh(l)}>
             <RefreshCw size={15} className={refreshing === l.id ? 'spin' : ''} />
           </button>
-          <button className="icon-btn" title={t('Edit')} onClick={() => setEditing(l)}>
+          <button className="icon-btn" title={t('Edit')} aria-label={t('Edit')} onClick={() => setEditing(l)}>
             <Pencil size={15} />
           </button>
-          <button className="icon-btn danger" title={l.builtin ? t('Built-in lists cannot be deleted; disable instead') : t('Delete')} disabled={l.builtin} onClick={() => remove(l)}>
+          <button className="icon-btn danger" title={l.builtin ? t('Built-in lists cannot be deleted; disable instead') : t('Delete')} aria-label={l.builtin ? t('Built-in lists cannot be deleted; disable instead') : t('Delete')} disabled={l.builtin} onClick={() => remove(l)}>
             <Trash2 size={15} />
           </button>
         </div>
@@ -444,10 +444,10 @@ function Integrations() {
       width: 90,
       render: (it) => (
         <div className="row-actions">
-          <button className="icon-btn" title={t('Edit / test')} onClick={() => setEditing(it)}>
+          <button className="icon-btn" title={t('Edit / test')} aria-label={t('Edit / test')} onClick={() => setEditing(it)}>
             <Pencil size={15} />
           </button>
-          <button className="icon-btn danger" title={t('Delete')} onClick={() => remove(it)}>
+          <button className="icon-btn danger" title={t('Delete')} aria-label={t('Delete')} onClick={() => remove(it)}>
             <Trash2 size={15} />
           </button>
         </div>
@@ -618,7 +618,7 @@ function IntegrationEditor({ item, onClose, onSaved }: { item: Integration | nul
         <div className="row gap kv-row" key={i}>
           <input className="input mono" style={{ width: 240 }} placeholder={t('Header name')} value={k} onChange={(e) => setHeaders(headers.map((h, j) => (j === i ? [e.target.value, h[1]] : h)))} />
           <input className="input mono grow" placeholder={t('Value')} value={v} onChange={(e) => setHeaders(headers.map((h, j) => (j === i ? [h[0], e.target.value] : h)))} />
-          <button className="icon-btn danger" title={t('Remove header')} onClick={() => setHeaders(headers.filter((_, j) => j !== i))}>
+          <button className="icon-btn danger" title={t('Remove header')} aria-label={t('Remove header')} onClick={() => setHeaders(headers.filter((_, j) => j !== i))}>
             <Trash2 size={15} />
           </button>
         </div>

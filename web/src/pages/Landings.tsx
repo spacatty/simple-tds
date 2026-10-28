@@ -100,13 +100,13 @@ export default function Landings() {
       width: 120,
       render: (l) => (
         <div className="row-actions">
-          <button className="icon-btn" title={t('Preview')} onClick={() => openPreview(l)}>
+          <button className="icon-btn" title={t('Preview')} aria-label={t('Preview')} onClick={() => openPreview(l)}>
             <Eye size={15} />
           </button>
-          <button className="icon-btn" title={t('Edit')} onClick={() => setEditing(l)}>
+          <button className="icon-btn" title={t('Edit')} aria-label={t('Edit')} onClick={() => setEditing(l)}>
             <Pencil size={15} />
           </button>
-          <button className="icon-btn danger" title={t('Delete')} onClick={() => remove(l)}>
+          <button className="icon-btn danger" title={t('Delete')} aria-label={t('Delete')} onClick={() => remove(l)}>
             <Trash2 size={15} />
           </button>
         </div>
@@ -421,7 +421,7 @@ function LandingEditor({ landing: initial, phpOff, onClose, onPreview }: { landi
                         />
                       </td>
                       <td>
-                        <button className="icon-btn danger" disabled={v.used} title={v.used ? t('The token is in the files: remove it there first') : t('Remove variable')} onClick={() => setVars(vars.filter((_, j) => j !== i))}>
+                        <button className="icon-btn danger" disabled={v.used} title={v.used ? t('The token is in the files: remove it there first') : t('Remove variable')} aria-label={v.used ? t('The token is in the files: remove it there first') : t('Remove variable')} onClick={() => setVars(vars.filter((_, j) => j !== i))}>
                           <Trash2 size={15} />
                         </button>
                       </td>

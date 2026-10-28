@@ -385,7 +385,7 @@ export default function StreamEditor({ draft: initial, campaign, campaigns, whit
                     type="button"
                     className={'icon-btn filter-bypass' + (f.bypass ? ' active' : '')}
                     aria-pressed={!!f.bypass}
-                    title={f.bypass ? t('Bypassed: this filter is ignored. Click to apply it again.') : t('Bypass: keep this filter but ignore it when matching')}
+                    title={f.bypass ? t('Bypassed: this filter is ignored. Click to apply it again.') : t('Bypass: keep this filter but ignore it when matching')} aria-label={f.bypass ? t('Bypassed: this filter is ignored. Click to apply it again.') : t('Bypass: keep this filter but ignore it when matching')}
                     onClick={() => setFilter(i, { bypass: !f.bypass })}
                   >
                     {/* One drawing instead of two icons, so the knob can slide between the states. */}
@@ -394,7 +394,7 @@ export default function StreamEditor({ draft: initial, campaign, campaigns, whit
                       <circle className="knob" cx={16} cy={12} r={2} />
                     </svg>
                   </button>
-                  <button type="button" className="icon-btn danger" title={t('Remove filter')} onClick={() => set({ filters: d.filters.filter((_, j) => j !== i) })}>
+                  <button type="button" className="icon-btn danger" title={t('Remove filter')} aria-label={t('Remove filter')} onClick={() => set({ filters: d.filters.filter((_, j) => j !== i) })}>
                     <X size={15} />
                   </button>
                 </div>
@@ -533,10 +533,10 @@ export function PresetControls({
                   }}
                 >
                   <input className="input input-sm grow" autoFocus value={renaming.name} onChange={(e) => setRenaming({ id: renaming.id, name: e.target.value })} />
-                  <button className="icon-btn" disabled={busy || !renaming.name.trim()} title={t('Save name')}>
+                  <button className="icon-btn" disabled={busy || !renaming.name.trim()} title={t('Save name')} aria-label={t('Save name')}>
                     <Check size={14} />
                   </button>
-                  <button type="button" className="icon-btn" title={t('Cancel')} onClick={() => setRenaming(null)}>
+                  <button type="button" className="icon-btn" title={t('Cancel')} aria-label={t('Cancel')} onClick={() => setRenaming(null)}>
                     <X size={14} />
                   </button>
                 </form>
@@ -555,13 +555,13 @@ export function PresetControls({
                   </button>
                   {!p.builtin && p.id !== undefined && (
                     <>
-                      <button type="button" className="icon-btn" title={t('Rename preset')} onClick={() => setRenaming({ id: p.id as number, name: p.name })}>
+                      <button type="button" className="icon-btn" title={t('Rename preset')} aria-label={t('Rename preset')} onClick={() => setRenaming({ id: p.id as number, name: p.name })}>
                         <Pencil size={13} />
                       </button>
                       <button
                         type="button"
                         className="icon-btn danger"
-                        title={t('Delete preset')}
+                        title={t('Delete preset')} aria-label={t('Delete preset')}
                         disabled={busy}
                         onClick={async () => {
                           if (await confirmDialog({ title: t('Delete preset?'), message: tx('Preset <b>{name}</b> will be deleted. Streams that used it keep their settings.', { b: (c) => <b>{c}</b>, name: p.name }) })) act(() => del(`stream-presets/${p.id}`), t('Preset deleted'))
@@ -958,7 +958,7 @@ function ActionForm({
                           <span className="muted small lpreset-pct">{total > 0 ? Math.round((Math.max(0, p.weight) / total) * 100) + '%' : '—'}</span>
                         </>
                       )}
-                      <button type="button" className="icon-btn" title={t('Remove')} onClick={() => setShares(shares.filter((_, j) => j !== i))}>
+                      <button type="button" className="icon-btn" title={t('Remove')} aria-label={t('Remove')} onClick={() => setShares(shares.filter((_, j) => j !== i))}>
                         <X size={15} />
                       </button>
                     </div>

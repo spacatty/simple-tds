@@ -143,30 +143,60 @@ export function usePref<T extends string>(key: string, fallback: T): [T, (v: T) 
 }
 
 export type Theme = 'light' | 'dark'
+/** What the viewer chose: a theme, or whatever the system uses. */
+export type ThemePref = Theme | 'system'
+
+const systemTheme = (): Theme => (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+
+function readPref(): ThemePref {
+  try {
+    const v = localStorage.getItem('tds_theme')
+    return v === 'light' || v === 'dark' ? v : 'system'
+  } catch {
+    return 'system'
+  }
+}
 
 export function currentTheme(): Theme {
   const attr = document.documentElement.getAttribute('data-theme')
-  if (attr === 'light' || attr === 'dark') return attr
-  return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  return attr === 'light' || attr === 'dark' ? attr : systemTheme()
 }
 
-export function useTheme(): [Theme, () => void] {
+export interface ThemeState {
+  theme: Theme
+  pref: ThemePref
+  setPref: (p: ThemePref) => void
+  /** Light to dark and back, as the one-button switch on the sign-in page. */
+  toggle: () => void
+}
+
+export function useTheme(): ThemeState {
+  const [pref, setPrefState] = useState<ThemePref>(readPref)
   const [theme, setTheme] = useState<Theme>(currentTheme)
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-color-scheme: dark)')
-    const onChange = () => setTheme(currentTheme())
-    mq.addEventListener('change', onChange)
-    return () => mq.removeEventListener('change', onChange)
-  }, [])
-  const toggle = useCallback(() => {
-    const next: Theme = currentTheme() === 'dark' ? 'light' : 'dark'
-    document.documentElement.setAttribute('data-theme', next)
+  const setPref = useCallback((p: ThemePref) => {
     try {
-      localStorage.setItem('tds_theme', next)
+      if (p === 'system') localStorage.removeItem('tds_theme')
+      else localStorage.setItem('tds_theme', p)
     } catch {
-      /* private mode */
+      /* private mode: the choice holds until reload */
     }
+    const next = p === 'system' ? systemTheme() : p
+    document.documentElement.setAttribute('data-theme', next)
+    setPrefState(p)
     setTheme(next)
   }, [])
-  return [theme, toggle]
+  // Following the system: a change there (night mode turning on) applies at once.
+  useEffect(() => {
+    if (pref !== 'system') return
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const onChange = () => {
+      const next = systemTheme()
+      document.documentElement.setAttribute('data-theme', next)
+      setTheme(next)
+    }
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [pref])
+  const toggle = useCallback(() => setPref(currentTheme() === 'dark' ? 'light' : 'dark'), [setPref])
+  return { theme, pref, setPref, toggle }
 }

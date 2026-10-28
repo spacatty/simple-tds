@@ -7,10 +7,15 @@
     <title>Crella</title>
     <link rel="icon" type="image/svg+xml" href="/src/assets/logo.svg" />
     <script>
-      try {
-        var t = localStorage.getItem('tds_theme');
-        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
-      } catch (e) {}
+      // The theme is settled before the first paint: the one chosen, or the system's.
+      (function () {
+        var t = null;
+        try {
+          t = localStorage.getItem('tds_theme');
+        } catch (e) {}
+        if (t !== 'light' && t !== 'dark') t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', t);
+      })();
     </script>
   </head>
   <body>
