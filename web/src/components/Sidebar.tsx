@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
-import { Activity, AppWindow, BarChart3, Bookmark, Check, ChevronDown, ChevronsUpDown, Earth, EyeOff, FileCode2, Folder, Globe, HeartPulse, KeyRound, LayoutDashboard, LayoutTemplate, Layers, Link2, ListOrdered, LogOut, Menu, MonitorSmartphone, Moon, MousePointerClick, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, ShieldCheck, Split, Sun, Target, Unlink, UserCog, Users as UsersIcon, Webhook } from 'lucide-react'
+import { Activity, AppWindow, BarChart3, Bookmark, Check, ChevronDown, ChevronsUpDown, Earth, EyeOff, FileCode2, Folder, Globe, HeartPulse, KeyRound, LayoutDashboard, LayoutTemplate, Layers, Link2, ListOrdered, LogOut, MapPin, Menu, MonitorSmartphone, Moon, MousePointerClick, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, ShieldCheck, Split, Sun, Target, Unlink, UserCog, Users as UsersIcon, Webhook } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { User } from '../types'
 import type { Theme } from '../hooks'
@@ -33,9 +33,15 @@ const GROUPS: { id: string; label: string; items: Item[] }[] = [
     ],
   },
   {
+    // Everything about conversions in one place: what arrived, every postback request, and the keys.
     id: 'conversions',
     label: t('Conversions'),
-    items: [{ to: '/conversions/keys', label: t('Keys & postback URLs'), icon: KeyRound }],
+    items: [
+      // "end": the other two pages live under /conversions/ and must not light this one up.
+      { to: '/conversions', label: t('Conversion log'), icon: Target, end: true },
+      { to: '/conversions/postbacks', label: t('Postback log'), icon: Webhook },
+      { to: '/conversions/keys', label: t('Keys & postback URLs'), icon: KeyRound },
+    ],
   },
   {
     id: 'resources',
@@ -44,22 +50,14 @@ const GROUPS: { id: string; label: string; items: Item[] }[] = [
       { to: '/domains', label: t('Domains'), icon: Globe },
       { to: '/whitepages', label: t('Whitepages'), icon: FileCode2 },
       { to: '/landings', label: t('Landings'), icon: LayoutTemplate },
-    ],
-  },
-  {
-    id: 'tracking',
-    label: t('Tracking'),
-    items: [
-      { to: '/clicks', label: t('Click log'), icon: MousePointerClick },
-      // "end": the other two pages live under /conversions/ and must not light this one up.
-      { to: '/conversions', label: t('Conversion log'), icon: Target, end: true },
-      { to: '/conversions/postbacks', label: t('Postback log'), icon: Webhook },
+      { to: '/geo-presets', label: t('Geo presets'), icon: MapPin },
     ],
   },
   {
     id: 'reports',
     label: t('Reports'),
     items: [
+      { to: '/clicks', label: t('Click log'), icon: MousePointerClick },
       // "end": the other reports live under /reports/ and must not light this one up.
       { to: '/reports', label: t('Breakdown'), icon: BarChart3, end: true },
       { to: '/reports/referrer-activity', label: t('Referrer activity'), icon: HeartPulse },
@@ -80,6 +78,7 @@ const GROUPS: { id: string; label: string; items: Item[] }[] = [
     label: t('System'),
     items: [
       { to: '/status', label: t('Status'), icon: Activity, admin: true },
+      { to: '/users', label: t('Users'), icon: UsersIcon, admin: true },
       { to: '/settings', label: t('Settings'), icon: SettingsIcon, admin: true },
     ],
   },

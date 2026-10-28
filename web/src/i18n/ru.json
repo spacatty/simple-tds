@@ -25,8 +25,8 @@
   "(not handed over)": "(не передан)",
   "(unknown)": "(неизвестно)",
   "{action} — click to switch the action": "{action} — нажмите, чтобы сменить действие",
-  "{added} added, {refused} refused. New domains are checked in the background; watch the Status column.": "Добавлено: {added}, отклонено: {refused}. Новые домены проверяются в фоне; следите за колонкой «Статус».",
-  "{added} added. New domains are checked in the background; watch the Status column.": "Добавлено: {added}. Новые домены проверяются в фоне; следите за колонкой «Статус».",
+  "{added} added, {refused} refused. New domains are checked in the background; each shows its status on the Domains page once its check is done.": "Добавлено: {added}, отклонено: {refused}. Новые домены проверяются в фоне; статус каждого появится на странице «Домены», когда проверка закончится.",
+  "{added} added. New domains are checked in the background; each shows its status on the Domains page once its check is done.": "Добавлено: {added}. Новые домены проверяются в фоне; статус каждого появится на странице «Домены», когда проверка закончится.",
   "{answered} of {total}": "{answered} из {total}",
   "{conv} of {clicks}": "{conv} из {clicks}",
   "{count} entries": [
@@ -1862,6 +1862,8 @@
   "The preset <b>{name}</b> has changed since this funnel was copied from it.": "Пресет <b>{name}</b> изменился с тех пор, как эта воронка была с него скопирована.",
   "The preset is a copy of the stages on screen. It is yours alone and can be applied to any campaign you edit.": "Пресет — копия этапов на экране. Он виден только вам, и его можно применить к любой кампании, которую вы редактируете.",
   "The preset keeps the ranked dimension, the period and every filter as they are now.": "Пресет запоминает параметр, период и все фильтры такими, какие они сейчас.",
+  "The presets are shared by every user of this server and kept by administrators.": "Пресеты общие для всех пользователей этого сервера, их ведут администраторы.",
+  "The presets are shared by every user of this server.": "Пресеты общие для всех пользователей этого сервера.",
   "The preview is sandboxed and shows the saved landing; the link expires in two hours. There is no click behind it, so visitor macros are empty and events are not recorded.": "Предпросмотр изолирован и показывает сохранённый лендинг; ссылка действует два часа. Клика за ним нет, поэтому макросы посетителя пусты, а события не записываются.",
   "The preview is sandboxed and the link expires in two hours. Macros and visitor data are empty in preview.": "Предпросмотр открывается в песочнице, ссылка действует два часа. Макросы и данные посетителя в предпросмотре пустые.",
   "The quota of your key; checks are spread out to stay within it.": "Квота вашего ключа; проверки растягиваются по времени, чтобы в неё уложиться.",
@@ -1939,7 +1941,6 @@
     "Итого · {n} строки",
     "Итого · {n} строк"
   ],
-  "Tracking": "Трекинг",
   "Traffic": "Трафик",
   "Treat datacenter / VPN traffic as bots": "Считать трафик дата-центров и VPN ботами",
   "Trusted proxies ({n})": "Доверенные прокси ({n})",

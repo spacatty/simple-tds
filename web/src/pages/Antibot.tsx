@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { FlaskConical, Pencil, Plus, RefreshCw, Trash2, Upload } from 'lucide-react'
 import { del, errMsg, get, post, put, upload } from '../api'
-import { useLoad, useMeta } from '../hooks'
+import { useIsAdmin, useLoad, useMeta } from '../hooks'
+import { useSearchParams } from 'react-router-dom'
 import type { GeoPreset, GeoStatus, IPList, Integration, IntegrationTestResult, Settings } from '../types'
 import { DataTable } from '../components/DataTable'
 import type { Column } from '../components/DataTable'
@@ -12,14 +13,19 @@ import { fmtAgo, fmtBytes, fmtDateTime, fmtInt } from '../format'
 import { Flag } from '../components/icons'
 import { t, tn, ts, tx } from '../i18n'
 
-type Tab = 'detection' | 'lists' | 'integrations' | 'geo' | 'presets'
+type Tab = 'detection' | 'lists' | 'integrations' | 'geo'
+const TABS: Tab[] = ['detection', 'lists', 'integrations', 'geo']
 
 // Built-in IP lists and geo presets are seeded by the server with English names.
 const displayName = (x: { name: string; builtin?: boolean }) => (x.builtin ? ts(x.name) : x.name)
 const entriesText = (n: number) => tn(n, '{count} entry', '{count} entries', { count: fmtInt(n) })
 
 export default function Antibot() {
-  const [tab, setTab] = useState<Tab>('detection')
+  // The tab lives in the address, so reload, Back and links (Status → Geo database) keep it.
+  const [sp, setSp] = useSearchParams()
+  const wanted = sp.get('tab') as Tab | null
+  const tab: Tab = wanted && TABS.includes(wanted) ? wanted : 'detection'
+  const setTab = (v: Tab) => setSp(v === 'detection' ? {} : { tab: v })
   return (
     <div className="page">
       <PageHeader title={t('Anti-bot')} sub={t('How visitors are classified as bots or datacenter traffic, and where geo data comes from.')} />
@@ -31,14 +37,22 @@ export default function Antibot() {
           { value: 'lists', label: t('IP lists') },
           { value: 'integrations', label: t('External integrations') },
           { value: 'geo', label: t('Geo database') },
-          { value: 'presets', label: t('Geo presets') },
         ]}
       />
       {tab === 'detection' && <Detection />}
       {tab === 'lists' && <Lists />}
       {tab === 'integrations' && <Integrations />}
       {tab === 'geo' && <GeoDB />}
-      {tab === 'presets' && <Presets />}
+    </div>
+  )
+}
+
+/** Geo presets on a page of their own: everyone uses them in country filters, administrators keep them. */
+export function GeoPresetsPage() {
+  return (
+    <div className="page">
+      <PageHeader title={t('Geo presets')} sub={t("Named country sets. In a stream's Country filter, “Presets” adds all countries of a preset at once.")} />
+      <Presets />
     </div>
   )
 }
@@ -816,6 +830,7 @@ function GeoDB() {
 // ---- geo presets ------------------------------------------------------------
 
 function Presets() {
+  const admin = useIsAdmin()
   const res = useLoad(() => get<GeoPreset[]>('geo-presets'), [])
   const [editing, setEditing] = useState<GeoPreset | 'new' | null>(null)
 
@@ -858,31 +873,37 @@ function Presets() {
         </span>
       ),
     },
-    {
-      key: 'actions',
-      title: '',
-      align: 'right',
-      width: 90,
-      render: (p) => (
-        <div className="row-actions">
-          <button className="icon-btn" title={t('Edit')} onClick={() => setEditing(p)}>
-            <Pencil size={15} />
-          </button>
-          <button className="icon-btn danger" title={t('Delete')} onClick={() => remove(p)}>
-            <Trash2 size={15} />
-          </button>
-        </div>
-      ),
-    },
+    ...(admin
+      ? [
+          {
+            key: 'actions',
+            title: '',
+            align: 'right' as const,
+            width: 90,
+            render: (p: GeoPreset) => (
+              <div className="row-actions">
+                <button className="icon-btn" title={t('Edit')} aria-label={t('Edit')} onClick={() => setEditing(p)}>
+                  <Pencil size={15} />
+                </button>
+                <button className="icon-btn danger" title={t('Delete')} aria-label={t('Delete')} onClick={() => remove(p)}>
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            ),
+          },
+        ]
+      : []),
   ]
 
   return (
     <div className="stack">
       <div className="toolbar">
-        <span className="muted grow">{t("Named country sets. In a stream's Country filter, “Presets” adds all countries of a preset at once.")}</span>
-        <button className="btn primary" onClick={() => setEditing('new')}>
-          <Plus size={15} /> {t('New preset')}
-        </button>
+        <span className="muted grow">{admin ? t('The presets are shared by every user of this server.') : t('The presets are shared by every user of this server and kept by administrators.')}</span>
+        {admin && (
+          <button className="btn primary" onClick={() => setEditing('new')}>
+            <Plus size={15} /> {t('New preset')}
+          </button>
+        )}
       </div>
       <ErrorBox error={res.error} retry={res.reload} />
       <div className="card">

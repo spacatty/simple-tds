@@ -86,7 +86,7 @@ export default function Status() {
               {row(t('ASN database'), s.geo.asn.loaded ? 'ok' : 'warn', s.geo.asn.loaded ? t('Loaded · {ago}', { ago: fmtAgo(s.geo.asn.updated) }) : t('Not loaded'), t('Provider and datacenter detection'))}
               {s.geo.last_error && <div className="field-error">{ts(s.geo.last_error)}</div>}
               <div className="field-help">
-                <Link to="/settings">{t('Geo database settings')}</Link>
+                <Link to="/antibot?tab=geo">{t('Geo database settings')}</Link>
               </div>
             </section>
 

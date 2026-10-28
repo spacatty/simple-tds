@@ -502,8 +502,8 @@ function AddDomains({ isAdmin, groups, campaigns, onClose, onAdded }: { isAdmin:
       <Modal title={t('Domains added')} onClose={onClose} footer={<><button className="btn" onClick={() => { setResult(null); setNames(failed.map((f) => f.name).join('\n')) }}>{t('Add more')}</button><button className="btn primary" onClick={onClose}>{t('Done')}</button></>}>
         <Notice tone={failed.length ? 'warn' : 'ok'}>
           {failed.length > 0
-            ? t('{added} added, {refused} refused. New domains are checked in the background; watch the Status column.', { added: result.added, refused: failed.length })
-            : t('{added} added. New domains are checked in the background; watch the Status column.', { added: result.added })}
+            ? t('{added} added, {refused} refused. New domains are checked in the background; each shows its status on the Domains page once its check is done.', { added: result.added, refused: failed.length })
+            : t('{added} added. New domains are checked in the background; each shows its status on the Domains page once its check is done.', { added: result.added })}
         </Notice>
         <div className="table-wrap" style={{ maxHeight: 340 }}>
           <table className="table">

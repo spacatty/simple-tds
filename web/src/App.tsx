@@ -23,7 +23,7 @@ import Reports from './pages/Reports'
 import TopReport from './pages/TopReport'
 import RefActivity from './pages/RefActivity'
 import Clicks from './pages/Clicks'
-import Antibot from './pages/Antibot'
+import Antibot, { GeoPresetsPage } from './pages/Antibot'
 import Suppress from './pages/Suppress'
 import SettingsPage from './pages/Settings'
 import AccountPage from './pages/Account'
@@ -163,6 +163,7 @@ export default function App() {
             <Route path="/reports/referrer-activity" element={<RefActivity />} />
             <Route path="/clicks" element={<Clicks />} />
             {user.role === 'admin' && <Route path="/antibot" element={<Antibot />} />}
+            <Route path="/geo-presets" element={<GeoPresetsPage />} />
             <Route path="/suppress/ips" element={<Suppress kind="ip" />} />
             <Route path="/suppress/referrers" element={<Suppress kind="referer" />} />
             {user.role === 'admin' && <Route path="/users" element={<UsersPage />} />}
