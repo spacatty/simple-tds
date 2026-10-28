@@ -1473,6 +1473,7 @@
   "Quarter": "Четверть",
   "Query string": "Строка запроса",
   "Rank": "Параметр",
+  "Rank these values in Top lists, where the view can be saved and pinned to the sidebar": "Ранжировать эти значения в «Топах», где вид можно сохранить и закрепить в боковой панели",
   "Rate limit per sender IP, per minute": "Лимит запросов с одного IP отправителя, в минуту",
   "Raw click log, newest first. Click a row to see every recorded field and what the click went on to do.": "Сырой лог кликов, сначала новые. Нажмите на строку, чтобы увидеть все записанные поля и то, что произошло с кликом дальше.",
   "Raw response": "Исходный ответ",

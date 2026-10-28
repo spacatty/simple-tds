@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { CornerDownRight, Download, MousePointerClick, RefreshCw } from 'lucide-react'
+import { CornerDownRight, Download, ListOrdered, MousePointerClick, RefreshCw } from 'lucide-react'
+import { TOP_PATH } from '../reportPresets'
 import { get } from '../api'
 import type { Params } from '../api'
 import { useLoad, useMeta } from '../hooks'
@@ -44,7 +45,6 @@ export default function Reports() {
   const [sp, setSp] = useSearchParams()
   const spKey = sp.toString()
   const filterable = useMemo(() => meta.report_filters ?? [], [meta.report_filters])
-  const [metric, setMetric] = useState<MetricKey>('clicks')
 
   // Everything that defines the report lives in the URL: shareable, and Back undoes a drill step.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -53,12 +53,24 @@ export default function Reports() {
   const filters = useMemo(() => parseFilters(sp), [spKey])
   const group = meta.report_groups.includes(sp.get('group') ?? '') ? (sp.get('group') as string) : 'day'
   const timeline = group === 'day' || group === 'hour'
+  // The charted figure too, so a shared link shows the same chart.
+  const metric: MetricKey = METRICS.some((m) => m.key === sp.get('metric')) ? (sp.get('metric') as MetricKey) : 'clicks'
 
   const update = (fn: (n: URLSearchParams) => void, replace = false) => {
     const n = new URLSearchParams(sp)
     fn(n)
     setSp(n, { replace })
   }
+  const setMetric = (m: MetricKey) => update((n) => (m === 'clicks' ? n.delete('metric') : n.set('metric', m)), true)
+  // The same grouping ranked in Top lists, where a view can be saved and pinned to the sidebar.
+  const topHref = (() => {
+    if (!(meta.report_splits ?? []).includes(group)) return ''
+    const n = new URLSearchParams(sp)
+    n.delete('group')
+    n.delete('metric')
+    n.set('dim', group)
+    return TOP_PATH + '?' + n.toString()
+  })()
   const setRange = (r: DateRange) => {
     rememberRange(r)
     update((n) => writeRange(n, r))
@@ -220,6 +232,11 @@ export default function Reports() {
         <Link className="btn" to={'/clicks' + clicksSearch()} title={t('Open the click log with the same filters')}>
           <MousePointerClick size={14} /> {t('View clicks')}
         </Link>
+        {topHref && (
+          <Link className="btn" to={topHref} title={t('Rank these values in Top lists, where the view can be saved and pinned to the sidebar')}>
+            <ListOrdered size={14} /> {t('Top lists')}
+          </Link>
+        )}
         <button className="btn" disabled={!rows.length} onClick={exportCSV}>
           <Download size={14} /> {t('Export CSV')}
         </button>
