@@ -3,7 +3,7 @@
 //   ?group=country&range=7d&campaign_id=3&f.country=DE&f.country=FR&like.referer=shop&bots=exclude
 // A repeated f.<dimension> lists alternatives; like.<field> is "contains".
 import type { Params } from './api'
-import { presetRange } from './components/DateRangePicker'
+import { rangeFromSearch, writeRange } from './components/DateRangePicker'
 import type { DateRange } from './components/DateRangePicker'
 import { countryName } from './countries'
 import { browserTZ, humanize } from './format'
@@ -118,26 +118,8 @@ export function valueText(dim: string, v: string): string {
 
 // ---- date range in the URL ----------------------------------------------------
 
-export function rangeFromSearch(sp: URLSearchParams, fallback: DateRange): DateRange {
-  const preset = sp.get('range')
-  if (preset && preset !== 'custom') return presetRange(preset)
-  const from = Number(sp.get('from'))
-  const to = Number(sp.get('to'))
-  if (from > 0 && to > from) return { preset: 'custom', from, to }
-  return fallback
-}
-
-export function writeRange(sp: URLSearchParams, r: DateRange) {
-  sp.delete('range')
-  sp.delete('from')
-  sp.delete('to')
-  if (r.preset === 'custom') {
-    sp.set('from', String(r.from))
-    sp.set('to', String(r.to))
-  } else {
-    sp.set('range', r.preset)
-  }
-}
+// Kept with the date picker, which reads them too.
+export { rangeFromSearch, writeRange }
 
 export function rangeApiParams(r: DateRange): Params {
   return { from: r.from, to: r.to, tz: browserTZ }

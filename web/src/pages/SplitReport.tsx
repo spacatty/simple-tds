@@ -103,7 +103,7 @@ export default function SplitReport({ spec }: { spec: SplitSpec }) {
 
   // The selection lives in the URL, like on the other report pages.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const range = useMemo(() => rangeFromSearch(sp, currentRange('7d')), [spKey])
+  const range = useMemo(() => rangeFromSearch(sp, currentRange()), [spKey])
   const by = sp.get('by')
   const rank = RANKS.find((r) => r.key === by) ?? RANKS[0]
 

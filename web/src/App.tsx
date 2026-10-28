@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigationType } from 'react-router-dom'
-import { ApiError, api, errMsg, get, onUnauthorized, post } from './api'
+import { ApiError, api, errMsg, get, onUnauthorized, post, put } from './api'
 import { AppContext, useTheme } from './hooks'
+import { initRangePref } from './components/DateRangePicker'
 import { t } from './i18n'
 import type { Meta, User } from './types'
 import { ConfirmHost, ErrorBoundary, ErrorBox, LeaveGuardHost, ToastHost } from './components/ui'
@@ -101,6 +102,16 @@ export default function App() {
   }, [])
 
   const ctx = useMemo(() => (user && meta ? { user, setUser, meta, reloadMeta: loadMeta, logout } : null), [user, meta, loadMeta, logout])
+
+  // Every page opens on the period this account chose last, on any device.
+  const userId = user?.id
+  useEffect(() => {
+    if (!user) return
+    initRangePref(user.prefs?.range, (range) => {
+      put('me/prefs', { range }).catch(() => undefined)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId])
 
   if (user === undefined) return <div className="boot">{t('Loading…')}</div>
 

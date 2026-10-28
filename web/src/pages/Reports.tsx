@@ -48,7 +48,7 @@ export default function Reports() {
 
   // Everything that defines the report lives in the URL: shareable, and Back undoes a drill step.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const range = useMemo(() => rangeFromSearch(sp, currentRange('7d')), [spKey])
+  const range = useMemo(() => rangeFromSearch(sp, currentRange()), [spKey])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const filters = useMemo(() => parseFilters(sp), [spKey])
   const group = meta.report_groups.includes(sp.get('group') ?? '') ? (sp.get('group') as string) : 'day'

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Calendar, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { ymd, ymdh } from '../format'
 import { locale, t } from '../i18n'
@@ -47,38 +48,82 @@ export function presetRange(preset: string): DateRange {
   }
 }
 
-// The chosen range follows the user from page to page.
+// The chosen range follows the user from page to page, and its preset from session to session.
 let remembered: DateRange | null = null
+let accountPreset = ''
+let savePreset: ((preset: string) => void) | null = null
+
+/** Called once signed in: the preset last chosen on this account, and how to store a new one. */
+export function initRangePref(preset: string | undefined, save: (preset: string) => void) {
+  accountPreset = PRESETS.some((p) => p.id === preset) ? (preset as string) : ''
+  savePreset = save
+}
 
 export function rememberRange(r: DateRange) {
   remembered = r
+  if (r.preset !== 'custom' && r.preset !== accountPreset) {
+    accountPreset = r.preset
+    savePreset?.(r.preset)
+  }
 }
 
 /** The range last chosen anywhere in the panel (presets recomputed for today). */
 export function currentRange(initial = 'today'): DateRange {
-  if (!remembered) return presetRange(initial)
+  if (!remembered) return presetRange(accountPreset || initial)
   return remembered.preset === 'custom' ? remembered : presetRange(remembered.preset)
 }
 
+// ---- the range in the address ------------------------------------------------------
+// ?range=7d for a preset, ?from=…&to=… (unix seconds) for anything else.
+
+export function rangeFromSearch(sp: URLSearchParams, fallback: DateRange): DateRange {
+  const preset = sp.get('range')
+  if (preset && preset !== 'custom') return presetRange(preset)
+  const from = Number(sp.get('from'))
+  const to = Number(sp.get('to'))
+  if (from > 0 && to > from) return { preset: 'custom', from, to }
+  return fallback
+}
+
+export function writeRange(sp: URLSearchParams, r: DateRange) {
+  sp.delete('range')
+  sp.delete('from')
+  sp.delete('to')
+  if (r.preset === 'custom') {
+    sp.set('from', String(r.from))
+    sp.set('to', String(r.to))
+  } else {
+    sp.set('range', r.preset)
+  }
+}
+
+/**
+ * The period of a page, kept in its address next to whatever else is there, so a reload,
+ * Back and a copied link all show the same numbers. Without one in the address it is the
+ * period last chosen anywhere.
+ */
 export function useDateRange(initial = 'today'): [DateRange, (r: DateRange) => void] {
-  const [range, setRange] = useState<DateRange>(() => {
-    if (!remembered) return presetRange(initial)
-    // Recompute presets so "Today" opened tomorrow is still today.
-    return remembered.preset === 'custom' ? remembered : presetRange(remembered.preset)
-  })
-  const set = useCallback((r: DateRange) => {
-    remembered = r
-    setRange(r)
-  }, [])
-  // A page left open past midnight: move presets on, or "Today" keeps showing yesterday.
+  const [sp, setSp] = useSearchParams()
+  const key = `${sp.get('range') ?? ''}|${sp.get('from') ?? ''}|${sp.get('to') ?? ''}`
+  // Bumped when the day turns, so "Today" left open past midnight moves on.
+  const [day, setDay] = useState(() => presetRange('today').from)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const range = useMemo(() => rangeFromSearch(sp, currentRange(initial)), [key, day])
+  const set = useCallback(
+    (r: DateRange) => {
+      rememberRange(r)
+      setSp((prev) => {
+        const n = new URLSearchParams(prev)
+        writeRange(n, r)
+        return n
+      })
+    },
+    [setSp],
+  )
   useEffect(() => {
-    if (range.preset === 'custom') return
-    const t = setInterval(() => {
-      const now = presetRange(range.preset)
-      if (now.from !== range.from || now.to !== range.to) set(now)
-    }, 60_000)
-    return () => clearInterval(t)
-  }, [range, set])
+    const timer = setInterval(() => setDay(presetRange('today').from), 60_000)
+    return () => clearInterval(timer)
+  }, [])
   return [range, set]
 }
 
