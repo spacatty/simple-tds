@@ -5288,30 +5288,6 @@ fieldset.plain:disabled .action-card {
 .stat-link:hover {
   color: var(--accent-text);
 }
-.kpis {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
-  gap: 8px;
-}
-.kpi {
-  display: flex;
-  flex-direction: column;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface-2);
-}
-.kpi span {
-  font-size: 10.5px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-3);
-}
-.kpi b {
-  font-size: 16px;
-  font-variant-numeric: tabular-nums;
-}
 .detail-actions {
   display: flex;
   gap: 8px;
@@ -6468,6 +6444,23 @@ a.rep-chip:hover {
 .sb.flat .sb-ctl {
   padding: 0;
   border-left: 0;
+}
+/* On a phone the figures sit two by two instead of one under another. */
+@media (max-width: 700px) {
+  .sb-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .sb-kpi:nth-child(odd) {
+    border-left: 0;
+  }
+  .sb.flat .sb-kpi,
+  .sb.flat .sb-kpi:first-child {
+    padding: 6px 12px 6px 0;
+  }
+  .funnel-sb {
+    padding: 14px 0;
+    margin-bottom: 14px;
+  }
 }
 /* Campaign groups listed under Campaigns in the sidebar. */
 .nav-entry {

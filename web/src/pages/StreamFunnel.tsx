@@ -16,9 +16,8 @@ import { confirmCutOff, loadReport, sumRows } from '../reports'
 import { buildSearch } from '../filters'
 import { fmtInt, fmtMoney, fmtPct, ratioPct } from '../format'
 import { dimIcon, FunnelIcon } from '../components/icons'
-import { t, tn, ts, tx } from '../i18n'
-import { StatBar } from '../components/StatBar'
-import type { Metric } from '../components/StatBar'
+import { t, ts, tx } from '../i18n'
+import { StatBar, periodMetrics } from '../components/StatBar'
 import { ActionMenu } from '../components/ActionMenu'
 
 interface StreamsResp {
@@ -281,19 +280,12 @@ export default function StreamFunnel({
   const scope = { campaign_id: campaign.id }
 
   const cur = campaign.currency
-  const metrics: Metric[] = [
-    { label: t('Clicks'), value: fmtInt(total.clicks), metric: 'm-clicks', to: '/clicks' + buildSearch({ range, filters: scope }), title: t('Open the click log of this campaign'), sub: tn(total.uniques, '{n} unique', '{n} unique', { n: fmtInt(total.uniques) }) },
-    { label: t('Bots'), value: ratioPct(total.bots, total.clicks), metric: 'm-bots', sub: tn(total.bots, '{n} click', '{n} clicks', { n: fmtInt(total.bots) }) },
-    { label: t('Conv.'), value: fmtInt(total.conversions), metric: 'm-conv', to: '/conversions' + buildSearch({ range, filters: scope }), title: t('Open the conversion log of this campaign'), sub: `CR ${fmtPct(total.cr)}` },
-    { label: t('Revenue'), value: fmtMoney(total.revenue, cur), metric: 'm-conv', sub: t('cost {value}', { value: fmtMoney(total.cost, cur) }) },
-    {
-      label: t('Profit'),
-      value: fmtMoney(total.profit, cur),
-      metric: total.profit < 0 ? 'm-loss' : 'm-conv',
-      tone: total.profit > 0 ? 'pos' : total.profit < 0 ? 'neg' : '',
-      sub: total.cost > 0 ? `ROI ${fmtPct(total.roi, 1)}` : t('no cost recorded'),
-    },
-  ]
+  const metrics = periodMetrics(total, cur, {
+    clicks: '/clicks' + buildSearch({ range, filters: scope }),
+    clicksTitle: t('Open the click log of this campaign'),
+    conversions: '/conversions' + buildSearch({ range, filters: scope }),
+    conversionsTitle: t('Open the conversion log of this campaign'),
+  })
 
   return (
     <div className="funnel">

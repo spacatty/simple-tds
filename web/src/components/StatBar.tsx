@@ -1,5 +1,8 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import type { ReportRow } from '../types'
+import { fmtInt, fmtMoney, fmtPct, ratioPct } from '../format'
+import { t, tn } from '../i18n'
 
 export interface Metric {
   label: string
@@ -12,6 +15,26 @@ export interface Metric {
   title?: string
   /** Where the figure leads, e.g. the click log. */
   to?: string
+}
+
+/**
+ * The five figures every page shows for a period, the same way everywhere: clicks, bots,
+ * conversions, revenue and profit. Clicks and conversions can lead to their logs.
+ */
+export function periodMetrics(r: ReportRow, currency: string, links: { clicks?: string; clicksTitle?: string; conversions?: string; conversionsTitle?: string } = {}): Metric[] {
+  return [
+    { label: t('Clicks'), value: fmtInt(r.clicks), metric: 'm-clicks', to: links.clicks, title: links.clicksTitle, sub: tn(r.uniques, '{n} unique', '{n} unique', { n: fmtInt(r.uniques) }) },
+    { label: t('Bots'), value: ratioPct(r.bots, r.clicks), metric: 'm-bots', sub: tn(r.bots, '{n} click', '{n} clicks', { n: fmtInt(r.bots) }) },
+    { label: t('Conv.'), value: fmtInt(r.conversions), metric: 'm-conv', to: links.conversions, title: links.conversionsTitle, sub: `CR ${fmtPct(r.cr)}` },
+    { label: t('Revenue'), value: fmtMoney(r.revenue, currency), metric: 'm-conv', sub: t('cost {value}', { value: fmtMoney(r.cost, currency) }) },
+    {
+      label: t('Profit'),
+      value: fmtMoney(r.profit, currency),
+      metric: r.profit < 0 ? 'm-loss' : 'm-conv',
+      tone: r.profit > 0 ? 'pos' : r.profit < 0 ? 'neg' : '',
+      sub: r.cost > 0 ? `ROI ${fmtPct(r.roi, 1)}` : t('no cost recorded'),
+    },
+  ]
 }
 
 /** The totals of a page for the chosen period, with the period controls at the right end. */

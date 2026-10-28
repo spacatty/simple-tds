@@ -4,6 +4,7 @@ import { BarChart3, MousePointerClick } from 'lucide-react'
 import { useLoad } from '../hooks'
 import type { Campaign, ReportRow, Stream } from '../types'
 import { DataTable } from '../components/DataTable'
+import { StatBar, periodMetrics } from '../components/StatBar'
 import type { Column } from '../components/DataTable'
 import { DateRangePicker } from '../components/DateRangePicker'
 import type { DateRange } from '../components/DateRangePicker'
@@ -12,7 +13,6 @@ import { Drawer, Empty, ErrorBox, Select, Skeleton } from '../components/ui'
 import { METRICS, emptyRow, loadReport } from '../reports'
 import type { MetricKey } from '../reports'
 import { buildSearch, dimLabel } from '../filters'
-import { fmtInt, fmtMoney, fmtPct, ratioPct } from '../format'
 import { countryName } from '../countries'
 import { dimIcon } from '../components/icons'
 import { t } from '../i18n'
@@ -48,18 +48,8 @@ export default function StreamStats({ campaign, stream, range, setRange, onClose
     ),
   ]
 
-  const kpis: [string, string][] = tot
-    ? [
-        [t('Clicks'), fmtInt(tot.clicks)],
-        [t('Uniques'), fmtInt(tot.uniques)],
-        [t('Bots'), ratioPct(tot.bots, tot.clicks)],
-        [t('Conversions'), fmtInt(tot.conversions)],
-        ['CR', fmtPct(tot.cr)],
-        [t('Revenue'), fmtMoney(tot.revenue)],
-        [t('Cost'), fmtMoney(tot.cost)],
-        [t('Profit'), fmtMoney(tot.profit)],
-      ]
-    : []
+  // In the campaign's currency, like the figures on the campaign page.
+  const metrics = tot ? periodMetrics(tot, campaign.currency) : []
 
   const filters = { campaign_id: campaign.id, stream_id: stream.id }
 
@@ -100,18 +90,7 @@ export default function StreamStats({ campaign, stream, range, setRange, onClose
         </label>
       </div>
       <ErrorBox error={total.error || rep.error} retry={() => (total.reload(), rep.reload())} />
-      <div className="kpis" style={{ marginBottom: 14 }}>
-        {!tot ? (
-          <Skeleton rows={2} />
-        ) : (
-          kpis.map(([l, v]) => (
-            <div className="kpi" key={l}>
-              <span>{l}</span>
-              <b>{v}</b>
-            </div>
-          ))
-        )}
-      </div>
+      <div style={{ marginBottom: 14 }}>{tot ? <StatBar metrics={metrics} /> : <Skeleton rows={2} />}</div>
 
       {rows.length > 0 &&
         (timeline ? (
