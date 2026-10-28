@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { DragEvent, ReactNode } from 'react'
+import type { DragEvent, KeyboardEvent, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertTriangle, ArrowRight, BarChart3, ClipboardCopy, ClipboardPaste, Copy, CopyPlus, CornerDownRight, Eye, MousePointerClick, Pencil, Plus, ShieldCheck, Target, Trash2 } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, BarChart3, ClipboardCopy, ClipboardPaste, Copy, CopyPlus, CornerDownRight, CornerRightDown, Eye, MousePointerClick, Pencil, Plus, ShieldCheck, Target, Trash2 } from 'lucide-react'
 import { del, errMsg, get, post, put } from '../api'
 import { canEdit, useLoad, useMeta } from '../hooks'
 import { useStatsStyle } from '../streamStats'
@@ -158,20 +158,38 @@ export default function StreamFunnel({
     await res.reload()
   }
 
-  const drop = (kind: string) => {
-    if (dragId === null || !over) return
-    const list = byKind[kind]
-    const moving = list.find((s) => s.id === dragId)
+  /**
+   * Puts a stream at index of a lane: a new place in its own lane, or another lane, which
+   * changes what kind of stream it is.
+   */
+  const moveStream = async (s: Stream, kind: Kind, index: number) => {
+    const from = s.kind as Kind
+    const rest = byKind[kind].filter((x) => x.id !== s.id)
+    const at = Math.max(0, Math.min(index, rest.length))
+    if (from === kind && byKind[kind][at]?.id === s.id) return
+    rest.splice(at, 0, from === kind ? s : { ...s, kind })
+    if (from !== kind) {
+      try {
+        await put<Stream>(`streams/${s.id}`, { kind })
+      } catch (e) {
+        toast.err(e)
+        return
+      }
+      toast.ok(t('“{name}” moved to {lane}', { name: s.name, lane: LANE[kind].title }))
+    }
+    await saveOrder({ ...byKind, [from]: byKind[from].filter((x) => x.id !== s.id), [kind]: rest })
+  }
+
+  const drop = (kind: Kind) => {
+    const moving = streams.find((s) => s.id === dragId)
+    const target = over
     setDragId(null)
     setOver(null)
-    if (!moving || over.id === dragId) return
-    const rest = list.filter((s) => s.id !== dragId)
-    let idx = rest.findIndex((s) => s.id === over.id)
-    if (idx < 0) return
-    if (over.after) idx++
-    rest.splice(idx, 0, moving)
-    if (rest.every((s, i) => s.id === list[i].id)) return
-    saveOrder({ ...byKind, [kind]: rest })
+    if (!moving || target?.id === moving.id) return
+    // Dropped on a stream: before or after it; on the empty part of a lane: at its end.
+    const rest = byKind[kind].filter((s) => s.id !== moving.id)
+    const j = target ? rest.findIndex((s) => s.id === target.id) : -1
+    moveStream(moving, kind, j < 0 ? rest.length : j + (target?.after ? 1 : 0))
   }
 
   /** Partial update of one stream, shown immediately. */
@@ -331,7 +349,7 @@ export default function StreamFunnel({
                 <div
                   className="lane-body"
                   onDragOver={(e) => {
-                    if (dragId !== null && list.some((s) => s.id === dragId)) e.preventDefault()
+                    if (dragId !== null) e.preventDefault()
                   }}
                   onDrop={(e) => {
                     e.preventDefault()
@@ -360,14 +378,14 @@ export default function StreamFunnel({
                       campaigns={campaigns}
                       actionPresets={streamPresets.filter((p) => p.kind === 'action')}
                       dragging={dragId === s.id}
-                      dropMark={over && over.id === s.id && dragId !== null && dragId !== s.id && list.some((x) => x.id === dragId) ? (over.after ? 'after' : 'before') : null}
+                      dropMark={over && over.id === s.id && dragId !== null && dragId !== s.id ? (over.after ? 'after' : 'before') : null}
                       onDragStart={() => setDragId(s.id)}
                       onDragEnd={() => {
                         setDragId(null)
                         setOver(null)
                       }}
                       onDragOverCard={(e) => {
-                        if (dragId === null || !list.some((x) => x.id === dragId)) return
+                        if (dragId === null) return
                         const r = e.currentTarget.getBoundingClientRect()
                         const after = e.clientY > r.top + r.height / 2
                         if (!over || over.id !== s.id || over.after !== after) setOver({ id: s.id, after })
@@ -382,6 +400,10 @@ export default function StreamFunnel({
                       clip={clip?.name ?? null}
                       onPaste={(what) => paste(s, what)}
                       onDelete={() => remove(s)}
+                      onMove={(to) => (to === 'up' ? moveStream(s, kind, i - 1) : to === 'down' ? moveStream(s, kind, i + 1) : moveStream(s, to, byKind[to].length))}
+                      canUp={i > 0}
+                      canDown={i < list.length - 1}
+                      kind={kind}
                       onStats={() => setStatsFor(s)}
                       onFunnel={() => setFunnelFor({ stream: s })}
                       onClicks={() => nav('/clicks' + buildSearch({ range, filters: { ...scope, stream_id: s.id } }))}
@@ -548,6 +570,10 @@ function StreamCard({
   clip,
   onPaste,
   onDelete,
+  onMove,
+  canUp,
+  canDown,
+  kind,
   onStats,
   onFunnel,
   onClicks,
@@ -586,6 +612,11 @@ function StreamCard({
   clip: string | null
   onPaste: (what: PasteWhat) => void
   onDelete: () => void
+  /** One place up or down its lane, or to the end of another lane. */
+  onMove: (to: 'up' | 'down' | Kind) => void
+  canUp: boolean
+  canDown: boolean
+  kind: Kind
   onStats: () => void
   onFunnel: () => void
   onClicks: () => void
@@ -922,6 +953,15 @@ function StreamCard({
                 : []),
             ],
           },
+          {
+            items: readOnly
+              ? []
+              : [
+                  ...(canUp ? [{ icon: <ArrowUp size={15} />, label: t('Move up'), onClick: () => onMove('up') }] : []),
+                  ...(canDown ? [{ icon: <ArrowDown size={15} />, label: t('Move down'), onClick: () => onMove('down') }] : []),
+                  ...KINDS.filter((k) => k !== kind).map((k) => ({ icon: <CornerRightDown size={15} />, label: t('Move to {lane}', { lane: LANE[k].title }), title: LANE[k].desc, onClick: () => onMove(k) })),
+                ],
+          },
           { items: readOnly ? [] : [{ icon: <Trash2 size={15} />, label: t('Delete'), danger: true, onClick: onDelete }] },
         ]}
       />
@@ -930,7 +970,24 @@ function StreamCard({
 
   return (
     <div className={'frow' + rowClass} {...drag}>
-      <span className={'frow-node' + (readOnly ? '' : ' grab')} title={readOnly ? undefined : t('Drag to reorder')} {...arm}>
+      <span
+        className={'frow-node' + (readOnly ? '' : ' grab')}
+        title={readOnly ? undefined : t('Drag to reorder, or focus and press ↑ ↓')}
+        {...arm}
+        {...(readOnly
+          ? {}
+          : {
+              tabIndex: 0,
+              role: 'button',
+              'aria-label': t('Stream {n}: press up or down arrow to move it', { n: index + 1 }),
+              onKeyDown: (e: KeyboardEvent<HTMLSpanElement>) => {
+                if (e.key === 'ArrowUp' && canUp) onMove('up')
+                else if (e.key === 'ArrowDown' && canDown) onMove('down')
+                else return
+                e.preventDefault()
+              },
+            })}
+      >
         {index + 1}
       </span>
       <div className="frow-body">

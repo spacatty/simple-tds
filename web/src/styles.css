@@ -7361,3 +7361,37 @@ tr.camp-child .tnum {
   margin-top: 12px;
   margin-bottom: 0;
 }
+
+/* A stream row on a phone: what it matches and does on full width, figures and buttons below. */
+@container funnel (max-width: 560px) {
+  .frow {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 10px;
+  }
+  .frow-body {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+  .frow-act {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .frow .srow-ctl {
+    grid-column: 2;
+    grid-row: 2;
+    width: auto;
+  }
+  .frow .sv {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    justify-self: stretch;
+    width: auto;
+  }
+  .frow-cond .rtok {
+    white-space: normal;
+  }
+}
+.frow-node:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
